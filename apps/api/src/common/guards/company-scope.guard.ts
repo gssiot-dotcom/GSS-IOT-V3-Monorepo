@@ -1,6 +1,7 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { CanActivate, ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { AccessLevel } from "@prisma/client";
 
 import type { AuthenticatedRequest } from "../auth.types";
 import { REQUIRED_SCOPE_KEY } from "../decorators/require-scope.decorator";
@@ -77,10 +78,12 @@ export class CompanyScopeGuard implements CanActivate {
         return true;
       }
 
+      const access = await this.prisma.companyUserAreaAccess.findUnique({
+        where: { companyUserId_areaId: { companyUserId: userId, areaId: area.id } },
+      });
       return Boolean(
-        await this.prisma.companyUserAreaAccess.findUnique({
-          where: { companyUserId_areaId: { companyUserId: userId, areaId: area.id } },
-        }),
+        access &&
+        (requirement.accessLevel !== "manage" || access.accessLevel === AccessLevel.MANAGE),
       );
     }
 
@@ -104,6 +107,13 @@ export class CompanyScopeGuard implements CanActivate {
       }),
     ]);
 
-    return Boolean(buildingAccess || areaAccess);
+    if (requirement.accessLevel !== "manage") {
+      return Boolean(buildingAccess || areaAccess);
+    }
+
+    return Boolean(
+      buildingAccess?.accessLevel === AccessLevel.MANAGE ||
+      areaAccess?.accessLevel === AccessLevel.MANAGE,
+    );
   }
 }

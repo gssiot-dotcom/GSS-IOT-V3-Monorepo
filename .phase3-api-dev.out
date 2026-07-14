@@ -1,0 +1,77 @@
+
+> api@0.0.0 dev C:\Users\stran\Desktop\gss_iot_v3_codex_starter\apps\api
+> tsx watch src/main.ts
+
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +35ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +41ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRbacModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuditLogsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mOrganizationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCompanyManagementModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/health}:[39m[38;5;3m +9ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/health, GET} route[39m[38;5;3m +5ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/gss/login, POST} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/company/login, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/gss/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/company/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mOrganizationsAdminController {/admin}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId, GET} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId, PATCH} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/areas, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/areas, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/areas/:areaId, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/areas/:areaId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/buildings, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/areas/:areaId/buildings, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/buildings/:buildingId, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/buildings/:buildingId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/buildings/:buildingId/plan-images, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/building-plan-images/:imageId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mOrganizationsCompanyController {/company}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/areas, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/areas, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/areas/:areaId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/areas/:areaId, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/areas/:areaId, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/buildings, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/areas/:areaId/buildings, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/buildings/:buildingId, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/buildings/:buildingId, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/buildings/:buildingId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/buildings/:buildingId/plan-images, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/buildings/:buildingId/plan-images, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCompanyManagementAdminController {/admin}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/users, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/users, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/users/:userId, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/users/:userId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/roles, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/roles, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/roles/:roleId/permissions, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/company-permissions, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/positions, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/positions, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/positions/:positionId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/companies/:companyId/users/:userId/positions, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCompanyManagementCompanyController {/company}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/users, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/users, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/users/:userId, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/users/:userId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/roles, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/roles, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/roles/:roleId/permissions, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/permissions, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/positions, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/positions, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/positions/:positionId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/company/users/:userId/positions, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19476  - [39m07/14/2026, 9:56:24 PM [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +126ms[39m

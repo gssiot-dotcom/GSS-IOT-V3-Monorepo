@@ -294,4 +294,132 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(403);
   });
+
+  it("enforces Phase 3 company boundaries, position scope, and last-manager protection", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const phaseThreeKeys = [
+      "companies.create",
+      "areas.view",
+      "areas.create",
+      "areas.update",
+      "areas.delete",
+      "buildings.view",
+      "buildings.create",
+      "buildings.update",
+      "buildings.delete",
+      "company-users.view",
+      "company-users.create",
+      "company-users.update",
+      "company-users.delete",
+      "company-users.manage",
+      "company-roles.view",
+      "company-roles.manage",
+      "company-permissions.view",
+    ];
+    const existingPermissions = await prisma.permission.findMany({
+      where: { key: { in: phaseThreeKeys } },
+    });
+    const existingKeys = new Set(existingPermissions.map((permission) => permission.key));
+    await prisma.permission.createMany({
+      data: phaseThreeKeys
+        .filter((key) => !existingKeys.has(key))
+        .map((key) => {
+          const [module, action] = key.split(".");
+          return { action, key, module, scopeType: key === "companies.create" ? "GSS" : "COMPANY" };
+        }),
+    });
+    const companyPermissions = await prisma.permission.findMany({
+      where: { key: { in: phaseThreeKeys.filter((key) => key !== "companies.create") } },
+      select: { id: true },
+    });
+    const template = await prisma.companyRole.create({
+      data: {
+        isCompanyOwnerRole: true,
+        isSystem: true,
+        key: "platform_manager",
+        name: "Platform Manager",
+        permissions: {
+          createMany: { data: companyPermissions.map(({ id }) => ({ permissionId: id })) },
+        },
+      },
+    });
+    const gssToken = await login("/auth/gss/login", "super@example.com");
+    const firstCompany = await request(server)
+      .post("/admin/companies")
+      .set("Authorization", `Bearer ${gssToken}`)
+      .send({
+        name: "Phase 3 Company A",
+        platformManager: {
+          email: "phase3-manager@example.com",
+          name: "Phase 3 Manager",
+          password: "test-password",
+        },
+      })
+      .expect(201);
+    expect(firstCompany.body.platformManager.roleId).toBeDefined();
+    const managerToken = await login("/auth/company/login", "phase3-manager@example.com");
+    const companyArea = await request(server)
+      .post("/company/areas")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ name: "Scoped Area" })
+      .expect(201);
+    await request(server)
+      .post(`/company/areas/${companyArea.body.id}/buildings`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ title: "Scoped Building" })
+      .expect(201);
+
+    const secondCompany = await request(server)
+      .post("/admin/companies")
+      .set("Authorization", `Bearer ${gssToken}`)
+      .send({
+        name: "Phase 3 Company B",
+        platformManager: {
+          email: "phase3-manager-b@example.com",
+          name: "Phase 3 Manager B",
+          password: "test-password",
+        },
+      })
+      .expect(201);
+    const foreignArea = await request(server)
+      .post(`/admin/companies/${secondCompany.body.company.id}/areas`)
+      .set("Authorization", `Bearer ${gssToken}`)
+      .send({ name: "Foreign Area" })
+      .expect(201);
+
+    const position = await request(server)
+      .post("/company/positions")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ key: "site_manager", name: "Site Manager" })
+      .expect(201);
+    await request(server)
+      .patch(`/company/users/${firstCompany.body.platformManager.id}/positions`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ assignments: [{ areaId: foreignArea.body.id, positionId: position.body.id }] })
+      .expect(403);
+
+    const gssOnlyPermission = await prisma.permission.create({
+      data: { action: "manage", key: "gss-only.manage", module: "gss-only", scopeType: "GSS" },
+    });
+    await request(server)
+      .post("/company/users")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        directPermissions: [{ effect: "ALLOW", permissionId: gssOnlyPermission.id }],
+        email: "invalid-permission@example.com",
+        name: "Invalid Permission",
+        password: "test-password",
+        roleId: firstCompany.body.platformManager.roleId,
+      })
+      .expect(403);
+    await request(server)
+      .delete(`/company/users/${firstCompany.body.platformManager.id}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(403);
+
+    expect(
+      await prisma.auditLog.count({ where: { entityType: "Company" } }),
+    ).toBeGreaterThanOrEqual(2);
+    expect(template.id).toBeDefined();
+  });
 });

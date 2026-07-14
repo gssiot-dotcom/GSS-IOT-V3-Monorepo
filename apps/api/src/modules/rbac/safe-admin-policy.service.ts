@@ -34,9 +34,10 @@ export class SafeAdminPolicyService {
   async assertCompanyUserCanLoseOwnerRole(
     actorUserId: string,
     targetUserId: string,
+    willLoseOwnerRole = true,
     executor: PrismaExecutor = this.prisma,
   ): Promise<void> {
-    if (actorUserId !== targetUserId) {
+    if (actorUserId !== targetUserId || !willLoseOwnerRole) {
       return;
     }
 

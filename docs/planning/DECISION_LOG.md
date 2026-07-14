@@ -206,3 +206,15 @@ Files affected:
 **Consequences:** Local browser login works from both Vite origins without using wildcard CORS or weakening RBAC/auth guards. Unknown browser origins do not receive CORS allow headers.
 
 **Files affected:** `packages/config/src/env.ts`, `apps/api/src/common/cors.ts`, `apps/api/src/bootstrap.ts`, `apps/api/src/main.ts`, `.env.example`, `apps/api/.env.example`, `apps/api/test/e2e/rbac.e2e-spec.ts`, `packages/config/test/env.spec.ts`.
+
+## DEC-2026-019
+
+**Status:** accepted
+
+**Context:** Phase 3 requires building plan/real-image records, but the object-storage provider and browser upload transport remain explicit open decisions.
+
+**Decision:** Phase 3 persists validated `BuildingPlanImage` metadata through an auditable `storageKey` API boundary. It does not introduce a local-file shortcut, provider credentials, or an unapproved S3 adapter.
+
+**Consequences:** Organization and building-plan workflows have durable, permission- and scope-protected image references now. Binary upload and signed URL delivery will be added only with the future storage-provider decision.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260714150000_organization_users/migration.sql`, `apps/api/src/modules/organizations/`.

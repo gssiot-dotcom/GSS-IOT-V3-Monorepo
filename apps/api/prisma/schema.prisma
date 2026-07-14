@@ -28,6 +28,22 @@ enum AccessLevel {
   MANAGE
 }
 
+enum BuildingImageKind {
+  PLAN
+  REAL
+}
+
+enum PositionAssignmentStatus {
+  ACTIVE
+  ENDED
+}
+
+enum AuditActorType {
+  GSS_ADMIN
+  COMPANY_USER
+  SYSTEM
+}
+
 model Permission {
   id               String                    @id @default(uuid()) @db.Uuid
   key              String                    @unique
@@ -94,11 +110,16 @@ model Company {
   id        String                 @id @default(uuid()) @db.Uuid
   name      String
   code      String?                @unique
+  address   String?
+  phone     String?
+  email     String?
+  logoKey   String?
   status    CompanyStatus          @default(ACTIVE)
   areas     ConstructionArea[]
   buildings ConstructionBuilding[]
   roles     CompanyRole[]
   users     CompanyUser[]
+  positions CompanyPosition[]
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
 }
@@ -108,9 +129,12 @@ model ConstructionArea {
   companyId String                 @db.Uuid
   company   Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
   name      String
+  address   String?
+  description String?
   status    CompanyStatus          @default(ACTIVE)
   buildings ConstructionBuilding[]
   userAccess CompanyUserAreaAccess[]
+  positionAssignments CompanyUserPositionAssignment[]
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
 
@@ -124,8 +148,14 @@ model ConstructionBuilding {
   company    Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
   area       ConstructionArea           @relation(fields: [areaId], references: [id], onDelete: Restrict)
   title      String
+  number     String?
+  address    String?
+  buildingType String?
+  startDate  DateTime?
   status     CompanyStatus              @default(ACTIVE)
   userAccess CompanyUserBuildingAccess[]
+  planImages BuildingPlanImage[]
+  positionAssignments CompanyUserPositionAssignment[]
   createdAt  DateTime                   @default(now())
   updatedAt  DateTime                   @updatedAt
 
@@ -164,8 +194,72 @@ model CompanyUser {
   permissions  CompanyUserPermission[]
   areaAccess   CompanyUserAreaAccess[]
   buildingAccess CompanyUserBuildingAccess[]
+  positionAssignments CompanyUserPositionAssignment[]
   createdAt    DateTime                    @default(now())
   updatedAt    DateTime                    @updatedAt
+}
+
+model BuildingPlanImage {
+  id         String            @id @default(uuid()) @db.Uuid
+  buildingId String            @db.Uuid
+  building   ConstructionBuilding @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  kind       BuildingImageKind
+  storageKey String
+  orderIndex Int
+  width      Int?
+  height     Int?
+  createdAt  DateTime          @default(now())
+
+  @@unique([buildingId, kind, orderIndex])
+}
+
+model CompanyPosition {
+  id          String                          @id @default(uuid()) @db.Uuid
+  companyId   String                          @db.Uuid
+  company     Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  key         String
+  name        String
+  isActive    Boolean                         @default(true)
+  assignments CompanyUserPositionAssignment[]
+  createdAt   DateTime                        @default(now())
+  updatedAt   DateTime                        @updatedAt
+
+  @@unique([companyId, key])
+}
+
+model CompanyUserPositionAssignment {
+  id            String                   @id @default(uuid()) @db.Uuid
+  companyUserId String                   @db.Uuid
+  positionId    String                   @db.Uuid
+  areaId        String?                  @db.Uuid
+  buildingId    String?                  @db.Uuid
+  status        PositionAssignmentStatus @default(ACTIVE)
+  assignedAt    DateTime                 @default(now())
+  endedAt       DateTime?
+  companyUser   CompanyUser              @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
+  position      CompanyPosition           @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  area          ConstructionArea?        @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  building      ConstructionBuilding?    @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+
+  @@index([companyUserId, status])
+  @@index([positionId, status])
+}
+
+model AuditLog {
+  id        String         @id @default(uuid()) @db.Uuid
+  actorType AuditActorType
+  actorId   String?        @db.Uuid
+  action    String
+  entityType String
+  entityId  String?        @db.Uuid
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime       @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorType, actorId])
 }
 
 model CompanyRolePermission {

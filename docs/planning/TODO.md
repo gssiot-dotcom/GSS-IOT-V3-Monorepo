@@ -41,6 +41,16 @@
 - [x] Verify node-type card rendering through unit and browser checks.
 - [x] Configure local-development CORS for the actual Vite origins without weakening production defaults.
 
+## Phase 3
+
+- [x] Add company, construction-area and construction-building CRUD with GSS Admin and Company permission/scope enforcement.
+- [x] Add provider-neutral building plan/real-image metadata records with audited create/delete operations.
+- [x] Add company user creation, update and deactivation with company-owned roles, direct permissions and scoped area/building access.
+- [x] Add company position catalog and scoped position assignments, distinct from platform roles.
+- [x] Add transaction-backed audit records for organization, role, scope, position and company-user changes.
+- [x] Add Phase 3 API E2E coverage for company boundaries, position scope, global-permission denial and last platform-manager self-lockout.
+- [x] Replace relevant Phase 2 placeholders with shared-shell Admin company creation and Company organization/user/role management screens.
+
 ## Deferred
 
-See `IMPLEMENTATION_PLAN.md` for later phases.
+See `IMPLEMENTATION_PLAN.md` for Phase 4 and later phases.

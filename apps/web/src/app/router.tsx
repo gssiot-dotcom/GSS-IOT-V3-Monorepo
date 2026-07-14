@@ -3,6 +3,10 @@ import type { ReactElement, ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { LoginPage } from "../features/auth/LoginPage";
+import { CompanyRolesPage } from "../features/company-management/CompanyRolesPage";
+import { CompanyUsersPage } from "../features/company-management/CompanyUsersPage";
+import { CompaniesPage } from "../features/organizations/CompaniesPage";
+import { CompanyResourcesPage } from "../features/organizations/CompanyResourcesPage";
 import { DesignSystemDemoPage } from "../features/shell/DesignSystemDemoPage";
 import { NodeTypeMonitoringPage } from "../features/shell/NodeTypeMonitoringPage";
 import { adminNavItems, companyNavItems } from "../features/shell/navigation";
@@ -44,6 +48,8 @@ export function AppRouter(): ReactElement {
                   <ProtectedPage context="gss-admin" permission={item.permission}>
                     {item.path === "/admin/design-system" ? (
                       <DesignSystemDemoPage />
+                    ) : item.path === "/admin/companies" ? (
+                      <CompaniesPage />
                     ) : (
                       <PlaceholderPage titleKey={item.titleKey} />
                     )}
@@ -59,6 +65,14 @@ export function AppRouter(): ReactElement {
                   <ProtectedPage context="company-user" permission={item.permission}>
                     {item.path.includes("/monitoring") ? (
                       <NodeTypeMonitoringPage />
+                    ) : item.path === "/company/areas" ? (
+                      <CompanyResourcesPage resource="areas" />
+                    ) : item.path === "/company/buildings" ? (
+                      <CompanyResourcesPage resource="buildings" />
+                    ) : item.path === "/company/users" ? (
+                      <CompanyUsersPage />
+                    ) : item.path === "/company/roles" ? (
+                      <CompanyRolesPage />
                     ) : (
                       <PlaceholderPage titleKey={item.titleKey} />
                     )}

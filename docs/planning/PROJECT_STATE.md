@@ -2,11 +2,11 @@
 
 ## Current phase
 
-`PHASE_2_COMPLETE`
+`PHASE_3_COMPLETE`
 
 ## Last completed milestone
 
-Phase 2 design system and application shells completed and verified on 2026-07-14. The repository now has the shared GSS Mantine theme, reusable shell/state/table/status/node-card primitives, guarded Admin and Company shell navigation, a Phase 2 demo route, and browser checks for the legacy node-type cards.
+Phase 3 organization and company-user management completed and verified on 2026-07-14. The repository now has auditable company, area, building, image-metadata, company-user, role, direct-permission, scoped-access, and position-assignment flows behind the Phase 1 authorization boundary.
 
 ## Current repository status
 
@@ -14,6 +14,8 @@ Phase 2 design system and application shells completed and verified on 2026-07-1
 - Database schema: Prisma RBAC, organization hierarchy and scope-access foundation migration `20260714120000_rbac_foundation` applied to `gss_iot_v3`; `prisma migrate status` reports the schema up to date.
 - Seed: permission catalog, default GSS/company roles and environment-configured active GSS super admin seeded idempotently. Verification found 89 permissions, five GSS roles, five company role templates, and one active GSS super admin.
 - Frontend: in-memory auth bootstrap, auth/permission guards, permission-filtered Admin/Company shells, protected placeholder routes, Phase 2 design-system demo route, universal UI states and legacy image-first node-type cards created.
+- Phase 3 API: guarded GSS Admin and Company endpoints manage companies, areas, buildings, storage-key image records, company users, company-owned roles, direct permissions, area/building access and scoped position assignments. Critical mutations write audit logs inside their database transactions.
+- Phase 3 UI: Admin company creation creates the initial platform manager; Company routes now render scoped area/building lists plus company-user and role management views using the shared Phase 2 shell and UI primitives.
 - Shared UI: `packages/ui` exports the normalized GSS Mantine theme, page header, data table/pagination footer, status badge, universal states and node-type selection card primitives.
 - Runtime configuration: API CORS is environment-driven through `CORS_ALLOWED_ORIGINS`; local development defaults support both `http://localhost:5173` and `http://127.0.0.1:5173`. Auth remains bearer-token based with no login cookies.
 - CI: template only
@@ -47,6 +49,7 @@ Phase 2 design system and application shells completed and verified on 2026-07-1
 - Whether company can edit position catalog or only assign seeded positions.
 - Exact rule behavior after alarm acknowledgement while unsafe readings continue.
 - Legacy data migration cutoff and coexistence window.
+- Object-storage provider and browser-to-provider transfer mechanism for `BuildingPlanImage.storageKey`. Phase 3 persists and audits image metadata only; no unapproved local or cloud provider adapter was introduced.
 
 ## Verification record
 
@@ -56,8 +59,10 @@ The database-backed integration suite is `apps/api/test/e2e/health.e2e-spec.ts` 
 
 Phase 2 UI verification includes `packages/ui/test/theme.spec.ts`, `packages/ui/test/node-type-card.spec.tsx`, `apps/web/src/test/App.spec.tsx`, `apps/web/src/test/rbac.spec.ts` and `apps/web/e2e/bootstrap.spec.ts`. The browser suite verifies the public `/phase-2/demo` route renders all three legacy node-type images and captures a non-empty node-card screenshot buffer.
 
+Phase 3 verification includes `apps/api/test/e2e/rbac.e2e-spec.ts`. It now covers GSS creation of a company and platform manager, Company platform-manager area/building mutations, foreign-company position-scope rejection, GSS-only direct-permission rejection, last platform-manager self-deactivation rejection, and audit-log creation. API, web, contracts, config and UI unit suites, API E2E, lint, typecheck, build and browser E2E pass.
+
 Runtime CORS verification covers `http://localhost:5173`, `http://127.0.0.1:5173`, unknown-origin rejection, GSS login followed by `/auth/gss/me`, company login CORS behavior and no-cookie bearer-token responses.
 
 ## Next action
 
-Await an explicit Phase 3 prompt. Do not begin Phase 3 work automatically.
+Await an explicit Phase 4 prompt. Do not begin device inventory, assignment history, MQTT, monitoring or alarm work automatically.
