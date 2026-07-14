@@ -21,26 +21,26 @@ Old GSS Tailwind/shadcn code visual reference hisoblanadi; new shared components
 
 Eski GSS source CSS’dan normalizatsiya qilingan asosiy light theme:
 
-| Token | HSL | Taxminiy vazifa |
-|---|---:|---|
-| `background` | `210 20% 97%` | app background |
-| `foreground` | `222 35% 12%` | primary text |
-| `surface` | `0 0% 100%` | cards, modals |
-| `primary` | `199 89% 40%` | GSS cyan-blue action |
-| `secondary` | `210 20% 92%` | secondary surfaces |
-| `border` | `214 20% 88%` | neutral border |
-| `muted` | `215 16% 47%` | secondary text |
-| `danger` | `0 72% 51%` | destructive/alarm danger |
+| Token        |           HSL | Taxminiy vazifa          |
+| ------------ | ------------: | ------------------------ |
+| `background` | `210 20% 97%` | app background           |
+| `foreground` | `222 35% 12%` | primary text             |
+| `surface`    |   `0 0% 100%` | cards, modals            |
+| `primary`    | `199 89% 40%` | GSS cyan-blue action     |
+| `secondary`  | `210 20% 92%` | secondary surfaces       |
+| `border`     | `214 20% 88%` | neutral border           |
+| `muted`      | `215 16% 47%` | secondary text           |
+| `danger`     |   `0 72% 51%` | destructive/alarm danger |
 
 Status tokens:
 
-| Status | HSL | Rule |
-|---|---:|---|
-| `safe` | `199 89% 38%` | normal/safe monitoring state |
-| `caution` | `142 71% 42%` | caution |
-| `warning` | `45 93% 42%` | warning |
-| `danger` | `0 72% 51%` | danger |
-| `offline` | `215 14% 55%` | offline/unknown |
+| Status    |           HSL | Rule                         |
+| --------- | ------------: | ---------------------------- |
+| `safe`    | `199 89% 38%` | normal/safe monitoring state |
+| `caution` | `142 71% 42%` | caution                      |
+| `warning` |  `45 93% 42%` | warning                      |
+| `danger`  |   `0 72% 51%` | danger                       |
+| `offline` | `215 14% 55%` | offline/unknown              |
 
 Dark theme source tokens:
 
@@ -56,8 +56,16 @@ foreground 210 40% 96%
 
 ```ts
 const gssBlue = [
-  '#e8f7fd', '#d2effa', '#a7dff5', '#78ceef', '#48bdea',
-  '#159fde', '#0b80b7', '#08648f', '#064c6d', '#03344a',
+  "#e8f7fd",
+  "#d2effa",
+  "#a7dff5",
+  "#78ceef",
+  "#48bdea",
+  "#159fde",
+  "#0b80b7",
+  "#08648f",
+  "#064c6d",
+  "#03344a",
 ];
 ```
 
@@ -144,11 +152,11 @@ assets/legacy-node-types/door-node.png
 
 Mapping:
 
-| Node type | Asset | Legacy source |
-|---|---|---|
-| `gangform_node` | `gangform.png` | old `gangform.png` |
-| `angle_node` | `angle-node.png` | old `pikechondo.png` |
-| `door_node` | `door-node.png` | old `pikechondochuribmun.png` |
+| Node type       | Asset            | Legacy source                 |
+| --------------- | ---------------- | ----------------------------- |
+| `gangform_node` | `gangform.png`   | old `gangform.png`            |
+| `angle_node`    | `angle-node.png` | old `pikechondo.png`          |
+| `door_node`     | `door-node.png`  | old `pikechondochuribmun.png` |
 
 Required card structure:
 

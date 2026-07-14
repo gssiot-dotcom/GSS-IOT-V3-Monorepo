@@ -2,15 +2,15 @@
 
 ## Phase 0
 
-- [ ] Initialize Git and pnpm workspace.
-- [ ] Scaffold apps/packages.
-- [ ] Add strict TypeScript, lint, format, unit and E2E tooling.
-- [ ] Add environment validation and `.env.example` files.
-- [ ] Add Docker Compose for PostgreSQL, Redis and local MQTT broker.
-- [ ] Create legacy source inventory report.
-- [ ] Verify source files and node images checksums.
-- [ ] Confirm package/runtime versions from official documentation.
-- [ ] Run all baseline quality commands.
+- [x] Initialize Git and pnpm workspace.
+- [x] Scaffold apps/packages.
+- [x] Add strict TypeScript, lint, format, unit and E2E tooling.
+- [x] Add environment validation and `.env.example` files.
+- [x] Add Docker Compose for PostgreSQL, Redis and local MQTT broker.
+- [x] Create legacy source inventory report.
+- [x] Verify source files and node images checksums.
+- [x] Confirm package/runtime versions from official documentation.
+- [x] Run all baseline quality commands.
 
 ## Phase 1
 

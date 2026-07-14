@@ -1,0 +1,27 @@
+{
+  "name": "gss-iot-v3",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "build": "tsc -b tsconfig.json --pretty false && pnpm --filter web exec vite build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "test": "pnpm -r --if-present test:unit",
+    "test:e2e": "pnpm --filter api test:e2e && pnpm --filter web test:e2e",
+    "typecheck": "tsc -b tsconfig.json --pretty false"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^9.0.0",
+    "globals": "^15.0.0",
+    "prettier": "^3.9.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.64.0",
+    "vitest": "^4.1.10"
+  }
+}

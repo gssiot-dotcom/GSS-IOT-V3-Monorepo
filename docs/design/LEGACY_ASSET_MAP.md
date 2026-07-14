@@ -9,11 +9,11 @@ Do not modify these archives.
 
 ## Node type assets
 
-| New path | Old path | Mapping |
-|---|---|---|
-| `assets/legacy-node-types/gangform.png` | `GSS-new-design/src/public/gangform.png` | `gangform_node` |
-| `assets/legacy-node-types/angle-node.png` | `GSS-new-design/src/public/pikechondo.png` | `angle_node` |
-| `assets/legacy-node-types/door-node.png` | `GSS-new-design/src/public/pikechondochuribmun.png` | `door_node` |
+| New path                                  | Old path                                            | Mapping         |
+| ----------------------------------------- | --------------------------------------------------- | --------------- |
+| `assets/legacy-node-types/gangform.png`   | `GSS-new-design/src/public/gangform.png`            | `gangform_node` |
+| `assets/legacy-node-types/angle-node.png` | `GSS-new-design/src/public/pikechondo.png`          | `angle_node`    |
+| `assets/legacy-node-types/door-node.png`  | `GSS-new-design/src/public/pikechondochuribmun.png` | `door_node`     |
 
 ## Legacy card source
 

@@ -30,19 +30,19 @@ This is not an in-place cleanup of the old Express/Mongoose repository. Build a 
 
 ## Legacy-to-target module map
 
-| Legacy | Target |
-|---|---|
-| `auth` + role middleware | `AuthModule` + RBAC guards |
-| `users`, `CompanyMember`, `BuildingWorker` | CompanyUsers + Roles + Scope + Positions |
-| company module | CompaniesModule |
-| building module | ConstructionSites + ConstructionBuildings |
-| gateway/node inline assignment | DeviceAssignments history modules |
-| MQTT infrastructure | typed MqttModule + GatewayCommand outbox |
-| node histories | SensorReadings + LatestNodeState |
-| BuildingAlarmLevel/GatewayAlarmSetting | AlarmLevels + AlarmRules + RecipientPolicies |
-| AlertLog | AlarmEvent + Notification + DeliveryLog |
-| reports | ReportJob + scoped exports |
-| admin/manager/worker dashboards | permission + scope driven routes |
+| Legacy                                     | Target                                       |
+| ------------------------------------------ | -------------------------------------------- |
+| `auth` + role middleware                   | `AuthModule` + RBAC guards                   |
+| `users`, `CompanyMember`, `BuildingWorker` | CompanyUsers + Roles + Scope + Positions     |
+| company module                             | CompaniesModule                              |
+| building module                            | ConstructionSites + ConstructionBuildings    |
+| gateway/node inline assignment             | DeviceAssignments history modules            |
+| MQTT infrastructure                        | typed MqttModule + GatewayCommand outbox     |
+| node histories                             | SensorReadings + LatestNodeState             |
+| BuildingAlarmLevel/GatewayAlarmSetting     | AlarmLevels + AlarmRules + RecipientPolicies |
+| AlertLog                                   | AlarmEvent + Notification + DeliveryLog      |
+| reports                                    | ReportJob + scoped exports                   |
+| admin/manager/worker dashboards            | permission + scope driven routes             |
 
 ## Migration sequence
 

@@ -2,20 +2,22 @@
 
 ## Current phase
 
-`PHASE_0_NOT_STARTED`
+`PHASE_0_COMPLETE`
 
 ## Last completed milestone
 
-Codex starter configuration and architecture sources prepared.
+Phase 0 repository bootstrap completed and all mandatory code gates verified on 2026-07-14.
 
 ## Current repository status
 
-- Application source scaffold: not created
-- Database schema: not created
+- Application source scaffold: NestJS API and React/Vite web shell created
+- Database schema: Prisma/PostgreSQL datasource scaffold only; business entities deferred
 - CI: template only
+- Quality gates: format, lint, typecheck, unit tests, build, API E2E, Playwright discovery, Prisma validation and Docker Compose validation passed
 - Architecture blueprint: available
 - UI/UX specification: available
 - Legacy source archives: available
+- Legacy source inventory and preserved node assets: verified
 - Custom Codex skill: available
 
 ## Verified decisions
@@ -23,7 +25,9 @@ Codex starter configuration and architecture sources prepared.
 - New greenfield monorepo; legacy project is reference only.
 - Backend: NestJS + TypeScript.
 - Database: PostgreSQL + Prisma.
+- Prisma: `prisma` and `@prisma/client` pinned to `6.19.0`.
 - Frontend: React + Vite + TypeScript.
+- Workspace TypeScript: root solution project references buildable workspace outputs; apps consume shared packages through package exports.
 - Primary UI system: Mantine + Tabler icons using Parfumbox admin patterns.
 - Colors: normalized GSS palette.
 - Realtime: Socket.IO.
@@ -42,4 +46,4 @@ Codex starter configuration and architecture sources prepared.
 
 ## Next action
 
-Run `prompts/00_REPOSITORY_BOOTSTRAP.md` in Codex.
+Wait for an explicit Phase 1 prompt. Do not add business features during the completed bootstrap phase.

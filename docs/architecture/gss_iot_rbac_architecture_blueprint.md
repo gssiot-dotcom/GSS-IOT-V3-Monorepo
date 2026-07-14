@@ -1424,65 +1424,65 @@ Company user request:
 
 ### 9.2 GSS Admin endpoints
 
-| Method | Endpoint                                       | Permission                  |
-| ------ | ---------------------------------------------- | --------------------------- |
-| GET    | `/admin/dashboard`                             | `dashboard.view`            |
-| GET    | `/admin/companies`                             | `companies.view`            |
-| POST   | `/admin/companies`                             | `companies.create`          |
-| GET    | `/admin/companies/:companyId`                  | `companies.view`            |
-| PATCH  | `/admin/companies/:companyId`                  | `companies.update`          |
-| DELETE | `/admin/companies/:companyId`                  | `companies.delete`          |
-| GET    | `/admin/companies/:companyId/areas`            | `areas.view`                |
-| POST   | `/admin/companies/:companyId/areas`            | `areas.create`              |
-| PATCH  | `/admin/areas/:areaId`                         | `areas.update`              |
-| DELETE | `/admin/areas/:areaId`                         | `areas.delete`              |
-| GET    | `/admin/companies/:companyId/buildings`        | `buildings.view`            |
-| POST   | `/admin/areas/:areaId/buildings`               | `buildings.create`          |
-| PATCH  | `/admin/buildings/:buildingId`                 | `buildings.update`          |
-| DELETE | `/admin/buildings/:buildingId`                 | `buildings.delete`          |
-| POST   | `/admin/buildings/:buildingId/plan-images`     | `building-plans.manage`     |
-| DELETE | `/admin/building-plan-images/:imageId`         | `building-plans.manage`     |
-| GET    | `/admin/company-users`                         | `company-users.view`        |
-| POST   | `/admin/companies/:companyId/users`            | `company-users.create`      |
-| PATCH  | `/admin/company-users/:userId`                 | `company-users.update`      |
-| DELETE | `/admin/company-users/:userId`                 | `company-users.delete`      |
-| GET    | `/admin/companies/:companyId/positions`           | `company-users.view`        |
-| POST   | `/admin/companies/:companyId/positions`           | `company-users.manage`      |
-| PATCH  | `/admin/company-users/:userId/positions`          | `company-users.manage`      |
-| GET    | `/admin/gss-users`                             | `admin-users.view`          |
-| POST   | `/admin/gss-users`                             | `admin-users.create`        |
-| PATCH  | `/admin/gss-users/:id`                         | `admin-users.update`        |
-| DELETE | `/admin/gss-users/:id`                         | `admin-users.delete`        |
-| GET    | `/admin/roles`                                 | `admin-roles.view`          |
-| POST   | `/admin/roles`                                 | `admin-roles.manage`        |
-| PATCH  | `/admin/roles/:roleId/permissions`             | `admin-roles.manage`        |
-| GET    | `/admin/permissions`                           | `permissions.view`          |
-| GET    | `/admin/gateways`                              | `gateways.view`             |
-| POST   | `/admin/gateways`                              | `gateways.create`           |
-| PATCH  | `/admin/gateways/:gatewayId`                   | `gateways.update`           |
-| DELETE | `/admin/gateways/:gatewayId`                   | `gateways.delete`           |
-| GET    | `/admin/nodes`                                 | `nodes.view`                |
-| POST   | `/admin/nodes`                                 | `nodes.create`              |
-| PATCH  | `/admin/nodes/:nodeId`                         | `nodes.update`              |
-| DELETE | `/admin/nodes/:nodeId`                         | `nodes.delete`              |
-| POST   | `/admin/companies/:companyId/devices/assign`   | `devices.assign`            |
-| POST   | `/admin/buildings/:buildingId/gateways/assign` | `gateways.assign`           |
-| POST   | `/admin/gateways/:gatewayId/nodes/connect`     | `nodes.assign`              |
-| GET    | `/admin/gateway-commands`                      | `mqtt-commands.view`        |
-| POST   | `/admin/gateway-commands/:id/retry`            | `mqtt-commands.manage`      |
-| GET    | `/admin/monitoring`                            | `monitoring.admin-overview` |
-| PATCH  | `/admin/buildings/:buildingId/alarm-levels`    | `alarm-levels.manage`       |
-| PATCH  | `/admin/gateways/:gatewayId/fault-filter`      | `nodes.configure`           |
-| GET    | `/admin/alarms`                                | `alarms.view`               |
-| PATCH  | `/admin/alarms/:alarmId/acknowledge`           | `alarms.acknowledge`        |
-| PATCH  | `/admin/alarms/:alarmId/resolve`               | `alarms.resolve`            |
-| GET    | `/admin/alarm-rules`                           | `alarm-rules.view`          |
-| POST   | `/admin/alarm-rules`                           | `alarm-rules.manage`        |
+| Method | Endpoint                                        | Permission                  |
+| ------ | ----------------------------------------------- | --------------------------- |
+| GET    | `/admin/dashboard`                              | `dashboard.view`            |
+| GET    | `/admin/companies`                              | `companies.view`            |
+| POST   | `/admin/companies`                              | `companies.create`          |
+| GET    | `/admin/companies/:companyId`                   | `companies.view`            |
+| PATCH  | `/admin/companies/:companyId`                   | `companies.update`          |
+| DELETE | `/admin/companies/:companyId`                   | `companies.delete`          |
+| GET    | `/admin/companies/:companyId/areas`             | `areas.view`                |
+| POST   | `/admin/companies/:companyId/areas`             | `areas.create`              |
+| PATCH  | `/admin/areas/:areaId`                          | `areas.update`              |
+| DELETE | `/admin/areas/:areaId`                          | `areas.delete`              |
+| GET    | `/admin/companies/:companyId/buildings`         | `buildings.view`            |
+| POST   | `/admin/areas/:areaId/buildings`                | `buildings.create`          |
+| PATCH  | `/admin/buildings/:buildingId`                  | `buildings.update`          |
+| DELETE | `/admin/buildings/:buildingId`                  | `buildings.delete`          |
+| POST   | `/admin/buildings/:buildingId/plan-images`      | `building-plans.manage`     |
+| DELETE | `/admin/building-plan-images/:imageId`          | `building-plans.manage`     |
+| GET    | `/admin/company-users`                          | `company-users.view`        |
+| POST   | `/admin/companies/:companyId/users`             | `company-users.create`      |
+| PATCH  | `/admin/company-users/:userId`                  | `company-users.update`      |
+| DELETE | `/admin/company-users/:userId`                  | `company-users.delete`      |
+| GET    | `/admin/companies/:companyId/positions`         | `company-users.view`        |
+| POST   | `/admin/companies/:companyId/positions`         | `company-users.manage`      |
+| PATCH  | `/admin/company-users/:userId/positions`        | `company-users.manage`      |
+| GET    | `/admin/gss-users`                              | `admin-users.view`          |
+| POST   | `/admin/gss-users`                              | `admin-users.create`        |
+| PATCH  | `/admin/gss-users/:id`                          | `admin-users.update`        |
+| DELETE | `/admin/gss-users/:id`                          | `admin-users.delete`        |
+| GET    | `/admin/roles`                                  | `admin-roles.view`          |
+| POST   | `/admin/roles`                                  | `admin-roles.manage`        |
+| PATCH  | `/admin/roles/:roleId/permissions`              | `admin-roles.manage`        |
+| GET    | `/admin/permissions`                            | `permissions.view`          |
+| GET    | `/admin/gateways`                               | `gateways.view`             |
+| POST   | `/admin/gateways`                               | `gateways.create`           |
+| PATCH  | `/admin/gateways/:gatewayId`                    | `gateways.update`           |
+| DELETE | `/admin/gateways/:gatewayId`                    | `gateways.delete`           |
+| GET    | `/admin/nodes`                                  | `nodes.view`                |
+| POST   | `/admin/nodes`                                  | `nodes.create`              |
+| PATCH  | `/admin/nodes/:nodeId`                          | `nodes.update`              |
+| DELETE | `/admin/nodes/:nodeId`                          | `nodes.delete`              |
+| POST   | `/admin/companies/:companyId/devices/assign`    | `devices.assign`            |
+| POST   | `/admin/buildings/:buildingId/gateways/assign`  | `gateways.assign`           |
+| POST   | `/admin/gateways/:gatewayId/nodes/connect`      | `nodes.assign`              |
+| GET    | `/admin/gateway-commands`                       | `mqtt-commands.view`        |
+| POST   | `/admin/gateway-commands/:id/retry`             | `mqtt-commands.manage`      |
+| GET    | `/admin/monitoring`                             | `monitoring.admin-overview` |
+| PATCH  | `/admin/buildings/:buildingId/alarm-levels`     | `alarm-levels.manage`       |
+| PATCH  | `/admin/gateways/:gatewayId/fault-filter`       | `nodes.configure`           |
+| GET    | `/admin/alarms`                                 | `alarms.view`               |
+| PATCH  | `/admin/alarms/:alarmId/acknowledge`            | `alarms.acknowledge`        |
+| PATCH  | `/admin/alarms/:alarmId/resolve`                | `alarms.resolve`            |
+| GET    | `/admin/alarm-rules`                            | `alarm-rules.view`          |
+| POST   | `/admin/alarm-rules`                            | `alarm-rules.manage`        |
 | PATCH  | `/admin/alarm-rules/:ruleId/recipient-policies` | `alarm-rules.manage`        |
-| GET    | `/admin/reports`                               | `reports.view`              |
-| POST   | `/admin/reports/export`                        | `reports.export`            |
-| GET    | `/admin/audit-logs`                            | `audit-logs.view`           |
-| POST   | `/admin/audit-logs/export`                     | `audit-logs.export`         |
+| GET    | `/admin/reports`                                | `reports.view`              |
+| POST   | `/admin/reports/export`                         | `reports.export`            |
+| GET    | `/admin/audit-logs`                             | `audit-logs.view`           |
+| POST   | `/admin/audit-logs/export`                      | `audit-logs.export`         |
 
 ### 9.3 Company Dashboard endpoints
 
@@ -1515,20 +1515,19 @@ Company user request:
 | PATCH  | `/company/alarms/:alarmId/resolve`                    | `alarms.resolve`         | event scope           |
 | GET    | `/company/alarm-rules`                                | `alarm-rules.view`       | company scoped        |
 | POST   | `/company/alarm-rules`                                | `alarm-rules.manage`     | scope validate        |
-| PATCH  | `/company/alarm-rules/:ruleId/recipient-policies`       | `alarm-rules.manage`     | scope validate        |
+| PATCH  | `/company/alarm-rules/:ruleId/recipient-policies`     | `alarm-rules.manage`     | scope validate        |
 | GET    | `/company/reports`                                    | `reports.view`           | scoped                |
 | POST   | `/company/reports/export`                             | `reports.export`         | scoped                |
 | GET    | `/company/users`                                      | `company-users.view`     | company               |
 | POST   | `/company/users`                                      | `company-users.create`   | company               |
 | PATCH  | `/company/users/:userId`                              | `company-users.update`   | company               |
 | DELETE | `/company/users/:userId`                              | `company-users.delete`   | company               |
-| GET    | `/company/positions`                                     | `company-users.view`     | company               |
-| POST   | `/company/positions`                                     | `company-users.manage`   | company               |
-| PATCH  | `/company/users/:userId/positions`                       | `company-users.update`   | company/area/building |
+| GET    | `/company/positions`                                  | `company-users.view`     | company               |
+| POST   | `/company/positions`                                  | `company-users.manage`   | company               |
+| PATCH  | `/company/users/:userId/positions`                    | `company-users.update`   | company/area/building |
 | GET    | `/company/roles`                                      | `company-roles.view`     | company               |
 | POST   | `/company/roles`                                      | `company-roles.manage`   | company               |
 | PATCH  | `/company/roles/:roleId/permissions`                  | `company-roles.manage`   | company               |
-
 
 ---
 
@@ -1536,49 +1535,49 @@ Company user request:
 
 ### 10.1 GSS Admin Portal
 
-| Page | Permission | Sidebar rule | Action buttons |
-|---|---|---|---|
-| `/admin/welcome` | always authenticated | always | none |
-| `/admin/dashboard` | `dashboard.view` | show if has | refresh only |
-| `/admin/companies` | `companies.view` | show if has | Create=`companies.create`, Edit=`companies.update`, Delete=`companies.delete` |
-| `/admin/companies/:id` | `companies.view` | no sidebar | Edit=`companies.update` |
-| `/admin/companies/:id/areas` | `areas.view` | nested | Create=`areas.create`, Edit=`areas.update`, Delete=`areas.delete` |
-| `/admin/companies/:id/buildings` | `buildings.view` | nested | Create=`buildings.create`, Edit=`buildings.update`, Delete=`buildings.delete` |
-| `/admin/companies/:id/users` | `company-users.view` | nested | Create/Edit/Delete + position assignment by company-user permissions |
-| `/admin/devices` | `devices.view` | show if has | Create=`devices.create`, Assign=`devices.assign` |
-| `/admin/gateways` | `gateways.view` | show if has | Create/Edit/Delete/Assign by relevant permissions |
-| `/admin/nodes` | `nodes.view` | show if has | Create/Edit/Delete/Assign/Configure by relevant permissions |
-| `/admin/device-assignments` | `device-assignments.view` | show if has | Manage=`device-assignments.manage` |
-| `/admin/mqtt-commands` | `mqtt-commands.view` | show if has | Retry/Cancel=`mqtt-commands.manage` |
-| `/admin/monitoring` | `monitoring.admin-overview` | show if has | realtime join=`monitoring.realtime` |
-| `/admin/alarms` | `alarms.view` | show if has | Ack=`alarms.acknowledge`, Resolve=`alarms.resolve` |
-| `/admin/alarm-rules` | `alarm-rules.view` | show if has | Manage severity, 회수, 지속시간, position recipient, channel=`alarm-rules.manage` |
-| `/admin/reports` | `reports.view` | show if has | Export=`reports.export` |
-| `/admin/audit-logs` | `audit-logs.view` | show if has | Export=`audit-logs.export` |
-| `/admin/settings/admin-users` | `admin-users.view` | show if has | Manage=`admin-users.manage` |
-| `/admin/settings/roles` | `admin-roles.view` | show if has | Manage=`admin-roles.manage` |
-| `/admin/settings/permissions` | `permissions.view` | show if has | Manage=`permissions.manage` |
-| `/admin/settings/system` | `settings.system.view` | show if has | Manage=`settings.system.manage` |
+| Page                             | Permission                  | Sidebar rule | Action buttons                                                                    |
+| -------------------------------- | --------------------------- | ------------ | --------------------------------------------------------------------------------- |
+| `/admin/welcome`                 | always authenticated        | always       | none                                                                              |
+| `/admin/dashboard`               | `dashboard.view`            | show if has  | refresh only                                                                      |
+| `/admin/companies`               | `companies.view`            | show if has  | Create=`companies.create`, Edit=`companies.update`, Delete=`companies.delete`     |
+| `/admin/companies/:id`           | `companies.view`            | no sidebar   | Edit=`companies.update`                                                           |
+| `/admin/companies/:id/areas`     | `areas.view`                | nested       | Create=`areas.create`, Edit=`areas.update`, Delete=`areas.delete`                 |
+| `/admin/companies/:id/buildings` | `buildings.view`            | nested       | Create=`buildings.create`, Edit=`buildings.update`, Delete=`buildings.delete`     |
+| `/admin/companies/:id/users`     | `company-users.view`        | nested       | Create/Edit/Delete + position assignment by company-user permissions              |
+| `/admin/devices`                 | `devices.view`              | show if has  | Create=`devices.create`, Assign=`devices.assign`                                  |
+| `/admin/gateways`                | `gateways.view`             | show if has  | Create/Edit/Delete/Assign by relevant permissions                                 |
+| `/admin/nodes`                   | `nodes.view`                | show if has  | Create/Edit/Delete/Assign/Configure by relevant permissions                       |
+| `/admin/device-assignments`      | `device-assignments.view`   | show if has  | Manage=`device-assignments.manage`                                                |
+| `/admin/mqtt-commands`           | `mqtt-commands.view`        | show if has  | Retry/Cancel=`mqtt-commands.manage`                                               |
+| `/admin/monitoring`              | `monitoring.admin-overview` | show if has  | realtime join=`monitoring.realtime`                                               |
+| `/admin/alarms`                  | `alarms.view`               | show if has  | Ack=`alarms.acknowledge`, Resolve=`alarms.resolve`                                |
+| `/admin/alarm-rules`             | `alarm-rules.view`          | show if has  | Manage severity, 회수, 지속시간, position recipient, channel=`alarm-rules.manage` |
+| `/admin/reports`                 | `reports.view`              | show if has  | Export=`reports.export`                                                           |
+| `/admin/audit-logs`              | `audit-logs.view`           | show if has  | Export=`audit-logs.export`                                                        |
+| `/admin/settings/admin-users`    | `admin-users.view`          | show if has  | Manage=`admin-users.manage`                                                       |
+| `/admin/settings/roles`          | `admin-roles.view`          | show if has  | Manage=`admin-roles.manage`                                                       |
+| `/admin/settings/permissions`    | `permissions.view`          | show if has  | Manage=`permissions.manage`                                                       |
+| `/admin/settings/system`         | `settings.system.view`      | show if has  | Manage=`settings.system.manage`                                                   |
 
 ### 10.2 Company Dashboard
 
-| Page | Permission | Scope | Action buttons |
-|---|---|---|---|
-| `/company/welcome` | authenticated | company | none |
-| `/company/dashboard` | `dashboard.view` | company | none |
-| `/company/areas` | `areas.view` | area filtered | Create=`areas.create` |
-| `/company/areas/:areaId` | `areas.view` | area | Edit=`areas.update`, Delete=`areas.delete` |
-| `/company/buildings` | `buildings.view` | building filtered | Create=`buildings.create` |
-| `/company/buildings/:buildingId` | `buildings.view` | building | Edit=`buildings.update`, Delete=`buildings.delete` |
-| `/company/buildings/:buildingId/plan` | `building-plans.view` | building | Upload/Delete=`building-plans.manage` |
-| `/company/buildings/:buildingId/monitoring` | `monitoring.view` | building | Socket join=`monitoring.realtime` |
-| `/company/buildings/:buildingId/monitoring/:nodeType` | `monitoring.view` | building | Alarm buttons hidden unless `alarm-levels.manage` |
-| `/company/buildings/:buildingId/alarm-levels` | `alarm-levels.view` | building | Save=`alarm-levels.manage` |
-| `/company/alarms` | `alarms.view` | scoped events | Ack/Resolve; event detail shows count/interval evidence |
-| `/company/reports` | `reports.view` | scoped | Export=`reports.export` |
-| `/company/users` | `company-users.view` | company | Create/Update/Delete + company position and scoped position assignment |
-| `/company/roles` | `company-roles.view` | company | Manage=`company-roles.manage` |
-| `/company/settings` | `settings.company.view` | company | Manage=`settings.company.manage` |
+| Page                                                  | Permission              | Scope             | Action buttons                                                         |
+| ----------------------------------------------------- | ----------------------- | ----------------- | ---------------------------------------------------------------------- |
+| `/company/welcome`                                    | authenticated           | company           | none                                                                   |
+| `/company/dashboard`                                  | `dashboard.view`        | company           | none                                                                   |
+| `/company/areas`                                      | `areas.view`            | area filtered     | Create=`areas.create`                                                  |
+| `/company/areas/:areaId`                              | `areas.view`            | area              | Edit=`areas.update`, Delete=`areas.delete`                             |
+| `/company/buildings`                                  | `buildings.view`        | building filtered | Create=`buildings.create`                                              |
+| `/company/buildings/:buildingId`                      | `buildings.view`        | building          | Edit=`buildings.update`, Delete=`buildings.delete`                     |
+| `/company/buildings/:buildingId/plan`                 | `building-plans.view`   | building          | Upload/Delete=`building-plans.manage`                                  |
+| `/company/buildings/:buildingId/monitoring`           | `monitoring.view`       | building          | Socket join=`monitoring.realtime`                                      |
+| `/company/buildings/:buildingId/monitoring/:nodeType` | `monitoring.view`       | building          | Alarm buttons hidden unless `alarm-levels.manage`                      |
+| `/company/buildings/:buildingId/alarm-levels`         | `alarm-levels.view`     | building          | Save=`alarm-levels.manage`                                             |
+| `/company/alarms`                                     | `alarms.view`           | scoped events     | Ack/Resolve; event detail shows count/interval evidence                |
+| `/company/reports`                                    | `reports.view`          | scoped            | Export=`reports.export`                                                |
+| `/company/users`                                      | `company-users.view`    | company           | Create/Update/Delete + company position and scoped position assignment |
+| `/company/roles`                                      | `company-roles.view`    | company           | Manage=`company-roles.manage`                                          |
+| `/company/settings`                                   | `settings.company.view` | company           | Manage=`settings.company.manage`                                       |
 
 ---
 
@@ -1629,30 +1628,30 @@ Frontend hidden button security emas. Backend permission guard har doim majburiy
 
 ```ts
 const nodeTypes = [
-	{ key: 'door_node', numericCode: 0, displayName: 'Door Node' },
-	{ key: 'angle_node', numericCode: 1, displayName: 'Angle Node' },
-	{ key: 'gangform_node', numericCode: 2, displayName: 'Gangform Node' },
-]
+  { key: "door_node", numericCode: 0, displayName: "Door Node" },
+  { key: "angle_node", numericCode: 1, displayName: "Angle Node" },
+  { key: "gangform_node", numericCode: 2, displayName: "Gangform Node" },
+];
 ```
 
 ### 12.2 GSS role seed
 
 ```ts
-createRole('gss_super_admin', { isSuperAdmin: true, isSystem: true })
-createRole('gss_admin', selectedOperationalPermissions)
-createRole('gss_device_manager', devicePermissions)
-createRole('gss_support', readOnlySupportPermissions)
-createRole('gss_report_manager', reportPermissions)
+createRole("gss_super_admin", { isSuperAdmin: true, isSystem: true });
+createRole("gss_admin", selectedOperationalPermissions);
+createRole("gss_device_manager", devicePermissions);
+createRole("gss_support", readOnlySupportPermissions);
+createRole("gss_report_manager", reportPermissions);
 ```
 
 ### 12.3 Company role template seed
 
 ```ts
-createCompanyRoleTemplate('platform_manager', fullCompanyPermissions)
-createCompanyRoleTemplate('area_manager', areaScopedPermissions)
-createCompanyRoleTemplate('building_manager', buildingScopedPermissions)
-createCompanyRoleTemplate('viewer', readOnlyCompanyPermissions)
-createCompanyRoleTemplate('no_permission', [])
+createCompanyRoleTemplate("platform_manager", fullCompanyPermissions);
+createCompanyRoleTemplate("area_manager", areaScopedPermissions);
+createCompanyRoleTemplate("building_manager", buildingScopedPermissions);
+createCompanyRoleTemplate("viewer", readOnlyCompanyPermissions);
+createCompanyRoleTemplate("no_permission", []);
 ```
 
 ### 12.3.1 Company position template seed (optional)
@@ -1661,16 +1660,16 @@ Position platform role emas. U alarm recipient mapping uchun company ichidagi la
 
 ```ts
 const defaultCompanyPositions = [
-  { key: 'site_person_in_charge', name: '현장담당자' },
-  { key: 'site_foreman', name: '현장반장' },
-  { key: 'office_manager', name: '사무실관리자' },
-  { key: 'construction_affairs', name: '공무' },
-  { key: 'site_director', name: '현장소장' },
-  { key: 'project_pm', name: '프로젝트PM' },
-  { key: 'company_contact', name: '회사담당자' },
-  { key: 'company_manager', name: '회사관리자' },
-  { key: 'company_executive', name: '회사담당임원' },
-  { key: 'company_safety_representative', name: '회사안전대표' },
+  { key: "site_person_in_charge", name: "현장담당자" },
+  { key: "site_foreman", name: "현장반장" },
+  { key: "office_manager", name: "사무실관리자" },
+  { key: "construction_affairs", name: "공무" },
+  { key: "site_director", name: "현장소장" },
+  { key: "project_pm", name: "프로젝트PM" },
+  { key: "company_contact", name: "회사담당자" },
+  { key: "company_manager", name: "회사관리자" },
+  { key: "company_executive", name: "회사담당임원" },
+  { key: "company_safety_representative", name: "회사안전대표" },
 ];
 ```
 
@@ -2045,7 +2044,6 @@ Backend service levelda transaction bilan tekshiriladi:
 6. Admin UI /admin/mqtt-commands sahifasida status ko'rinadi.
 7. Alarm level/fault filter/node register commandlari ham auditable bo'ladi.
 ```
-
 
 ### 15.7 Alarm occurrence count edge cases
 
