@@ -1,0 +1,7 @@
+85a13275b65228fde53108d697a0c3e36177d6a9538f3fcc47e4853f2026f7e7  reference/source-materials/GSS-web-dashboard-V.2.0ZIP.zip
+ae7b53ab036d25f5268bb03378d80265fe3dbce00e42fa7e6d1d85ef40b9b822  reference/source-materials/gss-iot-rbac-requirements-ai-ready-v2.md
+2d7ecafa6d7697ae9722b7c9e3d07db72fd4446a28789c145b9ff64543e20169  reference/source-materials/parfumbox-main.zip
+c2d9f8ceeb00e8d5f3940e49874cd0cb11181793a154263459d74d53488df7bc  reference/source-materials/parfumbox-rbac-reference.md
+384e94fa08cb55e448d46bcc1f1610662217e69dc6a3a2f5b0a65daac7d36d91  assets/legacy-node-types/angle-node.png
+997e51e9d57000de272d1c135657b258179c02973f34978410b0b943a43a891d  assets/legacy-node-types/door-node.png
+7211cbf0aa59127bbca678eaf5f3e7555e6024d07b79de525f6be002a9751053  assets/legacy-node-types/gangform.png

@@ -1,0 +1,8 @@
+# Project-scoped Codex configuration. Codex loads this only after the project is trusted.
+project_doc_max_bytes = 65536
+project_doc_fallback_filenames = ["CODEX_GUIDE.md"]
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false
