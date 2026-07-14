@@ -4,6 +4,10 @@ const nodeEnvSchema = z.enum(["development", "test", "production"]).default("dev
 
 export const apiEnvSchema = z.object({
   DATABASE_URL: z.string().url(),
+  GSS_SUPER_ADMIN_EMAIL: z.string().email(),
+  GSS_SUPER_ADMIN_PASSWORD: z.string().min(12),
+  JWT_EXPIRES_IN: z.coerce.number().int().positive().default(900),
+  JWT_SECRET: z.string().min(32),
   MQTT_BROKER_URL: z.string().url(),
   MQTT_TOPIC_BASE: z.string().min(1),
   NODE_ENV: nodeEnvSchema,

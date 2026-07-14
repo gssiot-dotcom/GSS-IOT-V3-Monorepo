@@ -6,3 +6,203 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum PermissionScopeType {
+  GSS
+  COMPANY
+  BOTH
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AccessLevel {
+  VIEW
+  MANAGE
+}
+
+model Permission {
+  id               String                    @id @default(uuid()) @db.Uuid
+  key              String                    @unique
+  module           String
+  action           String
+  scopeType        PermissionScopeType
+  description      String?
+  gssRoleLinks     GssRolePermission[]
+  gssAdminUserLinks GssAdminUserPermission[]
+  companyRoleLinks CompanyRolePermission[]
+  companyUserLinks CompanyUserPermission[]
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+}
+
+model GssRole {
+  id            String              @id @default(uuid()) @db.Uuid
+  key           String              @unique
+  name          String
+  isSuperAdmin  Boolean             @default(false)
+  isSystem      Boolean             @default(false)
+  users         GssAdminUser[]
+  permissions   GssRolePermission[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+}
+
+model GssAdminUser {
+  id              String                    @id @default(uuid()) @db.Uuid
+  roleId          String                    @db.Uuid
+  role            GssRole                   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  name            String
+  email           String                    @unique
+  passwordHash    String
+  phone           String?
+  isActive        Boolean                   @default(true)
+  tokenVersion    Int                       @default(0)
+  lastLoginAt     DateTime?
+  permissions     GssAdminUserPermission[]
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+}
+
+model GssRolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         GssRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model GssAdminUserPermission {
+  adminUserId  String           @db.Uuid
+  permissionId String           @db.Uuid
+  effect       PermissionEffect @default(ALLOW)
+  adminUser    GssAdminUser     @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  permission   Permission       @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([adminUserId, permissionId])
+}
+
+model Company {
+  id        String                 @id @default(uuid()) @db.Uuid
+  name      String
+  code      String?                @unique
+  status    CompanyStatus          @default(ACTIVE)
+  areas     ConstructionArea[]
+  buildings ConstructionBuilding[]
+  roles     CompanyRole[]
+  users     CompanyUser[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+}
+
+model ConstructionArea {
+  id        String                 @id @default(uuid()) @db.Uuid
+  companyId String                 @db.Uuid
+  company   Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name      String
+  status    CompanyStatus          @default(ACTIVE)
+  buildings ConstructionBuilding[]
+  userAccess CompanyUserAreaAccess[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@unique([companyId, name])
+}
+
+model ConstructionBuilding {
+  id         String                     @id @default(uuid()) @db.Uuid
+  companyId  String                     @db.Uuid
+  areaId     String                     @db.Uuid
+  company    Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  area       ConstructionArea           @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  title      String
+  status     CompanyStatus              @default(ACTIVE)
+  userAccess CompanyUserBuildingAccess[]
+  createdAt  DateTime                   @default(now())
+  updatedAt  DateTime                   @updatedAt
+
+  @@unique([areaId, title])
+}
+
+model CompanyRole {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  companyId          String?                 @db.Uuid
+  company            Company?                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  key                String
+  name               String
+  isSystem           Boolean                 @default(false)
+  isCompanyOwnerRole Boolean                 @default(false)
+  users              CompanyUser[]
+  permissions        CompanyRolePermission[]
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@unique([companyId, key])
+}
+
+model CompanyUser {
+  id           String                      @id @default(uuid()) @db.Uuid
+  companyId    String                      @db.Uuid
+  roleId       String                      @db.Uuid
+  company      Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  role         CompanyRole                 @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  name         String
+  email        String                      @unique
+  passwordHash String
+  phone        String?
+  isActive     Boolean                     @default(true)
+  tokenVersion Int                         @default(0)
+  lastLoginAt  DateTime?
+  permissions  CompanyUserPermission[]
+  areaAccess   CompanyUserAreaAccess[]
+  buildingAccess CompanyUserBuildingAccess[]
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+}
+
+model CompanyRolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         CompanyRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model CompanyUserPermission {
+  companyUserId String           @db.Uuid
+  permissionId  String           @db.Uuid
+  effect        PermissionEffect @default(ALLOW)
+  companyUser   CompanyUser      @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
+  permission    Permission       @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([companyUserId, permissionId])
+}
+
+model CompanyUserAreaAccess {
+  companyUserId String      @db.Uuid
+  areaId        String      @db.Uuid
+  accessLevel   AccessLevel @default(VIEW)
+  companyUser   CompanyUser @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
+  area          ConstructionArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  @@id([companyUserId, areaId])
+}
+
+model CompanyUserBuildingAccess {
+  companyUserId String      @db.Uuid
+  buildingId    String      @db.Uuid
+  accessLevel   AccessLevel @default(VIEW)
+  companyUser   CompanyUser @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
+  building      ConstructionBuilding @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@id([companyUserId, buildingId])
+}

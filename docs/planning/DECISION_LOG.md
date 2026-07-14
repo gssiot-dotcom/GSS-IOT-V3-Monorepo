@@ -80,3 +80,93 @@ Files affected:
 **Consequences:** `pnpm typecheck` and `pnpm build` have one consistent dependency order, while package boundaries remain explicit for later feature work.
 
 **Files affected:** `tsconfig.json`, `tsconfig.base.json`, `apps/api/tsconfig.build.json`, `apps/web/tsconfig.build.json`, `packages/*/package.json`.
+
+## DEC-2026-008
+
+**Status:** accepted
+
+**Context:** The blueprint migration appendix labels inventory extraction as Phase 1, while the repository delivery plan and approved Phase 1 prompt define the next deliverable as database/auth/RBAC foundation.
+
+**Decision:** Repository delivery phases follow the approved prompt and planning documents. The blueprint appendix remains an architectural migration sequence, not the execution phase numbering.
+
+**Consequences:** Phase 1 implements the RBAC foundation without starting legacy inventory migration.
+
+## DEC-2026-009
+
+**Status:** accepted
+
+**Context:** `PAGE_INVENTORY.md` uses prefixed permission keys and construction-site terminology that conflict with the authoritative architecture blueprint.
+
+**Decision:** Use the blueprint's unprefixed `module.action` permission keys and `ConstructionArea`/`areas` persistence terminology. Korean UI copy may still use the normalized construction-site translation key.
+
+**Consequences:** Page inventory documentation will be reconciled in a documentation-focused follow-up; Phase 1 does not introduce a second permission namespace.
+
+## DEC-2026-010
+
+**Status:** accepted
+
+**Context:** Token transport, lifetime, and revocation were not previously specified.
+
+**Decision:** Phase 1 uses separate short-lived bearer JWT contexts with explicit audiences and per-user `tokenVersion` invalidation on logout. A logout invalidates all active tokens for that user; refresh-token and per-device session support are deferred.
+
+**Consequences:** The API checks the persisted user status and token version on every authenticated request. The web application keeps the access token in memory for this foundation.
+
+## DEC-2026-011
+
+**Status:** accepted
+
+**Context:** Phase 1 API E2E verification must use the same local environment source as the runtime API. The API entry point loads `apps/api/.env` through `dotenv/config`, while the E2E setup previously only supplied fallback values.
+
+**Decision:** Load `dotenv/config` first in the API E2E setup, then retain non-secret fallback values only for absent test environment variables.
+
+**Consequences:** Runtime and API E2E commands use the same configured `DATABASE_URL` when `apps/api/.env` exists. This does not change authentication, RBAC, database architecture, or deployment configuration.
+
+**Files affected:** `apps/api/test/setup-env.ts`.
+
+## DEC-2026-012
+
+**Status:** accepted
+
+**Context:** Phase 1 verification confirmed that the API runtime and API E2E both load `apps/api/.env`, and that PostgreSQL accepts the corrected credentials but reports `P1003` because the configured `gss_iot_v3` database does not exist.
+
+**Decision:** Do not alter application architecture, credentials, migrations, or seed behavior to compensate for the missing database. Database provisioning remains an external environment prerequisite.
+
+**Consequences:** Phase 1 remains blocked until the target database is provisioned and the existing migration, seed, and API E2E commands pass.
+
+**Files affected:** `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`.
+
+## DEC-2026-013
+
+**Status:** accepted
+
+**Context:** Database seed verification found that the `platform_manager` company role template received GSS-only permissions from the complete catalog.
+
+**Decision:** Company role templates may receive only permissions whose scope type is `COMPANY` or `BOTH`. GSS-only permissions remain available only to GSS roles.
+
+**Consequences:** The seed preserves separate GSS and Company authorization contexts while keeping `platform_manager` as the most privileged company template.
+
+**Files affected:** `apps/api/prisma/seed.ts`.
+
+## DEC-2026-014
+
+**Status:** accepted
+
+**Context:** Database-backed API E2E found that login attempted to provide the JWT audience both in the payload and signing options, which the JWT library rejects.
+
+**Decision:** Set the JWT audience through the signing options only; the verified payload type permits the resulting `aud` claim.
+
+**Consequences:** GSS and Company token issuance retains explicit audience separation and the RBAC E2E suite can exercise authenticated endpoints.
+
+**Files affected:** `apps/api/src/common/auth.types.ts`, `apps/api/src/modules/auth/auth.service.ts`.
+
+## DEC-2026-015
+
+**Status:** accepted
+
+**Context:** The external `gss_iot_v3` database prerequisite was completed and Phase 1 migration, seed, RBAC verification, idempotency check, and quality gates were rerun successfully.
+
+**Decision:** Record Phase 1 as complete. Do not start Phase 2 without an explicit prompt.
+
+**Consequences:** The applied migration history is preserved; any future schema change must use a new forward migration. The canonical seed can be rerun safely without duplicating permissions, roles, templates, or the GSS super admin.
+
+**Files affected:** `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/DECISION_LOG.md`.

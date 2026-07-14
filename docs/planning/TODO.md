@@ -14,19 +14,20 @@
 
 ## Phase 1
 
-- [ ] Create Prisma schema foundation.
-- [ ] Create permission catalog constants and seed.
-- [ ] Implement GSS admin auth.
-- [ ] Implement company auth.
-- [ ] Implement permission resolver.
-- [ ] Implement company/site/building scope guards.
-- [ ] Implement self-lockout protections.
+- [x] Create Prisma schema foundation and initial migration.
+- [x] Create permission catalog and default-role/super-admin seed.
+- [x] Implement GSS admin auth.
+- [x] Implement company auth.
+- [x] Implement permission resolver.
+- [x] Implement company/area/building scope guards.
+- [x] Implement self-lockout protections.
+- [x] Verify the `gss_iot_v3` database, apply migration, seed idempotently, verify RBAC data and run database-backed API E2E.
 
 ## UI foundation
 
 - [ ] Create GSS Mantine theme.
-- [ ] Create shared layout and navigation.
-- [ ] Create route/action permission helpers.
+- [x] Create shared layout and permission-filtered placeholder navigation.
+- [x] Create route/action permission helpers.
 - [ ] Implement immutable legacy node-type selection card.
 - [ ] Add visual regression tests for core components.
 

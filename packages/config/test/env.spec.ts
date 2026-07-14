@@ -6,6 +6,10 @@ describe("loadApiEnv", () => {
   it("validates required infrastructure configuration", () => {
     const env = loadApiEnv({
       DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
+      GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
+      GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
+      JWT_EXPIRES_IN: "900",
+      JWT_SECRET: "test-only-jwt-secret-that-is-at-least-32-characters",
       MQTT_BROKER_URL: "mqtt://localhost:1883",
       MQTT_TOPIC_BASE: "GSSIOT/01030369081",
       NODE_ENV: "test",
