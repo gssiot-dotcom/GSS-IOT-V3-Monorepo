@@ -25,11 +25,21 @@
 
 ## UI foundation
 
-- [ ] Create GSS Mantine theme.
+- [x] Create GSS Mantine theme.
 - [x] Create shared layout and permission-filtered placeholder navigation.
 - [x] Create route/action permission helpers.
-- [ ] Implement immutable legacy node-type selection card.
-- [ ] Add visual regression tests for core components.
+- [x] Implement immutable legacy node-type selection card.
+- [x] Add visual/browser checks for core components.
+
+## Phase 2
+
+- [x] Export shared GSS theme and reusable UI primitives from `packages/ui`.
+- [x] Implement Admin and Company application shells with guarded sidebars, header, profile and notification affordances.
+- [x] Add universal loading, empty, error, forbidden and session-expired state components.
+- [x] Add i18n keys for shell, status, demo and monitoring fixture UI.
+- [x] Add a Phase 2 demo route and typed node-card fixtures without real organization/device data.
+- [x] Verify node-type card rendering through unit and browser checks.
+- [x] Configure local-development CORS for the actual Vite origins without weakening production defaults.
 
 ## Deferred
 

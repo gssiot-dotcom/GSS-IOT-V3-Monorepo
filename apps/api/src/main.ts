@@ -1,23 +1,17 @@
 import "reflect-metadata";
 import "dotenv/config";
 
-import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { loadApiEnv } from "@gss-iot/config";
 
 import { AppModule } from "./app.module";
+import { configureApiApp } from "./bootstrap";
 
 async function bootstrap(): Promise<void> {
   const env = loadApiEnv();
   const app = await NestFactory.create(AppModule);
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      forbidNonWhitelisted: true,
-      transform: true,
-      whitelist: true,
-    }),
-  );
+  configureApiApp(app, env);
 
   await app.listen(env.PORT);
 }

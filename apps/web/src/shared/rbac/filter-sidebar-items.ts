@@ -9,9 +9,9 @@ export interface SidebarItem {
   titleKey: TranslationKey;
 }
 
-export function filterSidebarItems(
-  items: SidebarItem[],
+export function filterSidebarItems<TItem extends SidebarItem>(
+  items: TItem[],
   session: AuthSession | undefined,
-): SidebarItem[] {
+): TItem[] {
   return items.filter((item) => hasPermission(session, item.permission));
 }

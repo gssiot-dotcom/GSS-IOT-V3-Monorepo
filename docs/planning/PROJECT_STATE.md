@@ -2,20 +2,22 @@
 
 ## Current phase
 
-`PHASE_1_COMPLETE`
+`PHASE_2_COMPLETE`
 
 ## Last completed milestone
 
-Phase 1 auth/RBAC foundation completed and verified against PostgreSQL on 2026-07-14. The configured `gss_iot_v3` database has the applied RBAC migration, idempotent seed data, and passing database-backed API E2E coverage.
+Phase 2 design system and application shells completed and verified on 2026-07-14. The repository now has the shared GSS Mantine theme, reusable shell/state/table/status/node-card primitives, guarded Admin and Company shell navigation, a Phase 2 demo route, and browser checks for the legacy node-type cards.
 
 ## Current repository status
 
-- Application source: NestJS API now has separate GSS Admin and Company JWT contexts, active-user enforcement, permission resolution, decorators and scope guards.
+- Application source: NestJS API keeps the Phase 1 separate GSS Admin and Company JWT contexts, active-user enforcement, permission resolution, decorators and scope guards.
 - Database schema: Prisma RBAC, organization hierarchy and scope-access foundation migration `20260714120000_rbac_foundation` applied to `gss_iot_v3`; `prisma migrate status` reports the schema up to date.
 - Seed: permission catalog, default GSS/company roles and environment-configured active GSS super admin seeded idempotently. Verification found 89 permissions, five GSS roles, five company role templates, and one active GSS super admin.
-- Frontend: in-memory auth bootstrap, auth/permission guards, permission-filtered sidebars and protected placeholder routes created.
+- Frontend: in-memory auth bootstrap, auth/permission guards, permission-filtered Admin/Company shells, protected placeholder routes, Phase 2 design-system demo route, universal UI states and legacy image-first node-type cards created.
+- Shared UI: `packages/ui` exports the normalized GSS Mantine theme, page header, data table/pagination footer, status badge, universal states and node-type selection card primitives.
+- Runtime configuration: API CORS is environment-driven through `CORS_ALLOWED_ORIGINS`; local development defaults support both `http://localhost:5173` and `http://127.0.0.1:5173`. Auth remains bearer-token based with no login cookies.
 - CI: template only
-- Quality gates: frozen install, Prisma validation, format, lint, typecheck, unit tests, build, API E2E, browser E2E and `git diff --check` pass.
+- Quality gates: frozen install, format, lint, typecheck, unit tests, build, API E2E, browser E2E, combined E2E, Prettier check and `git diff --check` pass. `git diff --check` reports only Git line-ending warnings on Windows.
 - Architecture blueprint: available
 - UI/UX specification: available
 - Legacy source archives: available
@@ -52,6 +54,10 @@ The API entry point and E2E setup load `apps/api/.env` through `dotenv/config`. 
 
 The database-backed integration suite is `apps/api/test/e2e/health.e2e-spec.ts` and `apps/api/test/e2e/rbac.e2e-spec.ts`. It verifies Prisma-backed API startup plus GSS super-admin bypass, inactive-user rejection, missing-permission rejection, same-company cross-building scope denial, cross-company scope denial, and GSS-token rejection on company endpoints. No standalone integration-test script is configured.
 
+Phase 2 UI verification includes `packages/ui/test/theme.spec.ts`, `packages/ui/test/node-type-card.spec.tsx`, `apps/web/src/test/App.spec.tsx`, `apps/web/src/test/rbac.spec.ts` and `apps/web/e2e/bootstrap.spec.ts`. The browser suite verifies the public `/phase-2/demo` route renders all three legacy node-type images and captures a non-empty node-card screenshot buffer.
+
+Runtime CORS verification covers `http://localhost:5173`, `http://127.0.0.1:5173`, unknown-origin rejection, GSS login followed by `/auth/gss/me`, company login CORS behavior and no-cookie bearer-token responses.
+
 ## Next action
 
-Await an explicit Phase 2 prompt. Do not begin Phase 2 work automatically.
+Await an explicit Phase 3 prompt. Do not begin Phase 3 work automatically.

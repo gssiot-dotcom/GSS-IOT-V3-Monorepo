@@ -1,6 +1,7 @@
 import { Controller, Get } from "@nestjs/common";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { loadApiEnv } from "@gss-iot/config";
 import { hash } from "bcrypt";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -10,6 +11,7 @@ import { CompanyEndpoint } from "../../src/common/decorators/company-endpoint.de
 import { RequirePermissions } from "../../src/common/decorators/require-permissions.decorator";
 import { RequireBuildingScope } from "../../src/common/decorators/require-scope.decorator";
 import { AppModule } from "../../src/app.module";
+import { configureApiApp } from "../../src/bootstrap";
 import { AuthModule } from "../../src/modules/auth/auth.module";
 import { PrismaService } from "../../src/prisma/prisma.service";
 
@@ -36,6 +38,8 @@ describe("RBAC e2e", () => {
   let prisma: PrismaService;
   let sameCompanyOtherBuildingId: string;
   let otherCompanyBuildingId: string;
+  const localhostOrigin = "http://localhost:5173";
+  const loopbackOrigin = "http://127.0.0.1:5173";
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -44,6 +48,10 @@ describe("RBAC e2e", () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    configureApiApp(app, {
+      ...loadApiEnv(),
+      CORS_ALLOWED_ORIGINS: [localhostOrigin, loopbackOrigin],
+    });
     await app.init();
     prisma = app.get(PrismaService);
 
@@ -165,6 +173,74 @@ describe("RBAC e2e", () => {
       .expect(201);
     return response.body.accessToken as string;
   }
+
+  it("allows local Vite origins during auth preflight", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+
+    for (const origin of [localhostOrigin, loopbackOrigin]) {
+      await request(server)
+        .options("/auth/gss/login")
+        .set("Origin", origin)
+        .set("Access-Control-Request-Method", "POST")
+        .set("Access-Control-Request-Headers", "content-type")
+        .expect(204)
+        .expect("Access-Control-Allow-Origin", origin);
+    }
+  });
+
+  it("does not allow unknown browser origins during auth preflight", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+
+    const response = await request(server)
+      .options("/auth/gss/login")
+      .set("Origin", "http://evil.example")
+      .set("Access-Control-Request-Method", "POST")
+      .set("Access-Control-Request-Headers", "content-type")
+      .expect(404);
+
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("adds CORS headers to GSS login and current-user requests without cookies", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+
+    const loginResponse = await request(server)
+      .post("/auth/gss/login")
+      .set("Origin", loopbackOrigin)
+      .send({ email: "super@example.com", password: "test-password" })
+      .expect(201)
+      .expect("Access-Control-Allow-Origin", loopbackOrigin);
+
+    expect(loginResponse.headers["set-cookie"]).toBeUndefined();
+    expect(loginResponse.body.context).toBe("gss-admin");
+
+    await request(server)
+      .get("/auth/gss/me")
+      .set("Origin", loopbackOrigin)
+      .set("Authorization", `Bearer ${loginResponse.body.accessToken as string}`)
+      .expect(200)
+      .expect("Access-Control-Allow-Origin", loopbackOrigin);
+  });
+
+  it("adds CORS headers to company login and current-user requests", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+
+    const loginResponse = await request(server)
+      .post("/auth/company/login")
+      .set("Origin", loopbackOrigin)
+      .send({ email: "scoped@example.com", password: "test-password" })
+      .expect(201)
+      .expect("Access-Control-Allow-Origin", loopbackOrigin);
+
+    expect(loginResponse.body.context).toBe("company-user");
+
+    await request(server)
+      .get("/auth/company/me")
+      .set("Origin", loopbackOrigin)
+      .set("Authorization", `Bearer ${loginResponse.body.accessToken as string}`)
+      .expect(200)
+      .expect("Access-Control-Allow-Origin", loopbackOrigin);
+  });
 
   it("allows a GSS super admin without explicit permission rows", async () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];

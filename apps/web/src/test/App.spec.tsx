@@ -16,4 +16,20 @@ describe("App", () => {
     expect(screen.getByTestId("app-root")).toBeTruthy();
     expect(screen.getByText("GSS IoT V3")).toBeTruthy();
   });
+
+  it("renders the Phase 2 design system demo route", () => {
+    window.history.pushState({}, "", "/phase-2/demo");
+
+    render(
+      <MantineProvider theme={gssTheme}>
+        <App />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByTestId("phase-2-demo")).toBeTruthy();
+    expect(screen.getByText("Design system demo")).toBeTruthy();
+    expect(screen.getByAltText("Door Node")).toBeTruthy();
+    expect(screen.getByAltText("Angle Node")).toBeTruthy();
+    expect(screen.getByAltText("Gangform Node")).toBeTruthy();
+  });
 });

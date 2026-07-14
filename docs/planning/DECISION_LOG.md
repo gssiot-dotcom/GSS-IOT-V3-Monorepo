@@ -170,3 +170,39 @@ Files affected:
 **Consequences:** The applied migration history is preserved; any future schema change must use a new forward migration. The canonical seed can be rerun safely without duplicating permissions, roles, templates, or the GSS super admin.
 
 **Files affected:** `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/DECISION_LOG.md`.
+
+## DEC-2026-016
+
+**Status:** accepted
+
+**Context:** Phase 2 added web component tests while the root `pnpm test` command runs API and web Vitest suites concurrently on Windows. The default web Vitest fork pool can fail with `spawn EPERM` in that concurrent run even when the web tests pass in isolation.
+
+**Decision:** Configure the web Vitest suite to use the `threads` pool.
+
+**Consequences:** The root workspace test gate runs reliably without changing application behavior, RBAC behavior, database schema, seed data or browser E2E coverage.
+
+**Files affected:** `apps/web/vitest.config.ts`.
+
+## DEC-2026-017
+
+**Status:** accepted
+
+**Context:** Phase 2 requires a browser-verifiable story/demo surface for shared UI primitives before real organization and device data exists.
+
+**Decision:** Add a public `/phase-2/demo` route that renders typed fixtures for the GSS theme, universal states, status/table primitives and the three legacy node-type cards. Keep real Admin and Company shell routes protected by the existing Phase 1 auth/permission guards.
+
+**Consequences:** Phase 2 browser checks can verify the UI foundation without adding mock business APIs or bypassing production auth behavior. Phase 3 can replace placeholders with real organization/user flows.
+
+**Files affected:** `apps/web/src/app/router.tsx`, `apps/web/src/features/shell/DesignSystemDemoPage.tsx`, `apps/web/e2e/bootstrap.spec.ts`.
+
+## DEC-2026-018
+
+**Status:** accepted
+
+**Context:** The Phase 2 web app runs from Vite at `http://127.0.0.1:5173` by default, while API requests target `http://localhost:3000`. Browsers treat `localhost` and `127.0.0.1` as different origins, and the API previously did not enable CORS.
+
+**Decision:** Add environment-driven API CORS configuration through `CORS_ALLOWED_ORIGINS`. Development and test defaults allow `http://localhost:5173` and `http://127.0.0.1:5173`; production defaults to no browser origins unless explicitly configured. Auth remains bearer-token based, so CORS credentials stay disabled and login does not set cookies.
+
+**Consequences:** Local browser login works from both Vite origins without using wildcard CORS or weakening RBAC/auth guards. Unknown browser origins do not receive CORS allow headers.
+
+**Files affected:** `packages/config/src/env.ts`, `apps/api/src/common/cors.ts`, `apps/api/src/bootstrap.ts`, `apps/api/src/main.ts`, `.env.example`, `apps/api/.env.example`, `apps/api/test/e2e/rbac.e2e-spec.ts`, `packages/config/test/env.spec.ts`.

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { filterSidebarItems } from "../shared/rbac/filter-sidebar-items";
 import { hasPermission } from "../shared/rbac/has-permission";
+import { companyNavItems } from "../features/shell/navigation";
 
 const session: AuthSession = {
   accessToken: "token",
@@ -37,5 +38,12 @@ describe("web RBAC helpers", () => {
         "permissions.manage",
       ),
     ).toBe(true);
+  });
+
+  it("keeps shell sidebar items mapped to permissions", () => {
+    const items = filterSidebarItems(companyNavItems, session);
+
+    expect(items.map((item) => item.path)).toEqual(["/company/buildings"]);
+    expect(companyNavItems.every((item) => item.permission.includes("."))).toBe(true);
   });
 });
