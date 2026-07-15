@@ -1,0 +1,452 @@
+import type { INestApplication } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
+import { loadApiEnv } from "@gss-iot/config";
+import { hash } from "bcrypt";
+import request from "supertest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { AppModule } from "../../src/app.module";
+import { configureApiApp } from "../../src/bootstrap";
+import { PrismaService } from "../../src/prisma/prisma.service";
+
+describe("Phase 4 device inventory e2e", () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let allowedAreaId: string;
+  let allowedBuildingId: string;
+  let sameCompanyOtherAreaId: string;
+  let sameCompanyOtherBuildingId: string;
+  let foreignBuildingId: string;
+  let companyAId: string;
+  let companyBId: string;
+  let doorNodeTypeId: string;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+
+    app = moduleRef.createNestApplication();
+    configureApiApp(app, loadApiEnv());
+    await app.init();
+    prisma = app.get(PrismaService);
+
+    await prisma.nodeGatewayAssignment.deleteMany();
+    await prisma.gatewayBuildingAssignment.deleteMany();
+    await prisma.companyDeviceAssignment.deleteMany();
+    await prisma.node.deleteMany();
+    await prisma.gateway.deleteMany();
+    await prisma.nodeType.deleteMany();
+    await prisma.auditLog.deleteMany();
+    await prisma.companyUserBuildingAccess.deleteMany();
+    await prisma.companyUserAreaAccess.deleteMany();
+    await prisma.companyUserPermission.deleteMany();
+    await prisma.companyRolePermission.deleteMany();
+    await prisma.companyUser.deleteMany();
+    await prisma.companyRole.deleteMany();
+    await prisma.constructionBuilding.deleteMany();
+    await prisma.constructionArea.deleteMany();
+    await prisma.company.deleteMany();
+    await prisma.gssAdminUserPermission.deleteMany();
+    await prisma.gssRolePermission.deleteMany();
+    await prisma.gssAdminUser.deleteMany();
+    await prisma.gssRole.deleteMany();
+    await prisma.permission.deleteMany();
+
+    const permissionKeys = [
+      "company-devices.view",
+      "devices.view",
+      "gateways.assign",
+      "gateways.create",
+      "gateways.update",
+      "gateways.view",
+      "gateway-node-connections.view",
+      "nodes.assign",
+      "nodes.create",
+      "nodes.update",
+      "nodes.view",
+    ];
+    await prisma.permission.createMany({
+      data: permissionKeys.map((key) => {
+        const [module, action] = key.split(".");
+        return {
+          action,
+          key,
+          module,
+          scopeType:
+            key.startsWith("company-") || key.startsWith("gateway-node") ? "COMPANY" : "GSS",
+        };
+      }),
+    });
+    const permissions = await prisma.permission.findMany();
+    const permissionByKey = new Map(permissions.map((permission) => [permission.key, permission]));
+    const gssPermissionIds = [
+      "devices.view",
+      "gateways.assign",
+      "gateways.create",
+      "gateways.update",
+      "gateways.view",
+      "nodes.assign",
+      "nodes.create",
+      "nodes.update",
+      "nodes.view",
+    ].map((key) => permissionByKey.get(key)!.id);
+    const companyPermissionIds = ["company-devices.view", "gateway-node-connections.view"].map(
+      (key) => permissionByKey.get(key)!.id,
+    );
+
+    const [superRole, deviceRole, noPermissionRole, companyRole] = await Promise.all([
+      prisma.gssRole.create({ data: { isSuperAdmin: true, key: "super", name: "Super" } }),
+      prisma.gssRole.create({
+        data: {
+          key: "device-manager",
+          name: "Device Manager",
+          permissions: {
+            createMany: { data: gssPermissionIds.map((permissionId) => ({ permissionId })) },
+          },
+        },
+      }),
+      prisma.gssRole.create({ data: { key: "none", name: "None" } }),
+      prisma.companyRole.create({
+        data: {
+          key: "scoped-company",
+          name: "Scoped Company",
+          permissions: {
+            createMany: { data: companyPermissionIds.map((permissionId) => ({ permissionId })) },
+          },
+        },
+      }),
+    ]);
+    const noPermissionCompanyRole = await prisma.companyRole.create({
+      data: { key: "company-none", name: "Company None" },
+    });
+    const passwordHash = await hash("test-password", 12);
+    await Promise.all([
+      prisma.gssAdminUser.create({
+        data: {
+          email: "phase4-super@example.com",
+          name: "Super",
+          passwordHash,
+          roleId: superRole.id,
+        },
+      }),
+      prisma.gssAdminUser.create({
+        data: {
+          email: "phase4-device@example.com",
+          name: "Device Manager",
+          passwordHash,
+          roleId: deviceRole.id,
+        },
+      }),
+      prisma.gssAdminUser.create({
+        data: {
+          email: "phase4-none@example.com",
+          name: "No Permission",
+          passwordHash,
+          roleId: noPermissionRole.id,
+        },
+      }),
+    ]);
+
+    const [companyA, companyB] = await Promise.all([
+      prisma.company.create({ data: { name: "Phase 4 Company A" } }),
+      prisma.company.create({ data: { name: "Phase 4 Company B" } }),
+    ]);
+    companyAId = companyA.id;
+    companyBId = companyB.id;
+    const [allowedArea, otherArea, foreignArea] = await Promise.all([
+      prisma.constructionArea.create({ data: { companyId: companyA.id, name: "Allowed Area" } }),
+      prisma.constructionArea.create({ data: { companyId: companyA.id, name: "Other Area" } }),
+      prisma.constructionArea.create({ data: { companyId: companyB.id, name: "Foreign Area" } }),
+    ]);
+    allowedAreaId = allowedArea.id;
+    sameCompanyOtherAreaId = otherArea.id;
+    const [allowedBuilding, otherBuilding, foreignBuilding] = await Promise.all([
+      prisma.constructionBuilding.create({
+        data: { areaId: allowedArea.id, companyId: companyA.id, title: "Allowed Building" },
+      }),
+      prisma.constructionBuilding.create({
+        data: { areaId: otherArea.id, companyId: companyA.id, title: "Other Building" },
+      }),
+      prisma.constructionBuilding.create({
+        data: { areaId: foreignArea.id, companyId: companyB.id, title: "Foreign Building" },
+      }),
+    ]);
+    allowedBuildingId = allowedBuilding.id;
+    sameCompanyOtherBuildingId = otherBuilding.id;
+    foreignBuildingId = foreignBuilding.id;
+
+    const scopedUser = await prisma.companyUser.create({
+      data: {
+        companyId: companyA.id,
+        email: "phase4-scoped@example.com",
+        name: "Scoped",
+        passwordHash,
+        roleId: companyRole.id,
+      },
+    });
+    await Promise.all([
+      prisma.companyUserAreaAccess.create({
+        data: { areaId: allowedArea.id, companyUserId: scopedUser.id },
+      }),
+      prisma.companyUserBuildingAccess.create({
+        data: { buildingId: allowedBuilding.id, companyUserId: scopedUser.id },
+      }),
+      prisma.companyUser.create({
+        data: {
+          companyId: companyA.id,
+          email: "phase4-company-none@example.com",
+          name: "Company No Permission",
+          passwordHash,
+          roleId: noPermissionCompanyRole.id,
+        },
+      }),
+      prisma.companyUser.create({
+        data: {
+          companyId: companyA.id,
+          email: "phase4-deny@example.com",
+          name: "Direct Deny",
+          passwordHash,
+          permissions: {
+            create: {
+              effect: "DENY",
+              permissionId: permissionByKey.get("company-devices.view")!.id,
+            },
+          },
+          roleId: companyRole.id,
+        },
+      }),
+      prisma.companyUser.create({
+        data: {
+          companyId: companyA.id,
+          email: "phase4-inactive@example.com",
+          isActive: false,
+          name: "Inactive",
+          passwordHash,
+          roleId: companyRole.id,
+        },
+      }),
+    ]);
+
+    const doorType = await prisma.nodeType.create({
+      data: {
+        displayName: "Door Node",
+        imageAssetKey: "door-node.png",
+        key: "door_node",
+        numericCode: 0,
+      },
+    });
+    doorNodeTypeId = doorType.id;
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  async function login(path: string, email: string): Promise<string> {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const response = await request(server)
+      .post(path)
+      .send({ email, password: "test-password" })
+      .expect(201);
+    return response.body.accessToken as string;
+  }
+
+  it("allows an authorized GSS device manager to create and assign inventory", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("/auth/gss/login", "phase4-device@example.com");
+
+    const nodeTypes = await request(server)
+      .get("/admin/devices/node-types")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(nodeTypes.body[0].key).toBe("door_node");
+
+    const gateway = await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-001" })
+      .expect(201);
+    const node = await request(server)
+      .post("/admin/devices/nodes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ nodeTypeId: doorNodeTypeId, number: "NODE-P4-001" })
+      .expect(201);
+
+    await request(server)
+      .post(`/admin/devices/gateways/${gateway.body.id}/company-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ companyId: companyAId })
+      .expect(201);
+    const assignedGateway = await request(server)
+      .post(`/admin/devices/gateways/${gateway.body.id}/building-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ buildingId: allowedBuildingId })
+      .expect(201);
+    expect(assignedGateway.body.buildingAssignments[0].buildingId).toBe(allowedBuildingId);
+
+    await request(server)
+      .post(`/admin/devices/nodes/${node.body.id}/company-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ companyId: companyAId })
+      .expect(201);
+    const assignedNode = await request(server)
+      .post(`/admin/devices/nodes/${node.body.id}/gateway-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayId: gateway.body.id })
+      .expect(201);
+    expect(assignedNode.body.gatewayAssignments[0].gatewayId).toBe(gateway.body.id);
+    expect(
+      await prisma.auditLog.count({ where: { entityType: { in: ["Gateway", "Node"] } } }),
+    ).toBeGreaterThanOrEqual(6);
+  });
+
+  it("preserves assignment history when gateways and nodes move", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("/auth/gss/login", "phase4-device@example.com");
+    const gateway = await prisma.gateway.findUniqueOrThrow({
+      where: { serialNumber: "GW-P4-001" },
+    });
+    const node = await prisma.node.findUniqueOrThrow({ where: { number: "NODE-P4-001" } });
+    const secondGateway = await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-002" })
+      .expect(201);
+    await request(server)
+      .post(`/admin/devices/gateways/${secondGateway.body.id}/company-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ companyId: companyAId })
+      .expect(201);
+
+    await request(server)
+      .post(`/admin/devices/gateways/${gateway.id}/building-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ buildingId: sameCompanyOtherBuildingId })
+      .expect(201);
+    await request(server)
+      .post(`/admin/devices/nodes/${node.id}/gateway-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayId: secondGateway.body.id })
+      .expect(201);
+
+    expect(
+      await prisma.gatewayBuildingAssignment.count({
+        where: { gatewayId: gateway.id, status: "ACTIVE" },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.gatewayBuildingAssignment.count({
+        where: { gatewayId: gateway.id, status: "ENDED" },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.nodeGatewayAssignment.count({ where: { nodeId: node.id, status: "ACTIVE" } }),
+    ).toBe(1);
+    expect(
+      await prisma.nodeGatewayAssignment.count({ where: { nodeId: node.id, status: "ENDED" } }),
+    ).toBe(1);
+  });
+
+  it("rejects missing permissions, direct deny, and inactive users", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const gssNoneToken = await login("/auth/gss/login", "phase4-none@example.com");
+    await request(server)
+      .get("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${gssNoneToken}`)
+      .expect(403);
+
+    const companyNoneToken = await login("/auth/company/login", "phase4-company-none@example.com");
+    await request(server)
+      .get("/company/devices")
+      .set("Authorization", `Bearer ${companyNoneToken}`)
+      .expect(403);
+
+    const denyToken = await login("/auth/company/login", "phase4-deny@example.com");
+    await request(server)
+      .get("/company/devices")
+      .set("Authorization", `Bearer ${denyToken}`)
+      .expect(403);
+    await request(server)
+      .post("/auth/company/login")
+      .send({ email: "phase4-inactive@example.com", password: "test-password" })
+      .expect(401);
+  });
+
+  it("enforces company, area, and building scope for company device reads", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("/auth/company/login", "phase4-scoped@example.com");
+
+    await request(server)
+      .get("/company/devices")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    await request(server)
+      .get(`/company/areas/${allowedAreaId}/devices`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    await request(server)
+      .get(`/company/buildings/${allowedBuildingId}/devices`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    await request(server)
+      .get(`/company/areas/${sameCompanyOtherAreaId}/devices`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+    await request(server)
+      .get(`/company/buildings/${sameCompanyOtherBuildingId}/devices`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+    await request(server)
+      .get(`/company/buildings/${foreignBuildingId}/gateway-node-connections`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+  });
+
+  it("rejects validation errors, cross-company assignments, and unassigned gateway-building links", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("/auth/gss/login", "phase4-device@example.com");
+
+    await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "bad", serialNumber: "GW-P4-BAD" })
+      .expect(400);
+
+    const unassignedGateway = await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-UNASSIGNED" })
+      .expect(201);
+    await request(server)
+      .post(`/admin/devices/gateways/${unassignedGateway.body.id}/building-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ buildingId: allowedBuildingId })
+      .expect(409);
+
+    const foreignGateway = await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-FOREIGN" })
+      .expect(201);
+    await request(server)
+      .post(`/admin/devices/gateways/${foreignGateway.body.id}/company-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ companyId: companyBId })
+      .expect(201);
+    await request(server)
+      .post(`/admin/devices/gateways/${foreignGateway.body.id}/building-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ buildingId: allowedBuildingId })
+      .expect(403);
+  });
+
+  it("allows GSS super admin bypass for Phase 4 protected endpoints", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("/auth/gss/login", "phase4-super@example.com");
+
+    await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "SECURITY_OFFICE_GATEWAY", serialNumber: "GW-P4-SUPER" })
+      .expect(201);
+  });
+});

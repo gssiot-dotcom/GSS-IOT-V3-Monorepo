@@ -55,6 +55,12 @@ describe("RBAC e2e", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
+    await prisma.nodeGatewayAssignment.deleteMany();
+    await prisma.gatewayBuildingAssignment.deleteMany();
+    await prisma.companyDeviceAssignment.deleteMany();
+    await prisma.node.deleteMany();
+    await prisma.gateway.deleteMany();
+    await prisma.nodeType.deleteMany();
     await prisma.companyUserBuildingAccess.deleteMany();
     await prisma.companyUserAreaAccess.deleteMany();
     await prisma.companyUserPermission.deleteMany();

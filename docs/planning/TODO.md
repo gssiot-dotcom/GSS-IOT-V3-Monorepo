@@ -51,6 +51,17 @@
 - [x] Add Phase 3 API E2E coverage for company boundaries, position scope, global-permission denial and last platform-manager self-lockout.
 - [x] Replace relevant Phase 2 placeholders with shared-shell Admin company creation and Company organization/user/role management screens.
 
+## Phase 4
+
+- [x] Add canonical `NodeType`, `Gateway` and `Node` inventory schema with the three legacy node types seeded idempotently.
+- [x] Add `CompanyDeviceAssignment`, `GatewayBuildingAssignment` and `NodeGatewayAssignment` history tables with one active gateway-building assignment and one active node-gateway assignment.
+- [x] Add transaction-backed GSS Admin APIs for gateway/node create, update, company assignment, building assignment and gateway assignment.
+- [x] Add Company Dashboard device snapshot APIs with company, area and building scope enforcement.
+- [x] Add audit logs for Phase 4 create, update, assign, unassign and move operations.
+- [x] Add Admin and Company device pages behind route, sidebar and action-level permission checks.
+- [x] Add Phase 4 E2E coverage for authorization, direct deny, inactive login rejection, scope denial, cross-company assignment rejection, validation/conflict cases, move history, super-admin bypass and audit creation.
+- [x] Apply `20260714170000_device_inventory_assignments` without resetting the database and verify normal seed idempotency.
+
 ## Deferred
 
-See `IMPLEMENTATION_PLAN.md` for Phase 4 and later phases.
+See `IMPLEMENTATION_PLAN.md` for Phase 5 and later phases. MQTT command publishing, GatewayCommand outbox, sensor ingestion, realtime monitoring, alarms and reports were not started in Phase 4.

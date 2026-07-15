@@ -34,6 +34,8 @@ export interface AuthSession {
 export type CompanyStatus = "ACTIVE" | "INACTIVE";
 export type AccessLevel = "VIEW" | "MANAGE";
 export type PermissionEffect = "ALLOW" | "DENY";
+export type DeviceLifecycleStatus = "ACTIVE" | "INACTIVE" | "RETIRED";
+export type GatewayType = "NODES_GATEWAY" | "SECURITY_OFFICE_GATEWAY";
 
 export interface CompanyRecord {
   id: string;
@@ -98,4 +100,62 @@ export interface CompanyPermissionRecord {
   key: string;
   module: string;
   action: string;
+}
+
+export interface NodeTypeRecord {
+  id: string;
+  key: "door_node" | "angle_node" | "gangform_node" | string;
+  displayName: string;
+  numericCode: number;
+  imageAssetKey: string;
+}
+
+export interface ActiveCompanyAssignmentRecord {
+  id: string;
+  companyId: string;
+  assignedAt: string;
+  company?: { name: string };
+}
+
+export interface ActiveBuildingAssignmentRecord {
+  id: string;
+  buildingId: string;
+  assignedAt: string;
+  building: { areaId: string; companyId: string; title: string };
+}
+
+export interface ActiveGatewayAssignmentRecord {
+  id: string;
+  gatewayId: string;
+  assignedAt: string;
+  gateway: { serialNumber: string };
+}
+
+export interface GatewayRecord {
+  id: string;
+  serialNumber: string;
+  gatewayType: GatewayType;
+  status: DeviceLifecycleStatus;
+  installedLocation: string | null;
+  lastSeenAt: string | null;
+  companyAssignments: ActiveCompanyAssignmentRecord[];
+  buildingAssignments: ActiveBuildingAssignmentRecord[];
+}
+
+export interface NodeRecord {
+  id: string;
+  nodeTypeId: string;
+  number: string;
+  status: DeviceLifecycleStatus;
+  installedLocation: string | null;
+  batteryLevel: number | null;
+  lastSeenAt: string | null;
+  nodeType: NodeTypeRecord;
+  companyAssignments: ActiveCompanyAssignmentRecord[];
+  gatewayAssignments: ActiveGatewayAssignmentRecord[];
+}
+
+export interface CompanyDeviceSnapshot {
+  gateways: GatewayRecord[];
+  nodes: NodeRecord[];
 }

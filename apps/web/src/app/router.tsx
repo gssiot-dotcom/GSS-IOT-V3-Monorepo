@@ -5,6 +5,8 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { LoginPage } from "../features/auth/LoginPage";
 import { CompanyRolesPage } from "../features/company-management/CompanyRolesPage";
 import { CompanyUsersPage } from "../features/company-management/CompanyUsersPage";
+import { AdminDevicesPage } from "../features/devices/AdminDevicesPage";
+import { CompanyDevicesPage } from "../features/devices/CompanyDevicesPage";
 import { CompaniesPage } from "../features/organizations/CompaniesPage";
 import { CompanyResourcesPage } from "../features/organizations/CompanyResourcesPage";
 import { DesignSystemDemoPage } from "../features/shell/DesignSystemDemoPage";
@@ -50,6 +52,8 @@ export function AppRouter(): ReactElement {
                       <DesignSystemDemoPage />
                     ) : item.path === "/admin/companies" ? (
                       <CompaniesPage />
+                    ) : item.path === "/admin/devices" ? (
+                      <AdminDevicesPage />
                     ) : (
                       <PlaceholderPage titleKey={item.titleKey} />
                     )}
@@ -65,6 +69,8 @@ export function AppRouter(): ReactElement {
                   <ProtectedPage context="company-user" permission={item.permission}>
                     {item.path.includes("/monitoring") ? (
                       <NodeTypeMonitoringPage />
+                    ) : item.path === "/company/devices" ? (
+                      <CompanyDevicesPage />
                     ) : item.path === "/company/areas" ? (
                       <CompanyResourcesPage resource="areas" />
                     ) : item.path === "/company/buildings" ? (

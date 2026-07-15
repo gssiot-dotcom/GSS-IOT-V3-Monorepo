@@ -96,6 +96,27 @@ const permissionCatalog = [
   ["settings.system.manage", PermissionScopeType.GSS],
 ] as const;
 
+const nodeTypeCatalog = [
+  {
+    displayName: "Door Node",
+    imageAssetKey: "door-node.png",
+    key: "door_node",
+    numericCode: 0,
+  },
+  {
+    displayName: "Angle Node",
+    imageAssetKey: "angle-node.png",
+    key: "angle_node",
+    numericCode: 1,
+  },
+  {
+    displayName: "Gangform Node",
+    imageAssetKey: "gangform.png",
+    key: "gangform_node",
+    numericCode: 2,
+  },
+] as const;
+
 function keys(...permissions: string[]): string[] {
   return permissions;
 }
@@ -147,6 +168,20 @@ async function main(): Promise<void> {
         update: { action, module, scopeType },
       });
     }),
+  );
+
+  await Promise.all(
+    nodeTypeCatalog.map((nodeType) =>
+      prisma.nodeType.upsert({
+        where: { key: nodeType.key },
+        create: nodeType,
+        update: {
+          displayName: nodeType.displayName,
+          imageAssetKey: nodeType.imageAssetKey,
+          numericCode: nodeType.numericCode,
+        },
+      }),
+    ),
   );
 
   const superAdminRole = await prisma.gssRole.upsert({

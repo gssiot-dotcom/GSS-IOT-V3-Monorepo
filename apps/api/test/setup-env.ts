@@ -1,7 +1,7 @@
 import "dotenv/config";
 
 process.env.DATABASE_URL ??=
-  "postgresql://gss_iot_v3:gss_iot_v3@localhost:5432/gss_iot_v3?schema=public";
+  "postgresql://postgres:yusuf2766@localhost:5432/gss_iot_v3?schema=public";
 process.env.GSS_SUPER_ADMIN_EMAIL ??= "admin@example.com";
 process.env.GSS_SUPER_ADMIN_PASSWORD ??= "change-this-super-admin-password";
 process.env.JWT_EXPIRES_IN ??= "900";

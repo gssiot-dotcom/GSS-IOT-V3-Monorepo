@@ -218,3 +218,15 @@ Files affected:
 **Consequences:** Organization and building-plan workflows have durable, permission- and scope-protected image references now. Binary upload and signed URL delivery will be added only with the future storage-provider decision.
 
 **Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260714150000_organization_users/migration.sql`, `apps/api/src/modules/organizations/`.
+
+## DEC-2026-020
+
+**Status:** accepted
+
+**Context:** Phase 4 requires gateway/node inventory and move/unassign history while preserving one active gateway-building assignment and one active node-gateway assignment. PostgreSQL unique constraints treat `NULL` values as distinct, so nullable `endedAt` alone is not a portable active-uniqueness key through Prisma.
+
+**Decision:** Store assignment history in additive Phase 4 tables with `status`, `assignedAt`, `unassignedAt` and an `activeKey`. Active rows use `activeKey = "active"`; ended rows copy their own assignment id into `activeKey`. Unique indexes over `(gatewayId, activeKey)` or `(nodeId, activeKey)` enforce the one-active-assignment invariant while preserving unlimited ended history rows.
+
+**Consequences:** Gateway and node moves are performed inside transactions that first end any current active row, then create the new active row and audit the change. MQTT command publishing, GatewayCommand outbox and sensor monitoring remain Phase 5/6 work.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260714170000_device_inventory_assignments/migration.sql`, `apps/api/src/modules/devices/`.

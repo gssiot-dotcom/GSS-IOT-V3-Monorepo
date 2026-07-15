@@ -6,6 +6,7 @@ import {
   IconClipboardList,
   IconDashboard,
   IconDeviceDesktopAnalytics,
+  IconDevices,
   IconHome,
   IconReportAnalytics,
   IconSettings,
@@ -109,6 +110,12 @@ export const companyNavItems: ShellNavItem[] = [
     path: "/company/buildings",
     permission: "buildings.view",
     titleKey: "nav.companyBuildings",
+  },
+  {
+    icon: IconDevices,
+    path: "/company/devices",
+    permission: "company-devices.view",
+    titleKey: "nav.companyDevices",
   },
   {
     icon: IconChartBar,
