@@ -7,6 +7,7 @@ import {
   IconDashboard,
   IconDeviceDesktopAnalytics,
   IconDevices,
+  IconExchange,
   IconHome,
   IconReportAnalytics,
   IconSettings,
@@ -47,6 +48,12 @@ export const adminNavItems: ShellNavItem[] = [
     path: "/admin/devices",
     permission: "devices.view",
     titleKey: "nav.adminDevices",
+  },
+  {
+    icon: IconExchange,
+    path: "/admin/gateway-commands",
+    permission: "mqtt-commands.view",
+    titleKey: "nav.adminGatewayCommands",
   },
   {
     icon: IconChartBar,

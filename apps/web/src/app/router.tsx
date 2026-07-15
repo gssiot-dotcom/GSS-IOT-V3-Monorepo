@@ -7,6 +7,7 @@ import { CompanyRolesPage } from "../features/company-management/CompanyRolesPag
 import { CompanyUsersPage } from "../features/company-management/CompanyUsersPage";
 import { AdminDevicesPage } from "../features/devices/AdminDevicesPage";
 import { CompanyDevicesPage } from "../features/devices/CompanyDevicesPage";
+import { GatewayCommandsPage } from "../features/gateway-commands/GatewayCommandsPage";
 import { CompaniesPage } from "../features/organizations/CompaniesPage";
 import { CompanyResourcesPage } from "../features/organizations/CompanyResourcesPage";
 import { DesignSystemDemoPage } from "../features/shell/DesignSystemDemoPage";
@@ -54,6 +55,8 @@ export function AppRouter(): ReactElement {
                       <CompaniesPage />
                     ) : item.path === "/admin/devices" ? (
                       <AdminDevicesPage />
+                    ) : item.path === "/admin/gateway-commands" ? (
+                      <GatewayCommandsPage />
                     ) : (
                       <PlaceholderPage titleKey={item.titleKey} />
                     )}

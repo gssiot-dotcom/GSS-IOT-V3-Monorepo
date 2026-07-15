@@ -54,6 +54,22 @@ enum AssignmentStatus {
   ENDED
 }
 
+enum GatewayCommandStatus {
+  PENDING
+  SENT
+  ACKNOWLEDGED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+enum GatewayCommandType {
+  REGISTER_NODES
+  WAKE_SECURITY
+  SET_ALARM_LEVELS
+  SET_FAULT_FILTER
+}
+
 enum AuditActorType {
   GSS_ADMIN
   COMPANY_USER
@@ -201,6 +217,7 @@ model Gateway {
   companyAssignments  CompanyDeviceAssignment[]
   buildingAssignments GatewayBuildingAssignment[]
   nodeAssignments     NodeGatewayAssignment[]
+  commands            GatewayCommand[]
   createdAt           DateTime                    @default(now())
   updatedAt           DateTime                    @updatedAt
 }
@@ -266,6 +283,39 @@ model NodeGatewayAssignment {
 
   @@unique([nodeId, activeKey])
   @@index([gatewayId, status])
+}
+
+model GatewayCommand {
+  id             String               @id @default(uuid()) @db.Uuid
+  gatewayId      String               @db.Uuid
+  gateway        Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  commandType    GatewayCommandType
+  commandNumber  Int
+  status         GatewayCommandStatus @default(PENDING)
+  topic          String
+  payload        Json
+  responsePayload Json?
+  requesterType  AuditActorType
+  requesterId    String?              @db.Uuid
+  correlationKey String
+  activeKey      String               @default("active")
+  attemptCount   Int                  @default(0)
+  maxAttempts    Int                  @default(3)
+  lastAttemptAt  DateTime?
+  sentAt         DateTime?
+  acknowledgedAt DateTime?
+  failedAt       DateTime?
+  expiresAt      DateTime
+  cancelledAt    DateTime?
+  failureReason  String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([gatewayId, commandNumber, activeKey])
+  @@unique([correlationKey, activeKey])
+  @@index([gatewayId, status])
+  @@index([status, expiresAt])
+  @@index([createdAt])
 }
 
 model CompanyRole {

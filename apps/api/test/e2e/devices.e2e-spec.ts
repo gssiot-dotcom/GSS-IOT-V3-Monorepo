@@ -29,6 +29,7 @@ describe("Phase 4 device inventory e2e", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
+    await prisma.gatewayCommand.deleteMany();
     await prisma.nodeGatewayAssignment.deleteMany();
     await prisma.gatewayBuildingAssignment.deleteMany();
     await prisma.companyDeviceAssignment.deleteMany();

@@ -62,6 +62,16 @@
 - [x] Add Phase 4 E2E coverage for authorization, direct deny, inactive login rejection, scope denial, cross-company assignment rejection, validation/conflict cases, move history, super-admin bypass and audit creation.
 - [x] Apply `20260714170000_device_inventory_assignments` without resetting the database and verify normal seed idempotency.
 
+## Phase 5
+
+- [x] Add `GatewayCommand` schema, status lifecycle, active uniqueness and indexes through forward migration `20260715120000_gateway_command_outbox`.
+- [x] Add safe MQTT configuration with disabled/fake local test mode and real broker settings behind validated environment variables.
+- [x] Implement MQTT topic generation, response parsing and typed legacy command adapters for `cmd 2`, `cmd 3`, `cmd 4` and `cmd 5`.
+- [x] Implement GatewayCommand outbox create, publish, acknowledge, retry, expire, cancel and reconnect processing services.
+- [x] Add GSS Admin gateway-command APIs and permission enforcement using `mqtt-commands.view` and `mqtt-commands.manage`.
+- [x] Add Admin `/admin/gateway-commands` status UI with list, detail, retry and cancel actions behind permission checks.
+- [x] Add unit and API E2E coverage for adapter payloads, topic parsing, malformed responses, status transitions, fake MQTT mode, permission denial, direct deny, inactive user, command lifecycle, audit logging and isolated fixtures.
+
 ## Deferred
 
-See `IMPLEMENTATION_PLAN.md` for Phase 5 and later phases. MQTT command publishing, GatewayCommand outbox, sensor ingestion, realtime monitoring, alarms and reports were not started in Phase 4.
+See `IMPLEMENTATION_PLAN.md` for Phase 6 and later phases. Sensor ingestion, latest node state, Socket.IO monitoring rooms, realtime monitoring pages, alarm occurrence counting, notifications and reports were not started in Phase 5.

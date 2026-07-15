@@ -36,6 +36,10 @@ export type AccessLevel = "VIEW" | "MANAGE";
 export type PermissionEffect = "ALLOW" | "DENY";
 export type DeviceLifecycleStatus = "ACTIVE" | "INACTIVE" | "RETIRED";
 export type GatewayType = "NODES_GATEWAY" | "SECURITY_OFFICE_GATEWAY";
+export type GatewayCommandStatus =
+  "PENDING" | "SENT" | "ACKNOWLEDGED" | "FAILED" | "EXPIRED" | "CANCELLED";
+export type GatewayCommandType =
+  "REGISTER_NODES" | "WAKE_SECURITY" | "SET_ALARM_LEVELS" | "SET_FAULT_FILTER";
 
 export interface CompanyRecord {
   id: string;
@@ -158,4 +162,30 @@ export interface NodeRecord {
 export interface CompanyDeviceSnapshot {
   gateways: GatewayRecord[];
   nodes: NodeRecord[];
+}
+
+export interface GatewayCommandRecord {
+  id: string;
+  gatewayId: string;
+  commandType: GatewayCommandType;
+  commandNumber: number;
+  status: GatewayCommandStatus;
+  topic: string;
+  payload: unknown;
+  responsePayload: unknown | null;
+  requesterType: "GSS_ADMIN" | "COMPANY_USER" | "SYSTEM";
+  requesterId: string | null;
+  correlationKey: string;
+  attemptCount: number;
+  maxAttempts: number;
+  lastAttemptAt: string | null;
+  sentAt: string | null;
+  acknowledgedAt: string | null;
+  failedAt: string | null;
+  expiresAt: string;
+  cancelledAt: string | null;
+  failureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  gateway: { id: string; serialNumber: string };
 }

@@ -230,3 +230,15 @@ Files affected:
 **Consequences:** Gateway and node moves are performed inside transactions that first end any current active row, then create the new active row and audit the change. MQTT command publishing, GatewayCommand outbox and sensor monitoring remain Phase 5/6 work.
 
 **Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260714170000_device_inventory_assignments/migration.sql`, `apps/api/src/modules/devices/`.
+
+## DEC-2026-021
+
+**Status:** accepted
+
+**Context:** Phase 5 must persist and correlate GatewayCommand outbox records for the legacy MQTT protocol, but the old `cmd 2/3/4/5` payloads do not include a durable command id.
+
+**Decision:** Gateway command acknowledgement matching uses gateway serial plus MQTT `cmd` number, and the database enforces only one non-terminal command per `gatewayId + commandNumber` using `activeKey = "active"`. Terminal commands copy their own id into `activeKey`.
+
+**Consequences:** A gateway response is never acknowledged by gateway serial alone. Duplicate acknowledgements are idempotently ignored after the command leaves `sent`, and operators must retry/cancel/expire a failed non-terminal command before another command with the same legacy `cmd` number can be active for that gateway.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260715120000_gateway_command_outbox/migration.sql`, `apps/api/src/modules/gateway-commands/`, `apps/api/src/modules/mqtt/`.

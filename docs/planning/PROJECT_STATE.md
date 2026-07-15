@@ -2,22 +2,25 @@
 
 ## Current phase
 
-`PHASE_4_COMPLETE`
+`PHASE_5_COMPLETE`
 
 ## Last completed milestone
 
-Phase 4 device inventory and assignment history completed and verified on 2026-07-14. The repository now has auditable gateway/node inventory, company device assignment, gateway-building assignment and node-gateway assignment flows behind the Phase 1 authorization boundary and Phase 3 scope model.
+Phase 5 MQTT command outbox completed and verified on 2026-07-15. The repository now has auditable GatewayCommand persistence, typed legacy MQTT command adapters, safe fake/local MQTT mode, publish/ack/retry/expire/cancel/reconnect lifecycle services and an Admin command status UI.
 
 ## Current repository status
 
 - Application source: NestJS API keeps the Phase 1 separate GSS Admin and Company JWT contexts, active-user enforcement, permission resolution, decorators and scope guards.
-- Database schema: Prisma RBAC, organization hierarchy, scope-access foundation and Phase 4 device history migration `20260714170000_device_inventory_assignments` applied to `gss_iot_v3`; `prisma migrate status` reports the schema up to date.
+- Database schema: Prisma RBAC, organization hierarchy, scope-access foundation, Phase 4 device history migration `20260714170000_device_inventory_assignments` and Phase 5 command migration `20260715120000_gateway_command_outbox` applied to `gss_iot_v3`; `prisma migrate status` reports the schema up to date.
 - Seed: permission catalog, default GSS/company roles, canonical node types and environment-configured active GSS super admin seeded idempotently.
 - Frontend: in-memory auth bootstrap, auth/permission guards, permission-filtered Admin/Company shells, protected placeholder routes, Phase 2 design-system demo route, universal UI states and legacy image-first node-type cards created.
 - Phase 3 API: guarded GSS Admin and Company endpoints manage companies, areas, buildings, storage-key image records, company users, company-owned roles, direct permissions, area/building access and scoped position assignments. Critical mutations write audit logs inside their database transactions.
 - Phase 3 UI: Admin company creation creates the initial platform manager; Company routes now render scoped area/building lists plus company-user and role management views using the shared Phase 2 shell and UI primitives.
 - Phase 4 API: guarded GSS Admin endpoints manage node types, gateway inventory, node inventory, company-device assignment, gateway-building assignment and node-gateway assignment. Company endpoints expose company, area and building scoped device snapshots. Critical create, update, assign, unassign and move operations write audit logs.
 - Phase 4 UI: Admin `/admin/devices` renders gateway/node inventory tables, create dialogs and permission-wrapped assignment actions. Company `/company/devices` renders assigned gateways and nodes through the shared shell.
+- Phase 5 API: guarded GSS Admin endpoints list, inspect, create, retry, cancel and expire GatewayCommands. Commands are persisted before publish and all publish, acknowledgement, retry, expiration and cancel transitions are audited.
+- Phase 5 MQTT: `MQTT_ENABLED=false` keeps local/test runs broker-free; `MQTT_FAKE_ACK=true` simulates publish acknowledgement for E2E and smoke tests. Real broker connection uses validated broker URL, client id, optional credentials, topic base and publish/command timeouts.
+- Phase 5 UI: Admin `/admin/gateway-commands` renders the command list, status badges, payload/response detail drawer, retry and cancel actions behind `mqtt-commands.view/manage`.
 - Shared UI: `packages/ui` exports the normalized GSS Mantine theme, page header, data table/pagination footer, status badge, universal states and node-type selection card primitives.
 - Runtime configuration: API CORS is environment-driven through `CORS_ALLOWED_ORIGINS`; local development defaults support both `http://localhost:5173` and `http://127.0.0.1:5173`. Auth remains bearer-token based with no login cookies.
 - CI: template only
@@ -65,10 +68,12 @@ Phase 3 verification includes `apps/api/test/e2e/rbac.e2e-spec.ts`. It now cover
 
 Phase 4 verification includes `apps/api/test/e2e/devices.e2e-spec.ts`. It covers authorized GSS device inventory creation and assignment, missing permission, direct deny, inactive company user login rejection, company/area/building scope denial, cross-company assignment rejection, validation errors, gateway/node move history, super-admin bypass and audit-log creation. Combined E2E was run against a temporary PostgreSQL schema so fixture cleanup did not touch normal development seed data.
 
+Phase 5 verification includes `apps/api/test/gateway-commands.spec.ts` and `apps/api/test/e2e/gateway-commands.e2e-spec.ts`. It covers topic generation, typed payload adapters, transition validation, malformed MQTT payload handling, MQTT-disabled and fake-ack modes, GSS command permissions, direct deny, inactive user, invalid gateway and payload validation, persisted-before-publish command creation, fake publish acknowledgement, retry, cancel, expiration, super-admin bypass and GatewayCommand audit logs.
+
 API, web, contracts, config and UI unit suites, API E2E, lint, typecheck, build and browser E2E pass.
 
 Runtime CORS verification covers `http://localhost:5173`, `http://127.0.0.1:5173`, unknown-origin rejection, GSS login followed by `/auth/gss/me`, company login CORS behavior and no-cookie bearer-token responses.
 
 ## Next action
 
-Await an explicit Phase 5 prompt. Do not begin MQTT, GatewayCommand outbox, monitoring, alarm or report work automatically.
+Await an explicit Phase 6 prompt. Do not begin sensor ingestion, latest node state, Socket.IO monitoring rooms, realtime monitoring UI, alarm occurrence counting, notifications or report work automatically.

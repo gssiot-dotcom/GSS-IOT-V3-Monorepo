@@ -3,6 +3,11 @@ import { z } from "zod";
 const nodeEnvSchema = z.enum(["development", "test", "production"]).default("development");
 const defaultDevelopmentCorsOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"];
 
+const booleanStringSchema = z
+  .enum(["true", "false", "1", "0"])
+  .optional()
+  .transform((value) => value === "true" || value === "1");
+
 function parseCorsAllowedOrigins(value: string | undefined, nodeEnv: string): string[] {
   const rawOrigins =
     value && value.trim().length > 0
@@ -38,7 +43,16 @@ const rawApiEnvSchema = z.object({
   JWT_EXPIRES_IN: z.coerce.number().int().positive().default(900),
   JWT_SECRET: z.string().min(32),
   MQTT_BROKER_URL: z.string().url(),
+  MQTT_CLIENT_ID: z.string().min(1).default("gss-iot-v3-api"),
+  MQTT_COMMAND_ACK_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  MQTT_COMMAND_EXPIRES_IN_SECONDS: z.coerce.number().int().positive().default(300),
+  MQTT_ENABLED: booleanStringSchema.default(false),
+  MQTT_FAKE_ACK: booleanStringSchema.default(false),
+  MQTT_MAX_PUBLISH_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  MQTT_PASSWORD: z.string().optional(),
+  MQTT_PUBLISH_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   MQTT_TOPIC_BASE: z.string().min(1),
+  MQTT_USERNAME: z.string().optional(),
   NODE_ENV: nodeEnvSchema,
   PORT: z.coerce.number().int().positive().default(3000),
   REDIS_URL: z.string().url(),

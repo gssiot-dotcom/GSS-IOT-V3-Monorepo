@@ -4,6 +4,9 @@ import { execSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+process.env.MQTT_ENABLED = "false";
+process.env.MQTT_FAKE_ACK = "true";
+
 const e2eSchema = process.env.GSS_E2E_SCHEMA ?? "gss_iot_v3_e2e";
 const baseDatabaseUrl = process.env.DATABASE_URL!;
 const databaseUrl = new URL(baseDatabaseUrl);
