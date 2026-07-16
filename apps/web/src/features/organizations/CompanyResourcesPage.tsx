@@ -4,12 +4,15 @@ import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
 import { Button, Modal, Select, Stack, TextInput } from "@mantine/core";
+import { IconPlugConnected } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { t } from "../../app/i18n";
 
 export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildings" }) {
   const { session } = useAuth();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<Array<AreaRecord | BuildingRecord>>();
   const [areas, setAreas] = useState<AreaRecord[]>([]);
   const [error, setError] = useState(false);
@@ -93,16 +96,30 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
               key: "actions",
               label: t("organizations.actions"),
               render: (row) => (
-                <Can permission={isAreas ? "areas.delete" : "buildings.delete"}>
-                  <Button
-                    color="red"
-                    onClick={() => void deactivate(row.id)}
-                    size="xs"
-                    variant="light"
-                  >
-                    {t("organizations.deactivate")}
-                  </Button>
-                </Can>
+                <Stack gap={6}>
+                  {!isAreas ? (
+                    <Can permission="monitoring.view">
+                      <Button
+                        leftSection={<IconPlugConnected size={16} />}
+                        onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)}
+                        size="xs"
+                        variant="light"
+                      >
+                        {t("monitoring.open")}
+                      </Button>
+                    </Can>
+                  ) : null}
+                  <Can permission={isAreas ? "areas.delete" : "buildings.delete"}>
+                    <Button
+                      color="red"
+                      onClick={() => void deactivate(row.id)}
+                      size="xs"
+                      variant="light"
+                    >
+                      {t("organizations.deactivate")}
+                    </Button>
+                  </Can>
+                </Stack>
               ),
             },
           ]}

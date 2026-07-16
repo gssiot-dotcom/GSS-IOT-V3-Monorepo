@@ -29,6 +29,8 @@ describe("Phase 4 device inventory e2e", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
+    await prisma.latestNodeState.deleteMany();
+    await prisma.sensorReading.deleteMany();
     await prisma.gatewayCommand.deleteMany();
     await prisma.nodeGatewayAssignment.deleteMany();
     await prisma.gatewayBuildingAssignment.deleteMany();
@@ -67,7 +69,7 @@ describe("Phase 4 device inventory e2e", () => {
     ];
     await prisma.permission.createMany({
       data: permissionKeys.map((key) => {
-        const [module, action] = key.split(".");
+        const [module, action] = key.split(".") as [string, string];
         return {
           action,
           key,

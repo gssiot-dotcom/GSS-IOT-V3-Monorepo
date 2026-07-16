@@ -72,6 +72,19 @@
 - [x] Add Admin `/admin/gateway-commands` status UI with list, detail, retry and cancel actions behind permission checks.
 - [x] Add unit and API E2E coverage for adapter payloads, topic parsing, malformed responses, status transitions, fake MQTT mode, permission denial, direct deny, inactive user, command lifecycle, audit logging and isolated fixtures.
 
+## Phase 6
+
+- [x] Add `SensorReading` and `LatestNodeState` schema through forward migration `20260715150000_phase_6_monitoring_realtime`.
+- [x] Add typed MQTT sensor parsing for door, angle and gangform/vertical legacy payloads.
+- [x] Persist valid unique sensor readings and upsert one latest-state row per node.
+- [x] Add MQTT deduplication using packet/message/sequence/measured-time keys with a documented no-ID fallback.
+- [x] Add GSS Admin and Company monitoring endpoints for building overview, node-type states and paginated sensor history.
+- [x] Enforce `monitoring.view`, `monitoring.realtime` and company building scope for HTTP and Socket.IO room joins.
+- [x] Add Socket.IO monitoring rooms and emit normalized node-state updates after persistence.
+- [x] Add Company Dashboard monitoring UI through scoped building selection, the three legacy node-type image cards, realtime state and node history.
+- [x] Document monitoring endpoints, Socket.IO rooms/events, MQTT payload normalization, dedupe, pagination and retention.
+- [x] Run the full Phase 6 verification command set and smoke test before marking the phase complete.
+
 ## Deferred
 
-See `IMPLEMENTATION_PLAN.md` for Phase 6 and later phases. Sensor ingestion, latest node state, Socket.IO monitoring rooms, realtime monitoring pages, alarm occurrence counting, notifications and reports were not started in Phase 5.
+Alarm occurrence counting, notifications, reports, partitioning, archival and external delivery providers remain deferred to Phase 7 or later.

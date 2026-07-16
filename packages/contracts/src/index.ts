@@ -40,6 +40,20 @@ export type GatewayCommandStatus =
   "PENDING" | "SENT" | "ACKNOWLEDGED" | "FAILED" | "EXPIRED" | "CANCELLED";
 export type GatewayCommandType =
   "REGISTER_NODES" | "WAKE_SECURITY" | "SET_ALARM_LEVELS" | "SET_FAULT_FILTER";
+export type CanonicalNodeType = "door_node" | "angle_node" | "gangform_node";
+export type MonitoringStatus = "safe" | "caution" | "warning" | "danger" | "offline";
+
+export interface DoorSensorValues {
+  batteryLevel: number | null;
+  doorState: "closed" | "open";
+}
+
+export interface AngleSensorValues {
+  angleX: number;
+  angleY: number;
+}
+
+export type SensorValues = DoorSensorValues | AngleSensorValues;
 
 export interface CompanyRecord {
   id: string;
@@ -162,6 +176,80 @@ export interface NodeRecord {
 export interface CompanyDeviceSnapshot {
   gateways: GatewayRecord[];
   nodes: NodeRecord[];
+}
+
+export interface MonitoringNodeStateRecord {
+  areaId: string;
+  building: { id: string; title: string };
+  buildingId: string;
+  companyId: string;
+  gateway: { id: string; serialNumber: string };
+  gatewayId: string;
+  lastSeenAt: string;
+  node: { id: string; installedLocation: string | null; number: string };
+  nodeId: string;
+  nodeType: NodeTypeRecord;
+  nodeTypeId: string;
+  status: MonitoringStatus;
+  updatedAt: string;
+  values: SensorValues;
+}
+
+export interface MonitoringBuildingNodeTypeSummary {
+  count: number;
+  latestStatus: MonitoringStatus | null;
+  nodeType: NodeTypeRecord;
+}
+
+export interface MonitoringBuildingOverview {
+  building: BuildingRecord;
+  nodeTypes: MonitoringBuildingNodeTypeSummary[];
+}
+
+export interface SensorReadingRecord {
+  buildingId: string;
+  gateway: { id: string; serialNumber: string };
+  gatewayId: string;
+  id: string;
+  measuredAt: string | null;
+  node: { id: string; installedLocation: string | null; number: string };
+  nodeId: string;
+  nodeType: NodeTypeRecord;
+  nodeTypeId: string;
+  receivedAt: string;
+  status: MonitoringStatus;
+  values: SensorValues;
+}
+
+export interface PaginatedSensorHistory {
+  items: SensorReadingRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface MonitoringNodeTypeResponse {
+  building: BuildingRecord;
+  historyRetentionDays: number;
+  nodeType: NodeTypeRecord;
+  states: MonitoringNodeStateRecord[];
+}
+
+export interface MonitoringRealtimeJoinRequest {
+  buildingId: string;
+  nodeType: CanonicalNodeType;
+}
+
+export interface MonitoringRealtimeJoinResponse {
+  ok: boolean;
+  room?: string;
+  error?: string;
+}
+
+export interface MonitoringNodeStateEvent {
+  buildingId: string;
+  nodeType: CanonicalNodeType;
+  state: MonitoringNodeStateRecord;
 }
 
 export interface GatewayCommandRecord {

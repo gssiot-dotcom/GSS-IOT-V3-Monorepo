@@ -1,8 +1,7 @@
 import "./setup-env";
 
 import { execSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 process.env.MQTT_ENABLED = "false";
 process.env.MQTT_FAKE_ACK = "true";
@@ -16,7 +15,7 @@ process.env.DATABASE_URL = databaseUrl.toString();
 
 if (process.env.GSS_E2E_SKIP_MIGRATE !== "true" && process.env.GSS_E2E_MIGRATED !== "true") {
   execSync("pnpm exec prisma migrate deploy", {
-    cwd: resolve(dirname(fileURLToPath(import.meta.url)), ".."),
+    cwd: resolve(__dirname, ".."),
     env: process.env,
     stdio: "inherit",
   });

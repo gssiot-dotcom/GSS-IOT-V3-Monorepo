@@ -1,0 +1,130 @@
+import { Inject, UnauthorizedException } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import {
+  ConnectedSocket,
+  MessageBody,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from "@nestjs/websockets";
+import type { OnGatewayInit } from "@nestjs/websockets";
+import { loadApiEnv } from "@gss-iot/config";
+import type {
+  MonitoringRealtimeJoinRequest,
+  MonitoringRealtimeJoinResponse,
+} from "@gss-iot/contracts";
+import type { Server, Socket } from "socket.io";
+
+import { AUTH_CONTEXT, type AuthTokenPayload } from "../../common/auth.types";
+import { PrismaService } from "../../prisma/prisma.service";
+import { roomName } from "./monitoring-mappers";
+import { MonitoringRealtimeService } from "./monitoring-realtime.service";
+import { MonitoringService } from "./monitoring.service";
+
+function corsOrigin(
+  origin: string | undefined,
+  callback: (error: Error | null, success?: boolean) => void,
+): void {
+  const allowed = loadApiEnv().CORS_ALLOWED_ORIGINS;
+  if (!origin || allowed.includes(origin)) {
+    callback(null, true);
+    return;
+  }
+  callback(new Error("Socket.IO origin is not allowed."));
+}
+
+@WebSocketGateway({ cors: { credentials: false, origin: corsOrigin } })
+export class MonitoringGateway implements OnGatewayInit {
+  @WebSocketServer()
+  private server!: Server;
+
+  constructor(
+    @Inject(JwtService) private readonly jwt: JwtService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(MonitoringService) private readonly monitoring: MonitoringService,
+    @Inject(MonitoringRealtimeService) private readonly realtime: MonitoringRealtimeService,
+  ) {}
+
+  afterInit(): void {
+    this.realtime.attachServer(this.server);
+  }
+
+  @SubscribeMessage("monitoring:join")
+  async joinMonitoringRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: MonitoringRealtimeJoinRequest,
+  ): Promise<MonitoringRealtimeJoinResponse> {
+    try {
+      if (!body?.buildingId || !body.nodeType) {
+        return { error: "Invalid monitoring room request.", ok: false };
+      }
+      const auth = await this.authenticateSocket(client);
+      const nodeType = await this.monitoring.assertRealtimeJoin(
+        auth,
+        body.buildingId,
+        body.nodeType,
+      );
+      const room = roomName(body.buildingId, nodeType);
+      await client.join(room);
+      return { ok: true, room };
+    } catch {
+      return { error: "Unauthorized monitoring room.", ok: false };
+    }
+  }
+
+  @SubscribeMessage("monitoring:leave")
+  async leaveMonitoringRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: MonitoringRealtimeJoinRequest,
+  ): Promise<MonitoringRealtimeJoinResponse> {
+    try {
+      if (!body?.buildingId || !body.nodeType) {
+        return { error: "Invalid monitoring room request.", ok: false };
+      }
+      const nodeType = await this.monitoring.assertRealtimeJoin(
+        await this.authenticateSocket(client),
+        body.buildingId,
+        body.nodeType,
+      );
+      const room = roomName(body.buildingId, nodeType);
+      await client.leave(room);
+      return { ok: true, room };
+    } catch {
+      return { error: "Unauthorized monitoring room.", ok: false };
+    }
+  }
+
+  private async authenticateSocket(client: Socket): Promise<AuthTokenPayload> {
+    const token = this.extractToken(client);
+    if (!token) {
+      throw new UnauthorizedException("A bearer token is required.");
+    }
+    const env = loadApiEnv();
+    const payload = await this.jwt.verifyAsync<AuthTokenPayload>(token, { secret: env.JWT_SECRET });
+    if (
+      !payload.sub ||
+      payload.context !== payload.aud ||
+      !Object.values(AUTH_CONTEXT).includes(payload.context)
+    ) {
+      throw new UnauthorizedException("The token context is invalid.");
+    }
+    const user =
+      payload.context === AUTH_CONTEXT.gssAdmin
+        ? await this.prisma.gssAdminUser.findUnique({ where: { id: payload.sub } })
+        : await this.prisma.companyUser.findUnique({ where: { id: payload.sub } });
+    if (!user || !user.isActive || user.tokenVersion !== payload.tokenVersion) {
+      throw new UnauthorizedException("The authenticated user is inactive or revoked.");
+    }
+    return payload;
+  }
+
+  private extractToken(client: Socket): string | null {
+    const auth = client.handshake.auth as { token?: unknown } | undefined;
+    if (typeof auth?.token === "string" && auth.token.trim().length > 0) {
+      return auth.token;
+    }
+    const header = client.handshake.headers.authorization;
+    const [scheme, token] = typeof header === "string" ? header.split(" ") : [];
+    return scheme === "Bearer" && token ? token : null;
+  }
+}

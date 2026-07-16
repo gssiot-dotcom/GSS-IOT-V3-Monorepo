@@ -2,11 +2,11 @@
 
 ## Current phase
 
-`PHASE_5_COMPLETE`
+`PHASE_6_COMPLETE`
 
 ## Last completed milestone
 
-Phase 5 MQTT command outbox completed and verified on 2026-07-15. The repository now has auditable GatewayCommand persistence, typed legacy MQTT command adapters, safe fake/local MQTT mode, publish/ack/retry/expire/cancel/reconnect lifecycle services and an Admin command status UI.
+Phase 6 monitoring and realtime completed and verified on 2026-07-15. The repository now has SensorReading persistence, LatestNodeState upsert, typed legacy MQTT sensor ingestion, monitoring HTTP endpoints, Socket.IO room authorization and Company monitoring UI.
 
 ## Current repository status
 
@@ -21,6 +21,10 @@ Phase 5 MQTT command outbox completed and verified on 2026-07-15. The repository
 - Phase 5 API: guarded GSS Admin endpoints list, inspect, create, retry, cancel and expire GatewayCommands. Commands are persisted before publish and all publish, acknowledgement, retry, expiration and cancel transitions are audited.
 - Phase 5 MQTT: `MQTT_ENABLED=false` keeps local/test runs broker-free; `MQTT_FAKE_ACK=true` simulates publish acknowledgement for E2E and smoke tests. Real broker connection uses validated broker URL, client id, optional credentials, topic base and publish/command timeouts.
 - Phase 5 UI: Admin `/admin/gateway-commands` renders the command list, status badges, payload/response detail drawer, retry and cancel actions behind `mqtt-commands.view/manage`.
+- Phase 6 API: additive migration `20260715150000_phase_6_monitoring_realtime` adds `SensorReading`, `LatestNodeState` and `SensorReadingStatus`. GSS and Company monitoring endpoints return scoped building overview, node-type latest states and paginated sensor history using `monitoring.view`.
+- Phase 6 MQTT: sensor subscriptions cover legacy `GATE_PUB`, `GATE_ANG` and `GATE_FORM` topics. Payload normalization supports door, angle and gangform/vertical naming, validates active gateway/node/company/building assignments and deduplicates packet/message/sequence/measured-time keys.
+- Phase 6 Realtime: Socket.IO joins require authenticated active users, `monitoring.realtime` and company building scope where applicable. Rooms are server-created as building/node-type scoped names, and normalized node-state events emit only after reading persistence and latest-state upsert.
+- Phase 6 UI: Company monitoring starts at scoped building selection, enters through the three preserved legacy node-type image cards, shows latest value/status/gateway context/value age, keeps last known values across disconnects and displays paginated node history.
 - Shared UI: `packages/ui` exports the normalized GSS Mantine theme, page header, data table/pagination footer, status badge, universal states and node-type selection card primitives.
 - Runtime configuration: API CORS is environment-driven through `CORS_ALLOWED_ORIGINS`; local development defaults support both `http://localhost:5173` and `http://127.0.0.1:5173`. Auth remains bearer-token based with no login cookies.
 - CI: template only
@@ -50,7 +54,7 @@ Phase 5 MQTT command outbox completed and verified on 2026-07-15. The repository
 
 - Exact SMS/Telegram/email providers for first release.
 - Production hosting and storage provider.
-- SensorReading retention and PostgreSQL partition interval.
+- Physical SensorReading purge job, PostgreSQL partition interval and archival implementation after the Phase 6 default 180-day retention target.
 - Whether company can edit position catalog or only assign seeded positions.
 - Exact rule behavior after alarm acknowledgement while unsafe readings continue.
 - Legacy data migration cutoff and coexistence window.
@@ -70,10 +74,14 @@ Phase 4 verification includes `apps/api/test/e2e/devices.e2e-spec.ts`. It covers
 
 Phase 5 verification includes `apps/api/test/gateway-commands.spec.ts` and `apps/api/test/e2e/gateway-commands.e2e-spec.ts`. It covers topic generation, typed payload adapters, transition validation, malformed MQTT payload handling, MQTT-disabled and fake-ack modes, GSS command permissions, direct deny, inactive user, invalid gateway and payload validation, persisted-before-publish command creation, fake publish acknowledgement, retry, cancel, expiration, super-admin bypass and GatewayCommand audit logs.
 
+Phase 6 verification includes `apps/api/test/monitoring.spec.ts`, `apps/api/test/e2e/monitoring.e2e-spec.ts` and `apps/web/src/test/monitoring.spec.tsx`. It covers door/angle/gangform parser normalization, malformed/mismatched payload rejection, valid reading persistence, latest-state upsert, duplicate message dedupe, building/node-type filtering, paginated history, company scope denial, cross-company denial, authorized Socket.IO room join, unauthorized room rejection, correct-room realtime emission and the Company monitoring card route.
+
+Phase 6 final commands passed: `pnpm install --frozen-lockfile`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`, `pnpm --filter api exec prisma migrate deploy`, `pnpm --filter api exec prisma migrate status`, two runs of `pnpm --filter api exec prisma db seed` and `git diff --check`. `git diff --check` reported only Git line-ending warnings on Windows.
+
 API, web, contracts, config and UI unit suites, API E2E, lint, typecheck, build and browser E2E pass.
 
 Runtime CORS verification covers `http://localhost:5173`, `http://127.0.0.1:5173`, unknown-origin rejection, GSS login followed by `/auth/gss/me`, company login CORS behavior and no-cookie bearer-token responses.
 
 ## Next action
 
-Await an explicit Phase 6 prompt. Do not begin sensor ingestion, latest node state, Socket.IO monitoring rooms, realtime monitoring UI, alarm occurrence counting, notifications or report work automatically.
+Await an explicit Phase 7 prompt. Do not begin alarm occurrence counting, notifications, reports, partitioning or archival automatically.

@@ -12,6 +12,12 @@ export interface MqttPublishResult {
   skipped: boolean;
 }
 
+export interface MqttSensorMessageMetadata {
+  duplicate?: boolean;
+  packetMessageId?: number;
+  receivedAt?: Date;
+}
+
 @Injectable()
 export class MqttClientService implements OnModuleInit, OnModuleDestroy {
   private readonly env = loadApiEnv();
@@ -27,6 +33,12 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
   onGatewayReconnect(listener: (gatewaySerial: string) => void): void {
     this.events.on("gateway-reconnect", listener);
+  }
+
+  onSensorMessage(
+    listener: (topic: string, payload: Buffer, metadata: MqttSensorMessageMetadata) => void,
+  ): void {
+    this.events.on("sensor-message", listener);
   }
 
   onModuleInit(): void {
@@ -46,9 +58,26 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
           this.logger.error(`MQTT response subscription failed: ${error.message}`);
         }
       });
+      for (const sensorFilter of this.topics.sensorTopicFilters()) {
+        this.client?.subscribe(sensorFilter, (error) => {
+          if (error) {
+            this.logger.error(`MQTT sensor subscription failed: ${error.message}`);
+          }
+        });
+      }
     });
-    this.client.on("message", (topic, payload) => {
-      this.events.emit("gateway-response", topic, payload);
+    this.client.on("message", (topic, payload, packet?: { dup?: boolean; messageId?: number }) => {
+      if (this.topics.parseResponseGatewaySerial(topic)) {
+        this.events.emit("gateway-response", topic, payload);
+        return;
+      }
+      if (this.topics.parseSensorTopic(topic)) {
+        this.events.emit("sensor-message", topic, payload, {
+          duplicate: packet?.dup,
+          packetMessageId: packet?.messageId,
+          receivedAt: new Date(),
+        } satisfies MqttSensorMessageMetadata);
+      }
     });
     this.client.on("error", (error) => {
       this.logger.error(`MQTT client error: ${error.message}`);
@@ -89,5 +118,16 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
       });
     });
     return { skipped: false };
+  }
+
+  simulateSensorMessage(
+    topic: string,
+    payload: Record<string, unknown>,
+    metadata: MqttSensorMessageMetadata = {},
+  ): void {
+    this.events.emit("sensor-message", topic, Buffer.from(JSON.stringify(payload)), {
+      receivedAt: new Date(),
+      ...metadata,
+    } satisfies MqttSensorMessageMetadata);
   }
 }

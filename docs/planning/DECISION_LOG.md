@@ -242,3 +242,15 @@ Files affected:
 **Consequences:** A gateway response is never acknowledged by gateway serial alone. Duplicate acknowledgements are idempotently ignored after the command leaves `sent`, and operators must retry/cancel/expire a failed non-terminal command before another command with the same legacy `cmd` number can be active for that gateway.
 
 **Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260715120000_gateway_command_outbox/migration.sql`, `apps/api/src/modules/gateway-commands/`, `apps/api/src/modules/mqtt/`.
+
+## DEC-2026-022
+
+**Status:** accepted
+
+**Context:** Phase 6 must deduplicate MQTT QoS redelivery and gateway retry without discarding legitimate later readings that repeat the same sensor value. The legacy payloads do not always include a durable message id or sequence number. Sensor history retention was also still open, while Phase 10 partitioning and archival must not be implemented early.
+
+**Decision:** Sensor deduplication uses MQTT packet message id first, then gateway payload message id, sequence number, or measured time plus normalized value hash. When a legacy payload has no reliable packet/message/sequence/measured-time key, the API stores the reading with a unique received-time key instead of dropping same-value readings. Phase 6 documents a default 180-day sensor history retention target and adds query indexes, while physical purge jobs, partitioning and archival remain Phase 10 work.
+
+**Consequences:** Duplicate QoS redelivery and gateway retry are idempotent when the broker packet metadata or gateway payload carries a stable identifier. No-ID/no-time legacy payloads are preserved to avoid false-positive dedupe; gateways should send message id, sequence or measured time for deterministic retry dedupe. Reports, archival and partition maintenance are not introduced in Phase 6.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260715150000_phase_6_monitoring_realtime/migration.sql`, `apps/api/src/modules/monitoring/`, `apps/api/src/modules/mqtt/`, `docs/architecture/PHASE_6_MONITORING_REALTIME.md`.

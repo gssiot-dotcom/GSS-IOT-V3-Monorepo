@@ -8,10 +8,14 @@ import { CompanyUsersPage } from "../features/company-management/CompanyUsersPag
 import { AdminDevicesPage } from "../features/devices/AdminDevicesPage";
 import { CompanyDevicesPage } from "../features/devices/CompanyDevicesPage";
 import { GatewayCommandsPage } from "../features/gateway-commands/GatewayCommandsPage";
+import {
+  BuildingMonitoringPage,
+  CompanyMonitoringIndexPage,
+  NodeTypeMonitoringPage,
+} from "../features/monitoring/CompanyMonitoringPage";
 import { CompaniesPage } from "../features/organizations/CompaniesPage";
 import { CompanyResourcesPage } from "../features/organizations/CompanyResourcesPage";
 import { DesignSystemDemoPage } from "../features/shell/DesignSystemDemoPage";
-import { NodeTypeMonitoringPage } from "../features/shell/NodeTypeMonitoringPage";
 import { adminNavItems, companyNavItems } from "../features/shell/navigation";
 import { PlaceholderPage } from "../features/shell/PlaceholderPage";
 import { PortalLayout } from "../features/shell/PortalLayout";
@@ -70,8 +74,8 @@ export function AppRouter(): ReactElement {
               <Route
                 element={
                   <ProtectedPage context="company-user" permission={item.permission}>
-                    {item.path.includes("/monitoring") ? (
-                      <NodeTypeMonitoringPage />
+                    {item.path === "/company/monitoring" ? (
+                      <CompanyMonitoringIndexPage />
                     ) : item.path === "/company/devices" ? (
                       <CompanyDevicesPage />
                     ) : item.path === "/company/areas" ? (
@@ -91,6 +95,22 @@ export function AppRouter(): ReactElement {
                 path={item.path}
               />
             ))}
+            <Route
+              element={
+                <ProtectedPage context="company-user" permission="monitoring.view">
+                  <BuildingMonitoringPage />
+                </ProtectedPage>
+              }
+              path="/company/buildings/:buildingId/monitoring"
+            />
+            <Route
+              element={
+                <ProtectedPage context="company-user" permission="monitoring.view">
+                  <NodeTypeMonitoringPage />
+                </ProtectedPage>
+              }
+              path="/company/buildings/:buildingId/monitoring/:nodeType"
+            />
             <Route path="*" element={<Navigate replace to="/login" />} />
           </Routes>
         </div>

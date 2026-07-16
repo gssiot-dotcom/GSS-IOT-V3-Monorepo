@@ -126,7 +126,7 @@ export const companyNavItems: ShellNavItem[] = [
   },
   {
     icon: IconChartBar,
-    path: "/company/buildings/demo-building/monitoring",
+    path: "/company/monitoring",
     permission: "monitoring.view",
     titleKey: "nav.companyMonitoring",
   },
