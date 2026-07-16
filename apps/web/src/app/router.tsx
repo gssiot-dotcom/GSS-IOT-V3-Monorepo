@@ -13,10 +13,12 @@ import {
   CompanyMonitoringIndexPage,
   NodeTypeMonitoringPage,
 } from "../features/monitoring/CompanyMonitoringPage";
+import { AdminCompanyDetailPage } from "../features/organizations/AdminCompanyDetailPage";
 import { CompaniesPage } from "../features/organizations/CompaniesPage";
 import { CompanyResourcesPage } from "../features/organizations/CompanyResourcesPage";
 import { DesignSystemDemoPage } from "../features/shell/DesignSystemDemoPage";
 import { adminNavItems, companyNavItems } from "../features/shell/navigation";
+import { NotFoundPage } from "../features/shell/NotFoundPage";
 import { PlaceholderPage } from "../features/shell/PlaceholderPage";
 import { PortalLayout } from "../features/shell/PortalLayout";
 import { AuthProvider } from "../shared/auth/auth-context";
@@ -47,6 +49,7 @@ export function AppRouter(): ReactElement {
       <AuthProvider>
         <div data-testid="app-root">
           <Routes>
+            <Route path="/" element={<Navigate replace to="/login" />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/phase-2/demo" element={<DesignSystemDemoPage />} />
             {adminNavItems.map((item) => (
@@ -70,6 +73,46 @@ export function AppRouter(): ReactElement {
                 path={item.path}
               />
             ))}
+            <Route
+              element={
+                <ProtectedPage context="gss-admin" permission="companies.view">
+                  <AdminCompanyDetailPage />
+                </ProtectedPage>
+              }
+              path="/admin/companies/:companyId"
+            />
+            <Route
+              element={
+                <ProtectedPage context="gss-admin" permission="areas.view">
+                  <AdminCompanyDetailPage />
+                </ProtectedPage>
+              }
+              path="/admin/companies/:companyId/sites"
+            />
+            <Route
+              element={
+                <ProtectedPage context="gss-admin" permission="buildings.view">
+                  <AdminCompanyDetailPage />
+                </ProtectedPage>
+              }
+              path="/admin/companies/:companyId/buildings"
+            />
+            <Route
+              element={
+                <ProtectedPage context="gss-admin" permission="company-users.view">
+                  <AdminCompanyDetailPage />
+                </ProtectedPage>
+              }
+              path="/admin/companies/:companyId/users"
+            />
+            <Route
+              element={
+                <ProtectedPage context="gss-admin" permission="devices.view">
+                  <AdminCompanyDetailPage />
+                </ProtectedPage>
+              }
+              path="/admin/companies/:companyId/devices"
+            />
             {companyNavItems.map((item) => (
               <Route
                 element={
@@ -111,7 +154,27 @@ export function AppRouter(): ReactElement {
               }
               path="/company/buildings/:buildingId/monitoring/:nodeType"
             />
-            <Route path="*" element={<Navigate replace to="/login" />} />
+            <Route
+              element={
+                <RequireAuth context="gss-admin">
+                  <PortalLayout context="gss-admin">
+                    <NotFoundPage />
+                  </PortalLayout>
+                </RequireAuth>
+              }
+              path="/admin/*"
+            />
+            <Route
+              element={
+                <RequireAuth context="company-user">
+                  <PortalLayout context="company-user">
+                    <NotFoundPage />
+                  </PortalLayout>
+                </RequireAuth>
+              }
+              path="/company/*"
+            />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </div>
       </AuthProvider>

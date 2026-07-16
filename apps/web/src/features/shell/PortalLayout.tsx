@@ -30,7 +30,9 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
   const navigate = useNavigate();
   const allItems = context === "gss-admin" ? adminNavItems : companyNavItems;
   const items = filterSidebarItems(allItems, session);
-  const titleKey = routeTitles.get(location.pathname);
+  const titleKey =
+    routeTitles.get(location.pathname) ??
+    allItems.find((item) => location.pathname.startsWith(`${item.path}/`))?.titleKey;
   const shellTitle = context === "gss-admin" ? t("shell.admin") : t("shell.company");
 
   return (
@@ -87,7 +89,9 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
               const Icon = item.icon;
               return (
                 <NavLink
-                  active={location.pathname === item.path}
+                  active={
+                    location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+                  }
                   component={Link}
                   key={item.path}
                   label={t(item.titleKey)}

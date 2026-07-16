@@ -1,4 +1,4 @@
-import { Center, Stack, Text, Title } from "@mantine/core";
+import { ForbiddenState } from "@gss-iot/ui";
 import type { ReactNode } from "react";
 
 import { t } from "../../app/i18n";
@@ -18,12 +18,5 @@ export function RequirePermission({
     return children;
   }
 
-  return (
-    <Center mih="60vh">
-      <Stack align="center" gap="xs">
-        <Title order={2}>{t("common.forbidden")}</Title>
-        <Text c="dimmed">{t("common.pageUnavailable")}</Text>
-      </Stack>
-    </Center>
-  );
+  return <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />;
 }

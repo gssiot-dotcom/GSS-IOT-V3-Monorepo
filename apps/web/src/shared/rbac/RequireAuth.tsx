@@ -1,5 +1,6 @@
 import type { AuthContext } from "@gss-iot/contracts";
 import { Center, Loader } from "@mantine/core";
+import { ForbiddenState } from "@gss-iot/ui";
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 
@@ -17,8 +18,14 @@ export function RequireAuth({ children, context }: { children: ReactNode; contex
     );
   }
 
-  if (!session || session.context !== context) {
+  if (!session) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (session.context !== context) {
+    return (
+      <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />
+    );
   }
 
   return children;

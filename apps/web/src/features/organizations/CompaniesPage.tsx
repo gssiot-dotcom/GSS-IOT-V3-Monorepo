@@ -1,9 +1,9 @@
 import type { CompanyRecord } from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
-import { apiRequest } from "../../shared/api/api-client";
+import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
-import { Button, Modal, Stack, TextInput } from "@mantine/core";
+import { Alert, Button, Modal, Stack, TextInput } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -19,6 +19,8 @@ export function CompaniesPage() {
   const [managerName, setManagerName] = useState("");
   const [managerEmail, setManagerEmail] = useState("");
   const [managerPassword, setManagerPassword] = useState("");
+  const [formError, setFormError] = useState<string>();
+  const [isSaving, setIsSaving] = useState(false);
 
   const load = async () => {
     if (!session) return;
@@ -36,19 +38,43 @@ export function CompaniesPage() {
 
   const create = async () => {
     if (!session) return;
-    await apiRequest(session, "/admin/companies", {
-      method: "POST",
-      body: JSON.stringify({
-        name,
-        platformManager: { email: managerEmail, name: managerName, password: managerPassword },
-      }),
-    });
-    setOpened(false);
-    setName("");
-    setManagerName("");
-    setManagerEmail("");
-    setManagerPassword("");
-    await load();
+    if (!name.trim() || !managerName.trim() || !managerEmail.trim() || !managerPassword) {
+      setFormError(t("organizations.validationRequired"));
+      return;
+    }
+    if (companies?.some((company) => company.name.toLowerCase() === name.trim().toLowerCase())) {
+      setFormError(t("organizations.duplicateFeedback"));
+      return;
+    }
+    setFormError(undefined);
+    setIsSaving(true);
+    try {
+      await apiRequest(session, "/admin/companies", {
+        method: "POST",
+        body: JSON.stringify({
+          name: name.trim(),
+          platformManager: {
+            email: managerEmail.trim(),
+            name: managerName.trim(),
+            password: managerPassword,
+          },
+        }),
+      });
+      setOpened(false);
+      setName("");
+      setManagerName("");
+      setManagerEmail("");
+      setManagerPassword("");
+      await load();
+    } catch (error) {
+      setFormError(
+        error instanceof ApiError && error.status === 409
+          ? t("organizations.duplicateFeedback")
+          : t("common.errorDescription"),
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!companies && !error) return <LoadingState title={t("common.loading")} />;
@@ -104,32 +130,43 @@ export function CompaniesPage() {
       )}
       <Modal
         opened={opened}
-        onClose={() => setOpened(false)}
+        onClose={() => {
+          setOpened(false);
+          setFormError(undefined);
+        }}
         title={t("organizations.createCompany")}
       >
         <Stack>
+          {formError ? <Alert color="red">{formError}</Alert> : null}
           <TextInput
             label={t("organizations.name")}
             onChange={(event) => setName(event.currentTarget.value)}
+            required
             value={name}
           />
           <TextInput
             label={t("organizations.managerName")}
             onChange={(event) => setManagerName(event.currentTarget.value)}
+            required
             value={managerName}
           />
           <TextInput
             label={t("organizations.managerEmail")}
             onChange={(event) => setManagerEmail(event.currentTarget.value)}
+            required
+            type="email"
             value={managerEmail}
           />
           <TextInput
             label={t("organizations.managerPassword")}
             onChange={(event) => setManagerPassword(event.currentTarget.value)}
+            required
             type="password"
             value={managerPassword}
           />
-          <Button onClick={() => void create()}>{t("organizations.createCompany")}</Button>
+          <Button loading={isSaving} onClick={() => void create()}>
+            {t("organizations.createCompany")}
+          </Button>
         </Stack>
       </Modal>
     </Stack>

@@ -2,6 +2,15 @@ import type { AuthContext, AuthSession } from "@gss-iot/contracts";
 
 import { readWebEnv } from "../../app/env";
 
+export class AuthApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${readWebEnv().apiBaseUrl}${path}`, {
     ...options,
@@ -12,7 +21,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`Authentication request failed with status ${response.status}.`);
+    throw new AuthApiError(`Authentication request failed with status ${response.status}.`, response.status);
   }
 
   return (await response.json()) as T;
