@@ -27,8 +27,16 @@ export class MqttResponseHandlerService implements OnModuleInit {
       this.topics.parseResponseGatewaySerial(topic),
       payload,
     );
-    if (!parsed || !parsed.success) {
+    if (!parsed) {
       return null;
+    }
+    if (!parsed.success) {
+      return this.commands.failSentGatewayResponse(
+        parsed.gatewaySerial,
+        parsed.cmd,
+        parsed.payload as Prisma.InputJsonObject,
+        parsed.failureReason ?? "Gateway returned a negative acknowledgement.",
+      );
     }
     return this.commands.acknowledgeSentCommand(
       parsed.gatewaySerial,

@@ -31,6 +31,8 @@ describe("Phase 4 device inventory e2e", () => {
 
     await prisma.latestNodeState.deleteMany();
     await prisma.sensorReading.deleteMany();
+    await prisma.nodeGatewayProvisioningItem.deleteMany();
+    await prisma.nodeGatewayProvisioningRequest.deleteMany();
     await prisma.gatewayCommand.deleteMany();
     await prisma.nodeGatewayAssignment.deleteMany();
     await prisma.gatewayBuildingAssignment.deleteMany();
@@ -291,34 +293,29 @@ describe("Phase 4 device inventory e2e", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ companyId: companyAId })
       .expect(201);
-    const assignedNode = await request(server)
+    await request(server)
       .post(`/admin/devices/nodes/${node.body.id}/gateway-assignment`)
       .set("Authorization", `Bearer ${token}`)
       .send({ gatewayId: gateway.body.id })
-      .expect(201);
-    expect(assignedNode.body.gatewayAssignments[0].gatewayId).toBe(gateway.body.id);
+      .expect(400);
+    expect(
+      await prisma.nodeGatewayAssignment.count({
+        where: { gatewayId: gateway.body.id, nodeId: node.body.id, status: "ACTIVE" },
+      }),
+    ).toBe(0);
     expect(
       await prisma.auditLog.count({ where: { entityType: { in: ["Gateway", "Node"] } } }),
-    ).toBeGreaterThanOrEqual(6);
+    ).toBeGreaterThanOrEqual(5);
   });
 
-  it("preserves assignment history when gateways and nodes move", async () => {
+  it("preserves assignment history when gateways move and nodes are unassigned", async () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const token = await login("/auth/gss/login", "phase4-device@example.com");
     const gateway = await prisma.gateway.findUniqueOrThrow({
       where: { serialNumber: "GW-P4-001" },
     });
     const node = await prisma.node.findUniqueOrThrow({ where: { number: "NODE-P4-001" } });
-    const secondGateway = await request(server)
-      .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
-      .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-002" })
-      .expect(201);
-    await request(server)
-      .post(`/admin/devices/gateways/${secondGateway.body.id}/company-assignment`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({ companyId: companyAId })
-      .expect(201);
+    await prisma.nodeGatewayAssignment.create({ data: { gatewayId: gateway.id, nodeId: node.id } });
 
     await request(server)
       .post(`/admin/devices/gateways/${gateway.id}/building-assignment`)
@@ -326,10 +323,9 @@ describe("Phase 4 device inventory e2e", () => {
       .send({ buildingId: sameCompanyOtherBuildingId })
       .expect(201);
     await request(server)
-      .post(`/admin/devices/nodes/${node.id}/gateway-assignment`)
+      .delete(`/admin/devices/nodes/${node.id}/gateway-assignment`)
       .set("Authorization", `Bearer ${token}`)
-      .send({ gatewayId: secondGateway.body.id })
-      .expect(201);
+      .expect(200);
 
     expect(
       await prisma.gatewayBuildingAssignment.count({
@@ -343,7 +339,7 @@ describe("Phase 4 device inventory e2e", () => {
     ).toBe(1);
     expect(
       await prisma.nodeGatewayAssignment.count({ where: { nodeId: node.id, status: "ACTIVE" } }),
-    ).toBe(1);
+    ).toBe(0);
     expect(
       await prisma.nodeGatewayAssignment.count({ where: { nodeId: node.id, status: "ENDED" } }),
     ).toBe(1);

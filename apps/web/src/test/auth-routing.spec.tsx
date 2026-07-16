@@ -1,7 +1,7 @@
 import type { AuthContext, AuthSession } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
@@ -96,10 +96,30 @@ function mockFetch(handler?: (url: URL, init: RequestInit) => Response | undefin
     if (url.href === `${apiBaseUrl}/admin/companies`) return jsonResponse([company]);
     if (url.href === `${apiBaseUrl}/admin/companies/company-1`) return jsonResponse(company);
     if (url.href === `${apiBaseUrl}/admin/companies/company-1/areas`) {
-      return jsonResponse([{ address: null, companyId: "company-1", description: null, id: "area-1", name: "Site A", status: "ACTIVE" }]);
+      return jsonResponse([
+        {
+          address: null,
+          companyId: "company-1",
+          description: null,
+          id: "area-1",
+          name: "Site A",
+          status: "ACTIVE",
+        },
+      ]);
     }
     if (url.href === `${apiBaseUrl}/admin/companies/company-1/buildings`) {
-      return jsonResponse([{ address: null, areaId: "area-1", buildingType: null, companyId: "company-1", id: "building-1", number: null, status: "ACTIVE", title: "Building A" }]);
+      return jsonResponse([
+        {
+          address: null,
+          areaId: "area-1",
+          buildingType: null,
+          companyId: "company-1",
+          id: "building-1",
+          number: null,
+          status: "ACTIVE",
+          title: "Building A",
+        },
+      ]);
     }
     if (url.href === `${apiBaseUrl}/admin/companies/company-1/users`) {
       return jsonResponse([
@@ -110,19 +130,35 @@ function mockFetch(handler?: (url: URL, init: RequestInit) => Response | undefin
           isActive: true,
           name: "Manager",
           phone: null,
-          role: { id: "role-1", isCompanyOwnerRole: true, key: "platform_manager", name: "Platform Manager" },
+          role: {
+            id: "role-1",
+            isCompanyOwnerRole: true,
+            key: "platform_manager",
+            name: "Platform Manager",
+          },
           roleId: "role-1",
         },
       ]);
     }
     if (url.href === `${apiBaseUrl}/admin/companies/company-1/roles`) {
-      return jsonResponse([{ companyId: "company-1", id: "role-1", isCompanyOwnerRole: true, key: "platform_manager", name: "Platform Manager", permissions: [] }]);
+      return jsonResponse([
+        {
+          companyId: "company-1",
+          id: "role-1",
+          isCompanyOwnerRole: true,
+          key: "platform_manager",
+          name: "Platform Manager",
+          permissions: [],
+        },
+      ]);
     }
     if (url.href === `${apiBaseUrl}/admin/devices/gateways`) {
       return jsonResponse([
         {
           buildingAssignments: [],
-          companyAssignments: [{ assignedAt: "2026-07-16T00:00:00.000Z", companyId: "company-1", id: "assign-1" }],
+          companyAssignments: [
+            { assignedAt: "2026-07-16T00:00:00.000Z", companyId: "company-1", id: "assign-1" },
+          ],
           gatewayType: "NODES_GATEWAY",
           id: "gateway-1",
           installedLocation: null,
@@ -147,6 +183,7 @@ describe("auth routing", () => {
   });
 
   afterEach(() => {
+    cleanup();
     window.sessionStorage.clear();
     vi.unstubAllGlobals();
   });
@@ -155,14 +192,18 @@ describe("auth routing", () => {
     mockFetch();
     renderApp("/login");
 
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "admin@example.com" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "test-password" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Email/ }), {
+      target: { value: "admin@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "test-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     fireEvent.click(await screen.findByRole("link", { name: "Companies" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open" }));
 
-    expect(await screen.findByText("Company setup, resources, users, and assigned devices.")).toBeTruthy();
+    expect(
+      await screen.findByText("Company setup, resources, users, and assigned devices."),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
   });
 
@@ -177,9 +218,7 @@ describe("auth routing", () => {
 
   it("clears an expired stored session and redirects to login", async () => {
     storeSession("gss-admin", "expired-token");
-    mockFetch((url) =>
-      url.href === `${apiBaseUrl}/auth/gss/me` ? emptyResponse(401) : undefined,
-    );
+    mockFetch((url) => (url.href === `${apiBaseUrl}/auth/gss/me` ? emptyResponse(401) : undefined));
     renderApp("/admin/companies/company-1");
 
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();

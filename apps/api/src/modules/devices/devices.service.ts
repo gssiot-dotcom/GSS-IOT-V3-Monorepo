@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -78,6 +79,21 @@ const nodeSelect = {
   },
 } satisfies Prisma.NodeSelect;
 
+const provisioningOptionsSelect = {
+  areas: {
+    orderBy: { name: "asc" as const },
+    select: { companyId: true, id: true, name: true, status: true },
+  },
+  buildings: {
+    orderBy: { title: "asc" as const },
+    select: { areaId: true, companyId: true, id: true, status: true, title: true },
+  },
+  companies: {
+    orderBy: { name: "asc" as const },
+    select: { id: true, name: true, status: true },
+  },
+};
+
 @Injectable()
 export class DevicesService {
   constructor(
@@ -141,6 +157,15 @@ export class DevicesService {
 
   listNodes() {
     return this.prisma.node.findMany({ orderBy: { number: "asc" }, select: nodeSelect });
+  }
+
+  async listProvisioningOptions() {
+    const [companies, areas, buildings] = await Promise.all([
+      this.prisma.company.findMany(provisioningOptionsSelect.companies),
+      this.prisma.constructionArea.findMany(provisioningOptionsSelect.areas),
+      this.prisma.constructionBuilding.findMany(provisioningOptionsSelect.buildings),
+    ]);
+    return { areas, buildings, companies };
   }
 
   createNode(actor: AuthTokenPayload, dto: CreateNodeDto) {
@@ -305,28 +330,10 @@ export class DevicesService {
   }
 
   assignNodeToGateway(actor: AuthTokenPayload, nodeId: string, gatewayId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const [nodeCompany, gatewayCompany] = await Promise.all([
-        this.getActiveNodeCompanyAssignment(nodeId, tx),
-        this.getActiveGatewayCompanyAssignment(gatewayId, tx),
-      ]);
-      if (nodeCompany.companyId !== gatewayCompany.companyId) {
-        throw new ForbiddenException("Node and gateway must belong to the same company.");
-      }
-      await this.endActiveNodeGatewayAssignment(nodeId, tx);
-      const assignment = await tx.nodeGatewayAssignment.create({ data: { gatewayId, nodeId } });
-      await this.auditLog.record(
-        actor,
-        {
-          action: "node.gateway.assign",
-          entityId: nodeId,
-          entityType: "Node",
-          newValue: { assignment },
-        },
-        tx,
-      );
-      return this.getNodeOrThrow(nodeId, tx);
-    });
+    void actor;
+    void nodeId;
+    void gatewayId;
+    throw new BadRequestException("Use MQTT register-nodes provisioning to assign nodes.");
   }
 
   unassignNodeFromGateway(actor: AuthTokenPayload, nodeId: string) {
@@ -472,17 +479,6 @@ export class DevicesService {
     });
     if (!assignment) {
       throw new ConflictException("The gateway must be assigned to a company first.");
-    }
-    return assignment;
-  }
-
-  private async getActiveNodeCompanyAssignment(nodeId: string, executor: PrismaExecutor) {
-    await this.getNodeOrThrow(nodeId, executor);
-    const assignment = await executor.companyDeviceAssignment.findFirst({
-      where: { nodeId, status: AssignmentStatus.ACTIVE },
-    });
-    if (!assignment) {
-      throw new ConflictException("The node must be assigned to a company first.");
     }
     return assignment;
   }

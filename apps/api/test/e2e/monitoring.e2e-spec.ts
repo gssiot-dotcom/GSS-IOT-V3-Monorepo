@@ -45,6 +45,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
 
     await prisma.latestNodeState.deleteMany();
     await prisma.sensorReading.deleteMany();
+    await prisma.nodeGatewayProvisioningItem.deleteMany();
+    await prisma.nodeGatewayProvisioningRequest.deleteMany();
     await prisma.gatewayCommand.deleteMany();
     await prisma.nodeGatewayAssignment.deleteMany();
     await prisma.gatewayBuildingAssignment.deleteMany();

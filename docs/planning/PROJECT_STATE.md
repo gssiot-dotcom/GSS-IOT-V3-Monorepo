@@ -2,18 +2,18 @@
 
 ## Current phase
 
-`PHASE_6_COMPLETE`
+`PHASE_8_COMPLETE`
 
 ## Last completed milestone
 
-Phase 6 monitoring and realtime completed and verified on 2026-07-15. The repository now has SensorReading persistence, LatestNodeState upsert, typed legacy MQTT sensor ingestion, monitoring HTTP endpoints, Socket.IO room authorization and Company monitoring UI.
+Phase 8 device provisioning and MQTT-backed node assignment completed and verified on 2026-07-16. The repository now creates active node-to-gateway assignments only after strict successful `cmd=2` gateway acknowledgement, records provisioning intent relationally, rejects invalid selector combinations, and provides an Admin UI flow without manual UUID entry.
 
 ## Current repository status
 
 - Application source: NestJS API keeps the Phase 1 separate GSS Admin and Company JWT contexts, active-user enforcement, permission resolution, decorators and scope guards.
-- Database schema: Prisma RBAC, organization hierarchy, scope-access foundation, Phase 4 device history migration `20260714170000_device_inventory_assignments` and Phase 5 command migration `20260715120000_gateway_command_outbox` applied to `gss_iot_v3`; `prisma migrate status` reports the schema up to date.
+- Database schema: Prisma RBAC, organization hierarchy, scope-access foundation, Phase 4 device history migration `20260714170000_device_inventory_assignments`, Phase 5 command migration `20260715120000_gateway_command_outbox`, Phase 6 monitoring migration `20260715150000_phase_6_monitoring_realtime` and Phase 8 provisioning migration `20260716120000_phase_8_device_provisioning` applied to `gss_iot_v3`; `prisma migrate status` reports the schema up to date.
 - Seed: permission catalog, default GSS/company roles, canonical node types and environment-configured active GSS super admin seeded idempotently.
-- Frontend: in-memory auth bootstrap, auth/permission guards, permission-filtered Admin/Company shells, protected placeholder routes, Phase 2 design-system demo route, universal UI states and legacy image-first node-type cards created.
+- Frontend: bearer auth persists only the access token and auth context in `sessionStorage`, restores full sessions from `/auth/gss/me` or `/auth/company/me`, preserves separate GSS Admin and Company route contexts, permission-filters Admin/Company shells, uses context-aware protected NotFound pages, keeps the Phase 2 design-system demo route and renders universal UI states plus legacy image-first node-type cards.
 - Phase 3 API: guarded GSS Admin and Company endpoints manage companies, areas, buildings, storage-key image records, company users, company-owned roles, direct permissions, area/building access and scoped position assignments. Critical mutations write audit logs inside their database transactions.
 - Phase 3 UI: Admin company creation creates the initial platform manager; Company routes now render scoped area/building lists plus company-user and role management views using the shared Phase 2 shell and UI primitives.
 - Phase 4 API: guarded GSS Admin endpoints manage node types, gateway inventory, node inventory, company-device assignment, gateway-building assignment and node-gateway assignment. Company endpoints expose company, area and building scoped device snapshots. Critical create, update, assign, unassign and move operations write audit logs.
@@ -25,6 +25,10 @@ Phase 6 monitoring and realtime completed and verified on 2026-07-15. The reposi
 - Phase 6 MQTT: sensor subscriptions cover legacy `GATE_PUB`, `GATE_ANG` and `GATE_FORM` topics. Payload normalization supports door, angle and gangform/vertical naming, validates active gateway/node/company/building assignments and deduplicates packet/message/sequence/measured-time keys.
 - Phase 6 Realtime: Socket.IO joins require authenticated active users, `monitoring.realtime` and company building scope where applicable. Rooms are server-created as building/node-type scoped names, and normalized node-state events emit only after reading persistence and latest-state upsert.
 - Phase 6 UI: Company monitoring starts at scoped building selection, enters through the three preserved legacy node-type image cards, shows latest value/status/gateway context/value age, keeps last known values across disconnects and displays paginated node history.
+- Phase 7 UI: Admin `/admin/companies/:companyId`, `/admin/companies/:companyId/sites`, `/admin/companies/:companyId/buildings`, `/admin/companies/:companyId/users` and `/admin/companies/:companyId/devices` are explicit deep-link-safe routes. The company detail flow shows profile/status, platform managers, construction sites, buildings and assigned gateways/nodes, with create/edit/deactivate actions wrapped in existing permissions and backed by existing guarded APIs.
+- Phase 8 API: `REGISTER_NODES` GatewayCommands create a relational `NodeGatewayProvisioningRequest` with per-node items. Successful strict ACK applies active `NodeGatewayAssignment` rows in the ACK transaction; negative ACK, malformed/no-success response, pending/offline, failed, expired, cancelled, duplicate and late responses do not create false active assignments.
+- Phase 8 MQTT: Gateway response parsing accepts only documented explicit success values and preserves raw response payloads. Response topic matching uses gateway serial plus command number, with exact or suffix serial support for legacy topic tokens.
+- Phase 8 UI: Admin `/admin/devices` uses company, building, actively assigned gateway, node type and eligible node selectors for MQTT provisioning. Raw node-to-gateway UUID assignment is removed from the UI; unassign remains explicit DB history only until a hardware unregister/sync command is confirmed.
 - Shared UI: `packages/ui` exports the normalized GSS Mantine theme, page header, data table/pagination footer, status badge, universal states and node-type selection card primitives.
 - Runtime configuration: API CORS is environment-driven through `CORS_ALLOWED_ORIGINS`; local development defaults support both `http://localhost:5173` and `http://127.0.0.1:5173`. Auth remains bearer-token based with no login cookies.
 - CI: template only
@@ -48,6 +52,7 @@ Phase 6 monitoring and realtime completed and verified on 2026-07-15. The reposi
 - Realtime: Socket.IO.
 - MQTT: durable GatewayCommand outbox.
 - RBAC: separate GSS Admin and Company contexts.
+- Device provisioning: active node-gateway assignment follows successful physical `cmd=2` acknowledgement.
 - Alarm: caution/warning/danger occurrence-count model.
 
 ## Open decisions
@@ -59,6 +64,7 @@ Phase 6 monitoring and realtime completed and verified on 2026-07-15. The reposi
 - Exact rule behavior after alarm acknowledgement while unsafe readings continue.
 - Legacy data migration cutoff and coexistence window.
 - Object-storage provider and browser-to-provider transfer mechanism for `BuildingPlanImage.storageKey`. Phase 3 persists and audits image metadata only; no unapproved local or cloud provider adapter was introduced.
+- Exact hardware unregister/remove-node or full replacement command for physical node unassignment.
 
 ## Verification record
 
@@ -76,7 +82,15 @@ Phase 5 verification includes `apps/api/test/gateway-commands.spec.ts` and `apps
 
 Phase 6 verification includes `apps/api/test/monitoring.spec.ts`, `apps/api/test/e2e/monitoring.e2e-spec.ts` and `apps/web/src/test/monitoring.spec.tsx`. It covers door/angle/gangform parser normalization, malformed/mismatched payload rejection, valid reading persistence, latest-state upsert, duplicate message dedupe, building/node-type filtering, paginated history, company scope denial, cross-company denial, authorized Socket.IO room join, unauthorized room rejection, correct-room realtime emission and the Company monitoring card route.
 
+Phase 7 verification includes `apps/web/src/test/auth-routing.spec.tsx`. It covers GSS login -> Companies -> Open -> company detail without login redirect, authenticated deep-link/session restoration, expired stored session cleanup and login redirect, authenticated unknown admin route NotFound, missing permission Forbidden and wrong-context portal denial. Phase 7 reuses the existing backend E2E coverage for `/auth/gss/me`, `/auth/company/me`, GSS-token rejection on company endpoints and protected organization/device APIs; no backend API or schema change was required.
+
+Phase 8 verification includes `apps/api/test/gateway-commands.spec.ts`, `apps/api/test/e2e/gateway-commands.e2e-spec.ts`, updated `apps/api/test/e2e/devices.e2e-spec.ts` cleanup/expectations and `apps/web/src/test/devices.spec.tsx`. It covers strict response parsing, successful cmd 2 ACK assignment creation, pending/offline no-assignment state, negative ACK failure, expiration/cancellation/late ACK no-op behavior, duplicate ACK idempotency, retry without duplicate assignment, cross-company rejection, wrong-building rejection, mixed node-type rejection, already-assigned node rejection, super-admin/permission behavior and selector-based Admin provisioning UI.
+
 Phase 6 final commands passed: `pnpm install --frozen-lockfile`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`, `pnpm --filter api exec prisma migrate deploy`, `pnpm --filter api exec prisma migrate status`, two runs of `pnpm --filter api exec prisma db seed` and `git diff --check`. `git diff --check` reported only Git line-ending warnings on Windows.
+
+Phase 7 final commands passed: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build` and `git diff --check`. `git diff --check` reported only Git line-ending warnings on Windows.
+
+Phase 8 final commands passed: `pnpm format`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, `pnpm --filter api exec prisma generate`, `pnpm --filter api exec prisma migrate deploy`, `pnpm --filter api exec prisma migrate status`, `pnpm --filter api exec prisma db seed` and `git diff --check`. `git diff --check` reported only Git line-ending warnings on Windows.
 
 API, web, contracts, config and UI unit suites, API E2E, lint, typecheck, build and browser E2E pass.
 
@@ -84,4 +98,4 @@ Runtime CORS verification covers `http://localhost:5173`, `http://127.0.0.1:5173
 
 ## Next action
 
-Await an explicit Phase 7 prompt. Do not begin alarm occurrence counting, notifications, reports, partitioning or archival automatically.
+Await an explicit Phase 9 prompt. Do not begin alarm levels, fault filters, alarm classification, alarm occurrence counting, notifications, reports, partitioning or archival automatically.

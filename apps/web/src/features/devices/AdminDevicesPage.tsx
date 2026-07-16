@@ -1,7 +1,24 @@
-import type { GatewayRecord, NodeRecord, NodeTypeRecord } from "@gss-iot/contracts";
+import type {
+  GatewayCommandRecord,
+  GatewayRecord,
+  NodeRecord,
+  NodeTypeRecord,
+} from "@gss-iot/contracts";
 import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
-import { Button, Group, Modal, Select, Stack, Tabs, TextInput } from "@mantine/core";
-import { useEffect, useState } from "react";
+import {
+  Alert,
+  Badge,
+  Button,
+  Group,
+  Modal,
+  MultiSelect,
+  Select,
+  Stack,
+  Tabs,
+  Text,
+  TextInput,
+} from "@mantine/core";
+import { useEffect, useMemo, useState } from "react";
 
 import { t } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
@@ -11,14 +28,31 @@ import { deviceStatusLabel, gatewayTypeLabel } from "./device-labels";
 
 type AssignmentTarget =
   | { id: string; kind: "gateway-building" | "gateway-company" }
-  | { id: string; kind: "node-company" | "node-gateway" };
+  | { id: string; kind: "node-company" };
+
+interface ProvisioningOptions {
+  areas: Array<{ companyId: string; id: string; name: string; status: string }>;
+  buildings: Array<{
+    areaId: string;
+    companyId: string;
+    id: string;
+    status: string;
+    title: string;
+  }>;
+  companies: Array<{ id: string; name: string; status: string }>;
+}
+
+const emptyOptions: ProvisioningOptions = { areas: [], buildings: [], companies: [] };
 
 export function AdminDevicesPage() {
   const { session } = useAuth();
   const [gateways, setGateways] = useState<GatewayRecord[]>();
   const [nodes, setNodes] = useState<NodeRecord[]>();
   const [nodeTypes, setNodeTypes] = useState<NodeTypeRecord[]>([]);
+  const [commands, setCommands] = useState<GatewayCommandRecord[]>([]);
+  const [options, setOptions] = useState<ProvisioningOptions>(emptyOptions);
   const [error, setError] = useState(false);
+  const [formError, setFormError] = useState("");
   const [gatewayOpened, setGatewayOpened] = useState(false);
   const [nodeOpened, setNodeOpened] = useState(false);
   const [assignmentTarget, setAssignmentTarget] = useState<AssignmentTarget>();
@@ -27,20 +61,31 @@ export function AdminDevicesPage() {
   const [nodeNumber, setNodeNumber] = useState("");
   const [nodeTypeId, setNodeTypeId] = useState("");
   const [assignmentValue, setAssignmentValue] = useState("");
+  const [companyId, setCompanyId] = useState("");
+  const [buildingId, setBuildingId] = useState("");
+  const [gatewayId, setGatewayId] = useState("");
+  const [provisionNodeTypeId, setProvisionNodeTypeId] = useState("");
+  const [provisionNodeIds, setProvisionNodeIds] = useState<string[]>([]);
 
   const load = async () => {
     if (!session) return;
     setError(false);
     try {
-      const [loadedGateways, loadedNodes, loadedNodeTypes] = await Promise.all([
-        apiRequest<GatewayRecord[]>(session, "/admin/devices/gateways"),
-        apiRequest<NodeRecord[]>(session, "/admin/devices/nodes"),
-        apiRequest<NodeTypeRecord[]>(session, "/admin/devices/node-types"),
-      ]);
+      const [loadedGateways, loadedNodes, loadedNodeTypes, loadedCommands, loadedOptions] =
+        await Promise.all([
+          apiRequest<GatewayRecord[]>(session, "/admin/devices/gateways"),
+          apiRequest<NodeRecord[]>(session, "/admin/devices/nodes"),
+          apiRequest<NodeTypeRecord[]>(session, "/admin/devices/node-types"),
+          apiRequest<GatewayCommandRecord[]>(session, "/admin/gateway-commands"),
+          apiRequest<ProvisioningOptions>(session, "/admin/devices/provisioning-options"),
+        ]);
       setGateways(loadedGateways);
       setNodes(loadedNodes);
       setNodeTypes(loadedNodeTypes);
+      setCommands(loadedCommands);
+      setOptions(loadedOptions);
       setNodeTypeId(loadedNodeTypes[0]?.id ?? "");
+      setProvisionNodeTypeId((current) => current || loadedNodeTypes[0]?.id || "");
     } catch {
       setError(true);
     }
@@ -50,8 +95,48 @@ export function AdminDevicesPage() {
     void load();
   }, [session]);
 
+  const companyOptions = options.companies.map((company) => ({
+    label: company.name,
+    value: company.id,
+  }));
+  const buildingsForCompany = options.buildings.filter(
+    (building) => building.companyId === companyId,
+  );
+  const buildingOptions = buildingsForCompany.map((building) => ({
+    label: building.title,
+    value: building.id,
+  }));
+  const gatewayOptions = (gateways ?? [])
+    .filter(
+      (gateway) =>
+        gateway.gatewayType === "NODES_GATEWAY" &&
+        gateway.companyAssignments[0]?.companyId === companyId &&
+        gateway.buildingAssignments[0]?.buildingId === buildingId,
+    )
+    .map((gateway) => ({ label: gateway.serialNumber, value: gateway.id }));
+  const eligibleNodeOptions = (nodes ?? [])
+    .filter(
+      (node) =>
+        node.companyAssignments[0]?.companyId === companyId &&
+        node.gatewayAssignments.length === 0 &&
+        node.nodeTypeId === provisionNodeTypeId,
+    )
+    .map((node) => ({ label: `${node.number} (${node.nodeType.displayName})`, value: node.id }));
+  const assignmentBuildingOptions = useMemo(() => {
+    if (!assignmentTarget || assignmentTarget.kind !== "gateway-building") return [];
+    const gateway = gateways?.find((item) => item.id === assignmentTarget.id);
+    const assignedCompanyId = gateway?.companyAssignments[0]?.companyId;
+    return options.buildings
+      .filter((building) => building.companyId === assignedCompanyId)
+      .map((building) => ({ label: building.title, value: building.id }));
+  }, [assignmentTarget, gateways, options.buildings]);
+  const registerCommands = commands
+    .filter((command) => command.commandType === "REGISTER_NODES")
+    .slice(0, 5);
+
   const createGateway = async () => {
     if (!session) return;
+    setFormError("");
     await apiRequest(session, "/admin/devices/gateways", {
       body: JSON.stringify({ gatewayType, serialNumber }),
       method: "POST",
@@ -63,6 +148,7 @@ export function AdminDevicesPage() {
 
   const createNode = async () => {
     if (!session) return;
+    setFormError("");
     await apiRequest(session, "/admin/devices/nodes", {
       body: JSON.stringify({ nodeTypeId, number: nodeNumber }),
       method: "POST",
@@ -74,23 +160,42 @@ export function AdminDevicesPage() {
 
   const assign = async () => {
     if (!session || !assignmentTarget) return;
+    setFormError("");
     const path =
       assignmentTarget.kind === "gateway-company"
         ? `/admin/devices/gateways/${assignmentTarget.id}/company-assignment`
         : assignmentTarget.kind === "gateway-building"
           ? `/admin/devices/gateways/${assignmentTarget.id}/building-assignment`
-          : assignmentTarget.kind === "node-company"
-            ? `/admin/devices/nodes/${assignmentTarget.id}/company-assignment`
-            : `/admin/devices/nodes/${assignmentTarget.id}/gateway-assignment`;
+          : `/admin/devices/nodes/${assignmentTarget.id}/company-assignment`;
     const body =
       assignmentTarget.kind === "gateway-building"
         ? { buildingId: assignmentValue }
-        : assignmentTarget.kind === "node-gateway"
-          ? { gatewayId: assignmentValue }
-          : { companyId: assignmentValue };
+        : { companyId: assignmentValue };
     await apiRequest(session, path, { body: JSON.stringify(body), method: "POST" });
     setAssignmentTarget(undefined);
     setAssignmentValue("");
+    await load();
+  };
+
+  const unassign = async (path: string) => {
+    if (!session) return;
+    await apiRequest(session, path, { method: "DELETE" });
+    await load();
+  };
+
+  const createProvisioning = async () => {
+    if (!session) return;
+    setFormError("");
+    await apiRequest(session, "/admin/gateway-commands/register-nodes", {
+      body: JSON.stringify({
+        buildingId,
+        gatewayId,
+        nodeIds: provisionNodeIds,
+        nodeTypeId: provisionNodeTypeId,
+      }),
+      method: "POST",
+    });
+    setProvisionNodeIds([]);
     await load();
   };
 
@@ -116,6 +221,107 @@ export function AdminDevicesPage() {
           </Group>
         }
       />
+      <Can permission="mqtt-commands.manage">
+        <Stack gap="sm">
+          <Text fw={600}>{t("devices.provisioningTitle")}</Text>
+          {formError ? <Alert color="red">{formError}</Alert> : null}
+          <Group align="flex-end">
+            <Select
+              data={companyOptions}
+              label={t("devices.company")}
+              onChange={(value) => {
+                setCompanyId(value ?? "");
+                setBuildingId("");
+                setGatewayId("");
+                setProvisionNodeIds([]);
+              }}
+              value={companyId}
+            />
+            <Select
+              data={buildingOptions}
+              disabled={!companyId}
+              label={t("devices.building")}
+              onChange={(value) => {
+                setBuildingId(value ?? "");
+                setGatewayId("");
+              }}
+              value={buildingId}
+            />
+            <Select
+              data={gatewayOptions}
+              disabled={!buildingId}
+              label={t("devices.gateway")}
+              onChange={(value) => setGatewayId(value ?? "")}
+              value={gatewayId}
+            />
+            <Select
+              data={nodeTypes.map((nodeType) => ({
+                label: nodeType.displayName,
+                value: nodeType.id,
+              }))}
+              label={t("devices.nodeType")}
+              onChange={(value) => {
+                setProvisionNodeTypeId(value ?? "");
+                setProvisionNodeIds([]);
+              }}
+              value={provisionNodeTypeId}
+            />
+          </Group>
+          <MultiSelect
+            data={eligibleNodeOptions}
+            disabled={!companyId || !provisionNodeTypeId}
+            label={t("devices.eligibleNodes")}
+            onChange={setProvisionNodeIds}
+            searchable
+            value={provisionNodeIds}
+          />
+          <Group justify="space-between">
+            <Text c="dimmed" size="sm">
+              {t("devices.provisioningHint")}
+            </Text>
+            <Button
+              disabled={
+                !buildingId || !gatewayId || !provisionNodeTypeId || !provisionNodeIds.length
+              }
+              onClick={() =>
+                void createProvisioning().catch((err: Error) => setFormError(err.message))
+              }
+            >
+              {t("devices.provisionNodes")}
+            </Button>
+          </Group>
+          {registerCommands.length ? (
+            <DataTable
+              columns={[
+                {
+                  key: "gateway",
+                  label: t("devices.gateway"),
+                  render: (row) => row.gateway.serialNumber,
+                },
+                {
+                  key: "status",
+                  label: t("devices.commandStatus"),
+                  render: (row) => <Badge>{row.status}</Badge>,
+                },
+                {
+                  key: "nodes",
+                  label: t("devices.nodesTitle"),
+                  render: (row) =>
+                    row.provisioningRequest?.items.map((item) => item.node.number).join(", ") ??
+                    "-",
+                },
+                {
+                  key: "reason",
+                  label: t("devices.failureReason"),
+                  render: (row) =>
+                    row.failureReason ?? row.provisioningRequest?.failureReason ?? "-",
+                },
+              ]}
+              rows={registerCommands}
+            />
+          ) : null}
+        </Stack>
+      </Can>
       <Tabs defaultValue="gateways">
         <Tabs.List>
           <Tabs.Tab value="gateways">{t("devices.gatewaysTitle")}</Tabs.Tab>
@@ -166,6 +372,7 @@ export function AdminDevicesPage() {
                           {t("devices.assignCompany")}
                         </Button>
                         <Button
+                          disabled={!row.companyAssignments.length}
                           onClick={() =>
                             setAssignmentTarget({ id: row.id, kind: "gateway-building" })
                           }
@@ -173,6 +380,16 @@ export function AdminDevicesPage() {
                           variant="light"
                         >
                           {t("devices.assignBuilding")}
+                        </Button>
+                        <Button
+                          disabled={!row.buildingAssignments.length}
+                          onClick={() =>
+                            void unassign(`/admin/devices/gateways/${row.id}/building-assignment`)
+                          }
+                          size="xs"
+                          variant="subtle"
+                        >
+                          {t("devices.unassignBuilding")}
                         </Button>
                       </Can>
                     </Group>
@@ -227,11 +444,14 @@ export function AdminDevicesPage() {
                           {t("devices.assignCompany")}
                         </Button>
                         <Button
-                          onClick={() => setAssignmentTarget({ id: row.id, kind: "node-gateway" })}
+                          disabled={!row.gatewayAssignments.length}
+                          onClick={() =>
+                            void unassign(`/admin/devices/nodes/${row.id}/gateway-assignment`)
+                          }
                           size="xs"
-                          variant="light"
+                          variant="subtle"
                         >
-                          {t("devices.assignGateway")}
+                          {t("devices.unassignGateway")}
                         </Button>
                       </Can>
                     </Group>
@@ -268,7 +488,11 @@ export function AdminDevicesPage() {
             onChange={(value) => setGatewayType(value ?? "NODES_GATEWAY")}
             value={gatewayType}
           />
-          <Button onClick={() => void createGateway()}>{t("devices.createGateway")}</Button>
+          <Button
+            onClick={() => void createGateway().catch((err: Error) => setFormError(err.message))}
+          >
+            {t("devices.createGateway")}
+          </Button>
         </Stack>
       </Modal>
       <Modal
@@ -291,39 +515,49 @@ export function AdminDevicesPage() {
             onChange={(value) => setNodeTypeId(value ?? "")}
             value={nodeTypeId}
           />
-          <Button onClick={() => void createNode()}>{t("devices.createNode")}</Button>
+          <Button
+            onClick={() => void createNode().catch((err: Error) => setFormError(err.message))}
+          >
+            {t("devices.createNode")}
+          </Button>
         </Stack>
       </Modal>
       <Modal
         opened={Boolean(assignmentTarget)}
-        onClose={() => setAssignmentTarget(undefined)}
+        onClose={() => {
+          setAssignmentTarget(undefined);
+          setAssignmentValue("");
+        }}
         title={t(
           assignmentTarget?.kind === "gateway-building"
             ? "devices.assignBuilding"
-            : assignmentTarget?.kind === "node-gateway"
-              ? "devices.assignGateway"
-              : "devices.assignCompany",
+            : "devices.assignCompany",
         )}
       >
         <Stack>
-          <TextInput
+          <Select
+            data={
+              assignmentTarget?.kind === "gateway-building"
+                ? assignmentBuildingOptions
+                : companyOptions
+            }
             label={
               assignmentTarget?.kind === "gateway-building"
                 ? t("devices.building")
-                : assignmentTarget?.kind === "node-gateway"
-                  ? t("devices.gateway")
-                  : t("devices.company")
+                : t("devices.company")
             }
-            onChange={(event) => setAssignmentValue(event.currentTarget.value)}
+            onChange={(value) => setAssignmentValue(value ?? "")}
+            searchable
             value={assignmentValue}
           />
-          <Button onClick={() => void assign()}>
+          <Button
+            disabled={!assignmentValue}
+            onClick={() => void assign().catch((err: Error) => setFormError(err.message))}
+          >
             {t(
               assignmentTarget?.kind === "gateway-building"
                 ? "devices.assignBuilding"
-                : assignmentTarget?.kind === "node-gateway"
-                  ? "devices.assignGateway"
-                  : "devices.assignCompany",
+                : "devices.assignCompany",
             )}
           </Button>
         </Stack>

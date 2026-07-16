@@ -85,6 +85,29 @@
 - [x] Document monitoring endpoints, Socket.IO rooms/events, MQTT payload normalization, dedupe, pagination and retention.
 - [x] Run the full Phase 6 verification command set and smoke test before marking the phase complete.
 
+## Phase 7
+
+- [x] Fix Admin Company Open routing by adding explicit `/admin/companies/:companyId` route instead of falling through to `/login`.
+- [x] Add safe browser session restoration for GSS Admin and Company contexts using stored token/context plus `/auth/gss/me` or `/auth/company/me`.
+- [x] Add context-aware protected NotFound fallbacks so unknown authenticated `/admin/*` and `/company/*` URLs do not masquerade as auth failures.
+- [x] Complete GSS Admin company setup subroutes for profile overview, construction sites, buildings, company users and assigned devices.
+- [x] Improve company create/edit flows with required-field validation, loading state and duplicate/conflict feedback without weakening backend permissions.
+- [x] Add frontend route/session tests for Open navigation, refresh/deep-link restore, expired sessions, NotFound, Forbidden and wrong auth context.
+- [x] Run the full Phase 7 verification command set before marking the phase complete.
+
+## Phase 8
+
+- [x] Add relational MQTT provisioning request and item state linked to `REGISTER_NODES` GatewayCommands.
+- [x] Require selected company, building, actively assigned gateway, node type and eligible company-owned unassigned nodes for cmd 2 provisioning.
+- [x] Create active `NodeGatewayAssignment` rows only after strict successful gateway acknowledgement.
+- [x] Mark negative responses failed, preserve raw response payloads and keep expired/cancelled/late/duplicate responses from creating assignments.
+- [x] Make retries idempotent and prevent duplicate active assignments.
+- [x] Reject cross-company gateway/node selection, wrong-building gateway selection, mixed node types and already-assigned nodes.
+- [x] Replace raw UUID node-to-gateway UI with guided company/building/gateway/node-type/node selectors and command status display.
+- [x] Document DB-only unassign while hardware unregister/remove protocol remains unconfirmed.
+- [x] Add Phase 8 unit, API E2E and web UI coverage.
+- [x] Apply `20260716120000_phase_8_device_provisioning` without resetting the database and verify seed idempotency.
+
 ## Deferred
 
-Alarm occurrence counting, notifications, reports, partitioning, archival and external delivery providers remain deferred to Phase 7 or later.
+Alarm levels, fault filters, backend alarm classification, occurrence counting, notifications, reports, partitioning, archival and external delivery providers remain deferred to Phase 9 or later.

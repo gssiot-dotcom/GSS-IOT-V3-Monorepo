@@ -276,4 +276,28 @@ export interface GatewayCommandRecord {
   createdAt: string;
   updatedAt: string;
   gateway: { id: string; serialNumber: string };
+  provisioningRequest: NodeGatewayProvisioningRequestRecord | null;
+}
+
+export interface NodeGatewayProvisioningItemRecord {
+  id: string;
+  nodeId: string;
+  assignmentId: string | null;
+  appliedAt: string | null;
+  failureReason: string | null;
+  node: { number: string };
+}
+
+export interface NodeGatewayProvisioningRequestRecord {
+  id: string;
+  companyId: string;
+  buildingId: string;
+  gatewayId: string;
+  nodeTypeId: string;
+  status: GatewayCommandStatus;
+  responsePayload: unknown | null;
+  failureReason: string | null;
+  appliedAt: string | null;
+  failedAt: string | null;
+  items: NodeGatewayProvisioningItemRecord[];
 }

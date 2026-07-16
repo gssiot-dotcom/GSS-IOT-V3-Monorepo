@@ -16,9 +16,22 @@ import {
   LoadingState,
   PageHeader,
 } from "@gss-iot/ui";
-import { Alert, Badge, Button, Group, Modal, Paper, Select, SimpleGrid, Stack, Tabs, Text, TextInput } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Button,
+  Group,
+  Modal,
+  Paper,
+  Select,
+  SimpleGrid,
+  Stack,
+  Tabs,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { t } from "../../app/i18n";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
@@ -318,7 +331,12 @@ export function AdminCompanyDetailPage(): ReactElement {
               </Button>
             </Can>
             <Can permission="companies.delete">
-              <Button color="red" loading={isSaving} onClick={() => void deactivateCompany()} variant="light">
+              <Button
+                color="red"
+                loading={isSaving}
+                onClick={() => void deactivateCompany()}
+                variant="light"
+              >
                 {t("organizations.deactivate")}
               </Button>
             </Can>
@@ -327,26 +345,30 @@ export function AdminCompanyDetailPage(): ReactElement {
       />
       <Tabs value={section}>
         <Tabs.List>
-          <Tabs.Tab component={Link} to={routeBase} value="overview">
+          <Tabs.Tab onClick={() => void navigate(routeBase)} value="overview">
             {t("organizations.overview")}
           </Tabs.Tab>
-          <Tabs.Tab component={Link} to={`${routeBase}/sites`} value="sites">
+          <Tabs.Tab onClick={() => void navigate(`${routeBase}/sites`)} value="sites">
             {t("organizations.areasTitle")}
           </Tabs.Tab>
-          <Tabs.Tab component={Link} to={`${routeBase}/buildings`} value="buildings">
+          <Tabs.Tab onClick={() => void navigate(`${routeBase}/buildings`)} value="buildings">
             {t("organizations.buildingsTitle")}
           </Tabs.Tab>
-          <Tabs.Tab component={Link} to={`${routeBase}/users`} value="users">
+          <Tabs.Tab onClick={() => void navigate(`${routeBase}/users`)} value="users">
             {t("management.usersTitle")}
           </Tabs.Tab>
-          <Tabs.Tab component={Link} to={`${routeBase}/devices`} value="devices">
+          <Tabs.Tab onClick={() => void navigate(`${routeBase}/devices`)} value="devices">
             {t("devices.companyDevicesTitle")}
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel pt="md" value={section}>
           {section === "overview" ? <OverviewSection detail={detail} /> : null}
           {section === "sites" ? (
-            <SitesSection areas={detail.areas} canView={canLoadAreas} onCreate={() => setModal("area")} />
+            <SitesSection
+              areas={detail.areas}
+              canView={canLoadAreas}
+              onCreate={() => setModal("area")}
+            />
           ) : null}
           {section === "buildings" ? (
             <BuildingsSection
@@ -357,15 +379,27 @@ export function AdminCompanyDetailPage(): ReactElement {
             />
           ) : null}
           {section === "users" ? (
-            <UsersSection canView={canLoadUsers} onCreate={() => setModal("user")} users={detail.users} />
+            <UsersSection
+              canView={canLoadUsers}
+              onCreate={() => setModal("user")}
+              users={detail.users}
+            />
           ) : null}
           {section === "devices" ? (
-            <DevicesSection canView={canLoadDevices} gateways={detail.gateways} nodes={detail.nodes} />
+            <DevicesSection
+              canView={canLoadDevices}
+              gateways={detail.gateways}
+              nodes={detail.nodes}
+            />
           ) : null}
         </Tabs.Panel>
       </Tabs>
 
-      <Modal opened={modal === "company"} onClose={closeModal} title={t("organizations.editCompany")}>
+      <Modal
+        opened={modal === "company"}
+        onClose={closeModal}
+        title={t("organizations.editCompany")}
+      >
         <Stack>
           {formError ? <Alert color="red">{formError}</Alert> : null}
           <TextInput
@@ -403,7 +437,11 @@ export function AdminCompanyDetailPage(): ReactElement {
           </Button>
         </Stack>
       </Modal>
-      <Modal opened={modal === "building"} onClose={closeModal} title={t("organizations.createBuilding")}>
+      <Modal
+        opened={modal === "building"}
+        onClose={closeModal}
+        title={t("organizations.createBuilding")}
+      >
         <Stack>
           {formError ? <Alert color="red">{formError}</Alert> : null}
           <Select
@@ -471,7 +509,10 @@ function OverviewSection({ detail }: { detail: DetailState }) {
         <SummaryCard label={t("organizations.status")} value={detail.company?.status ?? "-"} />
         <SummaryCard label={t("organizations.areasTitle")} value={detail.areas.length} />
         <SummaryCard label={t("organizations.buildingsTitle")} value={detail.buildings.length} />
-        <SummaryCard label={t("devices.companyDevicesTitle")} value={detail.gateways.length + detail.nodes.length} />
+        <SummaryCard
+          label={t("devices.companyDevicesTitle")}
+          value={detail.gateways.length + detail.nodes.length}
+        />
       </SimpleGrid>
       <Paper p="md" withBorder>
         <Stack gap="xs">
@@ -524,7 +565,10 @@ function SitesSection({
   canView: boolean;
   onCreate: () => void;
 }) {
-  if (!canView) return <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />;
+  if (!canView)
+    return (
+      <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />
+    );
   return (
     <Stack gap="md">
       <Group justify="flex-end">
@@ -536,13 +580,20 @@ function SitesSection({
         <DataTable
           columns={[
             { key: "name", label: t("organizations.name"), render: (area) => area.name },
-            { key: "address", label: t("organizations.address"), render: (area) => area.address ?? "-" },
+            {
+              key: "address",
+              label: t("organizations.address"),
+              render: (area) => area.address ?? "-",
+            },
             { key: "status", label: t("organizations.status"), render: (area) => area.status },
           ]}
           rows={areas}
         />
       ) : (
-        <EmptyState description={t("organizations.emptyScopedDescription")} title={t("common.emptyTitle")} />
+        <EmptyState
+          description={t("organizations.emptyScopedDescription")}
+          title={t("common.emptyTitle")}
+        />
       )}
     </Stack>
   );
@@ -559,7 +610,10 @@ function BuildingsSection({
   canView: boolean;
   onCreate: () => void;
 }) {
-  if (!canView) return <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />;
+  if (!canView)
+    return (
+      <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />
+    );
   return (
     <Stack gap="md">
       <Group justify="flex-end">
@@ -572,14 +626,29 @@ function BuildingsSection({
       {buildings.length ? (
         <DataTable
           columns={[
-            { key: "title", label: t("organizations.building"), render: (building) => building.title },
-            { key: "number", label: t("organizations.code"), render: (building) => building.number ?? "-" },
-            { key: "status", label: t("organizations.status"), render: (building) => building.status },
+            {
+              key: "title",
+              label: t("organizations.building"),
+              render: (building) => building.title,
+            },
+            {
+              key: "number",
+              label: t("organizations.code"),
+              render: (building) => building.number ?? "-",
+            },
+            {
+              key: "status",
+              label: t("organizations.status"),
+              render: (building) => building.status,
+            },
           ]}
           rows={buildings}
         />
       ) : (
-        <EmptyState description={t("organizations.emptyScopedDescription")} title={t("common.emptyTitle")} />
+        <EmptyState
+          description={t("organizations.emptyScopedDescription")}
+          title={t("common.emptyTitle")}
+        />
       )}
     </Stack>
   );
@@ -594,7 +663,10 @@ function UsersSection({
   onCreate: () => void;
   users: CompanyUserRecord[];
 }) {
-  if (!canView) return <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />;
+  if (!canView)
+    return (
+      <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />
+    );
   return (
     <Stack gap="md">
       <Group justify="flex-end">
@@ -621,7 +693,10 @@ function UsersSection({
           rows={users}
         />
       ) : (
-        <EmptyState description={t("management.emptyUsersDescription")} title={t("common.emptyTitle")} />
+        <EmptyState
+          description={t("management.emptyUsersDescription")}
+          title={t("common.emptyTitle")}
+        />
       )}
     </Stack>
   );
@@ -636,7 +711,10 @@ function DevicesSection({
   gateways: GatewayRecord[];
   nodes: NodeRecord[];
 }) {
-  if (!canView) return <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />;
+  if (!canView)
+    return (
+      <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />
+    );
   return (
     <Tabs defaultValue="gateways">
       <Tabs.List>
@@ -647,10 +725,26 @@ function DevicesSection({
         {gateways.length ? (
           <DataTable
             columns={[
-              { key: "serial", label: t("devices.serialNumber"), render: (gateway) => gateway.serialNumber },
-              { key: "type", label: t("devices.gatewayType"), render: (gateway) => gatewayTypeLabel(gateway.gatewayType) },
-              { key: "status", label: t("devices.status"), render: (gateway) => deviceStatusLabel(gateway.status) },
-              { key: "building", label: t("devices.building"), render: (gateway) => gateway.buildingAssignments[0]?.building.title ?? "-" },
+              {
+                key: "serial",
+                label: t("devices.serialNumber"),
+                render: (gateway) => gateway.serialNumber,
+              },
+              {
+                key: "type",
+                label: t("devices.gatewayType"),
+                render: (gateway) => gatewayTypeLabel(gateway.gatewayType),
+              },
+              {
+                key: "status",
+                label: t("devices.status"),
+                render: (gateway) => deviceStatusLabel(gateway.status),
+              },
+              {
+                key: "building",
+                label: t("devices.building"),
+                render: (gateway) => gateway.buildingAssignments[0]?.building.title ?? "-",
+              },
             ]}
             rows={gateways}
           />
@@ -663,9 +757,21 @@ function DevicesSection({
           <DataTable
             columns={[
               { key: "number", label: t("devices.nodeNumber"), render: (node) => node.number },
-              { key: "type", label: t("devices.nodeType"), render: (node) => node.nodeType.displayName },
-              { key: "status", label: t("devices.status"), render: (node) => deviceStatusLabel(node.status) },
-              { key: "gateway", label: t("devices.gateway"), render: (node) => node.gatewayAssignments[0]?.gateway.serialNumber ?? "-" },
+              {
+                key: "type",
+                label: t("devices.nodeType"),
+                render: (node) => node.nodeType.displayName,
+              },
+              {
+                key: "status",
+                label: t("devices.status"),
+                render: (node) => deviceStatusLabel(node.status),
+              },
+              {
+                key: "gateway",
+                label: t("devices.gateway"),
+                render: (node) => node.gatewayAssignments[0]?.gateway.serialNumber ?? "-",
+              },
             ]}
             rows={nodes}
           />

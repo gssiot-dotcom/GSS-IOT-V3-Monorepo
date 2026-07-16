@@ -21,7 +21,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new AuthApiError(`Authentication request failed with status ${response.status}.`, response.status);
+    throw new AuthApiError(
+      `Authentication request failed with status ${response.status}.`,
+      response.status,
+    );
   }
 
   return (await response.json()) as T;

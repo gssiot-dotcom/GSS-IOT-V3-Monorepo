@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { loadApiEnv } from "@gss-iot/config";
 import { AssignmentStatus, AuditActorType, GatewayCommandStatus } from "@prisma/client";
 import type { GatewayCommandType, Prisma } from "@prisma/client";
@@ -41,7 +47,36 @@ export const gatewayCommandSelect = {
   createdAt: true,
   updatedAt: true,
   gateway: { select: { id: true, serialNumber: true } },
+  provisioningRequest: {
+    select: {
+      id: true,
+      companyId: true,
+      buildingId: true,
+      gatewayId: true,
+      nodeTypeId: true,
+      status: true,
+      responsePayload: true,
+      failureReason: true,
+      appliedAt: true,
+      failedAt: true,
+      items: {
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          nodeId: true,
+          assignmentId: true,
+          appliedAt: true,
+          failureReason: true,
+          node: { select: { number: true } },
+        },
+      },
+    },
+  },
 } satisfies Prisma.GatewayCommandSelect;
+
+type SelectedGatewayCommand = Prisma.GatewayCommandGetPayload<{
+  select: typeof gatewayCommandSelect;
+}>;
 
 @Injectable()
 export class GatewayCommandsService {
@@ -66,17 +101,77 @@ export class GatewayCommandsService {
   }
 
   async createRegisterNodesCommand(actor: AuthTokenPayload, dto: RegisterNodesCommandDto) {
-    return this.createCommand(actor, dto.gatewayId, dto.expiresInSeconds, async (tx, gateway) => {
+    return this.prisma.$transaction(async (tx) => {
+      const gateway = await this.getGatewayProvisioningContext(dto.gatewayId, dto.buildingId, tx);
       const nodeType = await this.getNodeTypeOrThrow(dto.nodeTypeId, tx);
       const nodes = await this.getNodesForGatewayCommand(dto.nodeIds, gateway.companyId, tx);
       if (nodes.some((node) => node.nodeTypeId !== nodeType.id)) {
         throw new BadRequestException("All nodes must use the selected node type.");
       }
-      return this.adapters.buildRegisterNodes({
+      if (nodes.some((node) => node.gatewayAssignments.length > 0)) {
+        throw new ConflictException("Selected nodes must be unassigned before provisioning.");
+      }
+      const built = this.adapters.buildRegisterNodes({
         gatewaySerial: gateway.serialNumber,
         nodeNumbers: nodes.map((node) => node.number),
         nodeTypeNumericCode: nodeType.numericCode,
       });
+      const expiresAt = new Date(
+        Date.now() + (dto.expiresInSeconds ?? this.env.MQTT_COMMAND_EXPIRES_IN_SECONDS) * 1000,
+      );
+      const requesterType =
+        actor.context === AUTH_CONTEXT.gssAdmin
+          ? AuditActorType.GSS_ADMIN
+          : AuditActorType.COMPANY_USER;
+      const command = await tx.gatewayCommand.create({
+        data: {
+          commandNumber: built.commandNumber,
+          commandType: built.commandType,
+          correlationKey: `${gateway.serialNumber}:${built.commandNumber}`,
+          expiresAt,
+          gatewayId: gateway.id,
+          maxAttempts: this.env.MQTT_MAX_PUBLISH_ATTEMPTS,
+          payload: built.payload as Prisma.InputJsonObject,
+          requesterId: actor.sub,
+          requesterType,
+          topic: built.topic,
+        },
+        select: gatewayCommandSelect,
+      });
+      const request = await tx.nodeGatewayProvisioningRequest.create({
+        data: {
+          buildingId: gateway.buildingId,
+          commandId: command.id,
+          companyId: gateway.companyId,
+          gatewayId: gateway.id,
+          items: { createMany: { data: nodes.map((node) => ({ nodeId: node.id })) } },
+          nodeTypeId: nodeType.id,
+          requestedById: actor.sub,
+          requestedByType: requesterType,
+        },
+        include: { items: true },
+      });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "gateway-command.create",
+          entityId: command.id,
+          entityType: "GatewayCommand",
+          newValue: command,
+        },
+        tx,
+      );
+      await this.auditLog.record(
+        actor,
+        {
+          action: "node-gateway-provisioning.request",
+          entityId: request.id,
+          entityType: "NodeGatewayProvisioningRequest",
+          newValue: request,
+        },
+        tx,
+      );
+      return this.getCommandOrThrow(command.id, tx);
     });
   }
 
@@ -122,25 +217,43 @@ export class GatewayCommandsService {
 
   async markSent(commandId: string) {
     const now = new Date();
-    return this.prisma.gatewayCommand.update({
-      where: { id: commandId },
-      data: {
-        attemptCount: { increment: 1 },
-        failureReason: null,
-        lastAttemptAt: now,
-        sentAt: now,
-        status: GatewayCommandStatus.SENT,
-      },
-      select: gatewayCommandSelect,
+    return this.prisma.$transaction(async (tx) => {
+      const command = await tx.gatewayCommand.update({
+        where: { id: commandId },
+        data: {
+          attemptCount: { increment: 1 },
+          failureReason: null,
+          lastAttemptAt: now,
+          sentAt: now,
+          status: GatewayCommandStatus.SENT,
+        },
+        select: gatewayCommandSelect,
+      });
+      await tx.nodeGatewayProvisioningRequest.updateMany({
+        where: { commandId },
+        data: { failureReason: null, status: GatewayCommandStatus.SENT },
+      });
+      return command;
     });
   }
 
   async markFailed(commandId: string, reason: string) {
     const now = new Date();
-    return this.prisma.gatewayCommand.update({
-      where: { id: commandId },
-      data: { failedAt: now, failureReason: reason, status: GatewayCommandStatus.FAILED },
-      select: gatewayCommandSelect,
+    return this.prisma.$transaction(async (tx) => {
+      const command = await tx.gatewayCommand.update({
+        where: { id: commandId },
+        data: { failedAt: now, failureReason: reason, status: GatewayCommandStatus.FAILED },
+        select: gatewayCommandSelect,
+      });
+      await tx.nodeGatewayProvisioningRequest.updateMany({
+        where: { commandId },
+        data: { failedAt: now, failureReason: reason, status: GatewayCommandStatus.FAILED },
+      });
+      await tx.nodeGatewayProvisioningItem.updateMany({
+        where: { request: { commandId } },
+        data: { failureReason: reason },
+      });
+      return command;
     });
   }
 
@@ -149,37 +262,58 @@ export class GatewayCommandsService {
     commandNumber: number,
     responsePayload: Prisma.InputJsonValue,
   ) {
-    const command = await this.prisma.gatewayCommand.findFirst({
-      orderBy: { sentAt: "asc" },
-      select: gatewayCommandSelect,
-      where: {
-        activeKey: "active",
-        commandNumber,
-        gateway: { serialNumber: gatewaySerial },
-        status: GatewayCommandStatus.SENT,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const command = await this.findSentCommand(gatewaySerial, commandNumber, tx);
+      if (!command) {
+        return null;
+      }
+      if (command.commandType === "REGISTER_NODES") {
+        const failureReason = await this.validateProvisioningApply(command.id, tx);
+        if (failureReason) {
+          return this.failSentCommand(command, responsePayload, failureReason, tx);
+        }
+      }
+      const acknowledged = await tx.gatewayCommand.update({
+        where: { id: command.id },
+        data: {
+          acknowledgedAt: new Date(),
+          activeKey: command.id,
+          responsePayload,
+          status: GatewayCommandStatus.ACKNOWLEDGED,
+        },
+        select: gatewayCommandSelect,
+      });
+      if (command.commandType === "REGISTER_NODES") {
+        await this.applyProvisioningRequest(command.id, responsePayload, tx);
+      }
+      await this.auditLog.record(
+        this.systemActor(),
+        {
+          action: "gateway-command.acknowledge",
+          entityId: acknowledged.id,
+          entityType: "GatewayCommand",
+          newValue: acknowledged,
+          oldValue: command,
+        },
+        tx,
+      );
+      return this.getCommandOrThrow(command.id, tx);
     });
-    if (!command) {
-      return null;
-    }
-    const acknowledged = await this.prisma.gatewayCommand.update({
-      where: { id: command.id },
-      data: {
-        acknowledgedAt: new Date(),
-        activeKey: command.id,
-        responsePayload,
-        status: GatewayCommandStatus.ACKNOWLEDGED,
-      },
-      select: gatewayCommandSelect,
+  }
+
+  async failSentGatewayResponse(
+    gatewaySerial: string,
+    commandNumber: number,
+    responsePayload: Prisma.InputJsonValue,
+    reason: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const command = await this.findSentCommand(gatewaySerial, commandNumber, tx);
+      if (!command) {
+        return null;
+      }
+      return this.failSentCommand(command, responsePayload, reason, tx);
     });
-    await this.auditLog.record(this.systemActor(), {
-      action: "gateway-command.acknowledge",
-      entityId: acknowledged.id,
-      entityType: "GatewayCommand",
-      newValue: acknowledged,
-      oldValue: command,
-    });
-    return acknowledged;
   }
 
   async retryCommand(actor: AuthTokenPayload, commandId: string) {
@@ -195,6 +329,18 @@ export class GatewayCommandsService {
         where: { id: commandId },
         data: { failureReason: null, status: GatewayCommandStatus.PENDING },
         select: gatewayCommandSelect,
+      });
+      await tx.nodeGatewayProvisioningRequest.updateMany({
+        where: { commandId },
+        data: {
+          failedAt: null,
+          failureReason: null,
+          status: GatewayCommandStatus.PENDING,
+        },
+      });
+      await tx.nodeGatewayProvisioningItem.updateMany({
+        where: { request: { commandId }, assignmentId: null },
+        data: { failureReason: null },
       });
       await this.auditLog.record(
         actor,
@@ -229,6 +375,13 @@ export class GatewayCommandsService {
         },
         select: gatewayCommandSelect,
       });
+      await tx.nodeGatewayProvisioningRequest.updateMany({
+        where: { commandId },
+        data: {
+          failureReason: "Command was cancelled before successful acknowledgement.",
+          status: GatewayCommandStatus.CANCELLED,
+        },
+      });
       await this.auditLog.record(
         actor,
         {
@@ -260,10 +413,20 @@ export class GatewayCommandsService {
       },
     });
     for (const command of commands) {
-      const expired = await this.prisma.gatewayCommand.update({
-        where: { id: command.id },
-        data: { activeKey: command.id, status: GatewayCommandStatus.EXPIRED },
-        select: gatewayCommandSelect,
+      const expired = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.gatewayCommand.update({
+          where: { id: command.id },
+          data: { activeKey: command.id, status: GatewayCommandStatus.EXPIRED },
+          select: gatewayCommandSelect,
+        });
+        await tx.nodeGatewayProvisioningRequest.updateMany({
+          where: { commandId: command.id },
+          data: {
+            failureReason: "Command expired before successful acknowledgement.",
+            status: GatewayCommandStatus.EXPIRED,
+          },
+        });
+        return updated;
       });
       await this.auditLog.record(this.systemActor(), {
         action: "gateway-command.expire",
@@ -282,6 +445,206 @@ export class GatewayCommandsService {
       select: gatewayCommandSelect,
       where: { gatewayId, status: GatewayCommandStatus.PENDING },
     });
+  }
+
+  private async findSentCommand(
+    gatewaySerial: string,
+    commandNumber: number,
+    executor: PrismaExecutor,
+  ) {
+    return executor.gatewayCommand.findFirst({
+      orderBy: { sentAt: "asc" },
+      select: gatewayCommandSelect,
+      where: {
+        activeKey: "active",
+        commandNumber,
+        gateway: {
+          OR: [{ serialNumber: gatewaySerial }, { serialNumber: { endsWith: gatewaySerial } }],
+        },
+        status: GatewayCommandStatus.SENT,
+      },
+    });
+  }
+
+  private async failSentCommand(
+    command: SelectedGatewayCommand,
+    responsePayload: Prisma.InputJsonValue,
+    reason: string,
+    tx: Prisma.TransactionClient,
+  ) {
+    const now = new Date();
+    const failed = await tx.gatewayCommand.update({
+      where: { id: command.id },
+      data: {
+        failedAt: now,
+        failureReason: reason,
+        responsePayload,
+        status: GatewayCommandStatus.FAILED,
+      },
+      select: gatewayCommandSelect,
+    });
+    await tx.nodeGatewayProvisioningRequest.updateMany({
+      where: { commandId: command.id },
+      data: {
+        failedAt: now,
+        failureReason: reason,
+        responsePayload,
+        status: GatewayCommandStatus.FAILED,
+      },
+    });
+    await tx.nodeGatewayProvisioningItem.updateMany({
+      where: { request: { commandId: command.id }, assignmentId: null },
+      data: { failureReason: reason },
+    });
+    await this.auditLog.record(
+      this.systemActor(),
+      {
+        action: "gateway-command.response-failed",
+        entityId: failed.id,
+        entityType: "GatewayCommand",
+        newValue: failed,
+        oldValue: command,
+      },
+      tx,
+    );
+    return failed;
+  }
+
+  private async validateProvisioningApply(
+    commandId: string,
+    executor: PrismaExecutor,
+  ): Promise<string | null> {
+    const request = await executor.nodeGatewayProvisioningRequest.findUnique({
+      where: { commandId },
+      include: { items: true },
+    });
+    if (!request) {
+      return "Provisioning request is missing for register-nodes command.";
+    }
+    const gatewayCompany = await executor.companyDeviceAssignment.findFirst({
+      where: {
+        companyId: request.companyId,
+        gatewayId: request.gatewayId,
+        status: AssignmentStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    if (!gatewayCompany) {
+      return "Gateway is no longer assigned to the requested company.";
+    }
+    const gatewayBuilding = await executor.gatewayBuildingAssignment.findFirst({
+      where: {
+        buildingId: request.buildingId,
+        gatewayId: request.gatewayId,
+        status: AssignmentStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    if (!gatewayBuilding) {
+      return "Gateway is no longer assigned to the requested building.";
+    }
+    const nodeIds = request.items.map((item) => item.nodeId);
+    const nodes = await executor.node.findMany({
+      where: { id: { in: nodeIds } },
+      select: {
+        id: true,
+        nodeTypeId: true,
+        companyAssignments: {
+          where: { status: AssignmentStatus.ACTIVE },
+          select: { companyId: true },
+          take: 1,
+        },
+        gatewayAssignments: {
+          where: { status: AssignmentStatus.ACTIVE },
+          select: { gatewayId: true },
+          take: 1,
+        },
+      },
+    });
+    if (nodes.length !== nodeIds.length) {
+      return "One or more requested nodes no longer exist.";
+    }
+    for (const node of nodes) {
+      if (node.nodeTypeId !== request.nodeTypeId) {
+        return "One or more requested nodes no longer match the provisioning node type.";
+      }
+      if (node.companyAssignments[0]?.companyId !== request.companyId) {
+        return "One or more requested nodes are no longer assigned to the requested company.";
+      }
+      const assignedGatewayId = node.gatewayAssignments[0]?.gatewayId;
+      if (assignedGatewayId && assignedGatewayId !== request.gatewayId) {
+        return "One or more requested nodes are already assigned to another gateway.";
+      }
+    }
+    return null;
+  }
+
+  private async applyProvisioningRequest(
+    commandId: string,
+    responsePayload: Prisma.InputJsonValue,
+    tx: Prisma.TransactionClient,
+  ) {
+    const request = await tx.nodeGatewayProvisioningRequest.findUnique({
+      where: { commandId },
+      include: { items: true },
+    });
+    if (!request || request.status === GatewayCommandStatus.ACKNOWLEDGED) {
+      return;
+    }
+    const now = new Date();
+    const appliedAssignments: Array<{ gatewayId: string; id: string; nodeId: string }> = [];
+    for (const item of request.items) {
+      let assignment = await tx.nodeGatewayAssignment.findFirst({
+        where: { nodeId: item.nodeId, status: AssignmentStatus.ACTIVE },
+      });
+      if (!assignment) {
+        assignment = await tx.nodeGatewayAssignment.create({
+          data: {
+            gatewayId: request.gatewayId,
+            nodeId: item.nodeId,
+            sourceCommandId: commandId,
+          },
+        });
+      }
+      await tx.nodeGatewayProvisioningItem.update({
+        where: { id: item.id },
+        data: {
+          appliedAt: now,
+          assignmentId: assignment.id,
+          failureReason: null,
+        },
+      });
+      appliedAssignments.push({
+        gatewayId: assignment.gatewayId,
+        id: assignment.id,
+        nodeId: assignment.nodeId,
+      });
+    }
+    const applied = await tx.nodeGatewayProvisioningRequest.update({
+      where: { id: request.id },
+      data: {
+        appliedAt: now,
+        failureReason: null,
+        responsePayload,
+        status: GatewayCommandStatus.ACKNOWLEDGED,
+      },
+      include: { items: true },
+    });
+    await this.auditLog.record(
+      this.systemActor(),
+      {
+        action: "node-gateway-provisioning.apply",
+        entityId: request.id,
+        entityType: "NodeGatewayProvisioningRequest",
+        newValue: {
+          appliedRequestId: applied.id,
+          assignmentIds: appliedAssignments.map((assignment) => assignment.id),
+          itemCount: applied.items.length,
+        },
+        oldValue: request,
+      },
+      tx,
+    );
   }
 
   private async createCommand(
@@ -359,6 +722,51 @@ export class GatewayCommandsService {
     return { companyId, id: gateway.id, serialNumber: gateway.serialNumber };
   }
 
+  private async getGatewayProvisioningContext(
+    gatewayId: string,
+    buildingId: string,
+    executor: PrismaExecutor,
+  ) {
+    const gateway = await executor.gateway.findUnique({
+      where: { id: gatewayId },
+      select: {
+        id: true,
+        serialNumber: true,
+        companyAssignments: {
+          where: { status: AssignmentStatus.ACTIVE },
+          select: { companyId: true },
+          take: 1,
+        },
+        buildingAssignments: {
+          where: { status: AssignmentStatus.ACTIVE },
+          select: {
+            buildingId: true,
+            building: { select: { companyId: true, id: true } },
+          },
+          take: 1,
+        },
+      },
+    });
+    if (!gateway) {
+      throw new NotFoundException("The gateway was not found.");
+    }
+    const companyId = gateway.companyAssignments[0]?.companyId;
+    if (!companyId) {
+      throw new BadRequestException("Gateway must be assigned to a company before provisioning.");
+    }
+    const buildingAssignment = gateway.buildingAssignments[0];
+    if (!buildingAssignment) {
+      throw new BadRequestException("Gateway must be assigned to a building before provisioning.");
+    }
+    if (buildingAssignment.buildingId !== buildingId) {
+      throw new BadRequestException("Gateway is not assigned to the selected building.");
+    }
+    if (buildingAssignment.building.companyId !== companyId) {
+      throw new ConflictException("Gateway company and building company do not match.");
+    }
+    return { buildingId, companyId, id: gateway.id, serialNumber: gateway.serialNumber };
+  }
+
   private async getNodeTypeOrThrow(nodeTypeId: string, executor: PrismaExecutor) {
     const nodeType = await executor.nodeType.findUnique({
       where: { id: nodeTypeId },
@@ -380,7 +788,16 @@ export class GatewayCommandsService {
         id: { in: nodeIds },
         companyAssignments: { some: { companyId, status: AssignmentStatus.ACTIVE } },
       },
-      select: { id: true, nodeTypeId: true, number: true },
+      select: {
+        id: true,
+        nodeTypeId: true,
+        number: true,
+        gatewayAssignments: {
+          where: { status: AssignmentStatus.ACTIVE },
+          select: { gatewayId: true },
+          take: 1,
+        },
+      },
     });
     if (nodes.length !== new Set(nodeIds).size) {
       throw new BadRequestException("All nodes must exist and belong to the gateway company.");

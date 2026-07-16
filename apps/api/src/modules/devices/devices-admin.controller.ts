@@ -36,6 +36,12 @@ export class DevicesAdminController {
     return this.devices.listNodeTypes();
   }
 
+  @RequirePermissions("devices.assign")
+  @Get("provisioning-options")
+  listProvisioningOptions() {
+    return this.devices.listProvisioningOptions();
+  }
+
   @RequirePermissions("gateways.view")
   @Get("gateways")
   listGateways() {

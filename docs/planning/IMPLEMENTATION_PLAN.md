@@ -4,6 +4,8 @@
 
 Yangi loyiha eski repositoryni in-place refactor qilish orqali emas, yangi monorepoda vertical slice usulida quriladi. Eski loyiha business flow, MQTT contract, rasmlar va foydali UX behavior uchun reference bo‘ladi.
 
+> Current execution note: the post-Phase-6 execution order in `docs/prompts/2nd-step/00_README_EXECUTION_ORDER.md` supersedes the older alarm-oriented numbering below. In the current repository state, Phase 7 is route/session stabilization and Phase 8 is MQTT-backed device provisioning. Alarm levels, fault filters, classification, occurrence counting, notifications and reports start only in later second-step phases.
+
 ## Phase 0 — Repository bootstrap va discovery freeze
 
 ### Maqsad
@@ -127,7 +129,41 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 - Faqat selected building gatewaylaridagi nodes qaytadi.
 - Unauthorized room join rad etiladi.
 
-## Phase 7 — Alarm occurrence-count subsystem
+## Phase 7 — Route/session stabilization and company setup completion
+
+### Ishlar
+
+- Restore GSS Admin and Company auth sessions from stored bearer token and `/me` endpoints.
+- Add context-aware NotFound behavior for authenticated `/admin/*` and `/company/*` routes.
+- Add explicit Admin company detail/setup routes for overview, sites, buildings, users and devices.
+- Improve company create/edit/deactivate UX without weakening backend permissions.
+
+### Exit criteria
+
+- Admin Company Open no longer falls through to login.
+- Direct links and browser refresh restore valid sessions.
+- Unknown authenticated routes render NotFound or Forbidden correctly.
+- Phase 7 route/session tests and full verification pass.
+
+## Phase 8 — Device provisioning and MQTT-backed node assignment
+
+### Ishlar
+
+- Link `REGISTER_NODES` GatewayCommand (`cmd: 2`) to a relational provisioning request with selected company, building, gateway, node type and node IDs.
+- Require strict successful gateway acknowledgement before creating active `NodeGatewayAssignment` rows.
+- Reject cross-company, wrong-building, mixed-type and already-assigned node selections.
+- Preserve pending, sent, failed, expired, cancelled, retry, duplicate and late-ACK behavior through the GatewayCommand outbox.
+- Replace raw UUID node-to-gateway UI with guided company/building/gateway/node-type/node selectors.
+- Document DB-only unassign until hardware unregister/sync protocol is confirmed.
+
+### Exit criteria
+
+- Successful cmd 2 acknowledgement atomically creates active assignments.
+- Failed, expired, cancelled, timeout, negative, duplicate or late responses do not create false assignments.
+- Admin UI does not require manual UUID entry for provisioning.
+- Existing Phase 5 command and Phase 6 monitoring behavior remains green.
+
+## Later second-step phases — Alarm levels, occurrence count, operations and reports
 
 ### Ishlar
 
@@ -147,22 +183,7 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 - Triggerdan keyingi eligible reading yangi cycle boshlaydi.
 - Duplicate MQTT reading counter yoki notificationni takrorlamaydi.
 
-## Phase 8 — Alarm lifecycle va operations UI
-
-### Ishlar
-
-- Alarm list/detail, open/acknowledged/resolved/ignored.
-- Count evidence va delivery log ko‘rinishi.
-- Ack/resolve permission + scope.
-- Badge/realtime update.
-- Fault filter configuration.
-
-### Exit criteria
-
-- Alarm event detail qaysi rule/count/readinglar trigger qilganini ko‘rsatadi.
-- Ack/resolve audit qilinadi.
-
-## Phase 9 — Reports va audit
+## Phase 9+ — Reports va audit
 
 ### Ishlar
 

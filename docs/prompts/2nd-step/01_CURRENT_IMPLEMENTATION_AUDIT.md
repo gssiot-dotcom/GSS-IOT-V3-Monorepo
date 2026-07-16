@@ -13,40 +13,40 @@ Bu static repository audit. Repositorydagi code, Prisma schema, migrationlar, te
 
 ## Main feature matrix
 
-| Feature | Status | Audit xulosasi |
-|---|---|---|
-| GSS login/RBAC/super admin | COMPLETE backend, PARTIAL frontend | Guards, permission resolver, inactive user va super-admin tests bor. Session persistence yo'q. |
-| Company list/create | PARTIAL | Backend transaction, role templates va platform manager yaratadi. UI list/create bor. Detail route yo'q. |
-| Company Open | BROKEN | UI `/admin/companies/:id`ga navigate qiladi, routerda route yo'q, wildcard `/login`ga yuboradi. |
-| Company detail/update/deactivate | MISSING UI | Backend get/update/deactivate bor, frontend page/route yo'q. |
-| Admin site/building/user management | PARTIAL | Backend mavjud, admin company detail tabs va pages yo'q. |
-| Gateway list/create/update | PARTIAL | Backend to'liqroq, UI list/create basic. Update/lifecycle UX yo'q. |
-| Node list/create/update | PARTIAL | Backend to'liqroq, UI list/create basic. Update/lifecycle UX yo'q. |
-| Gateway -> Company assignment | PARTIAL | Backend history/audit bor. UI raw company UUID input. |
-| Gateway -> Building assignment | PARTIAL | Backend company consistency/history/audit bor. UI raw building UUID input, no move/unassign/history UX. |
-| Node -> Company assignment | PARTIAL | Backend history/audit bor. UI raw company UUID input. |
-| Node -> Gateway assignment | CRITICAL PARTIAL | DB assignment endpoint bor, lekin MQTT cmd 2 bilan integratsiya qilinmagan. |
-| MQTT cmd 2 register nodes | PARTIAL | Typed command/outbox/ACK bor, lekin ACK NodeGatewayAssignmentni commit qilmaydi. |
-| MQTT cmd 3/4/5 | PARTIAL | Low-level adapters/endpoints bor. Business configuration UI va persisted desired/applied state yo'q. |
-| MQTT subscribe 3 sensor types | COMPLETE | GATE_PUB, GATE_ANG, GATE_FORM tinglanadi; vertical gangformga normalize qilinadi. |
-| Sensor history | COMPLETE narrow scope | Har unique reading SensorReadingga yoziladi; dedupe mavjud. |
-| Latest node state | COMPLETE narrow scope | LatestNodeState upsert transactionda bajariladi. |
-| Door status classification | COMPLETE | doorChk open = danger, closed = safe. |
-| Angle/gangform classification | CRITICAL PARTIAL | Payload status bo'lmasa SAFE. DB alarm thresholds bo'yicha classify qilinmaydi. |
-| Company realtime monitoring | COMPLETE narrow scope | Scoped APIs, Socket.IO room authorization, history UI mavjud. |
-| GSS global monitoring UI | MISSING | Admin monitoring nav placeholder. |
-| Gateway alarm level | MISSING domain/UI | AlarmLevel model, CRUD, building orchestration, desired/applied status va UI yo'q. |
-| Fault filter | MISSING domain/UI | Low-level cmd 5 bor, persisted rule va UI yo'q. |
-| Company scoped sidebar | PARTIAL | Permission filtering bor. Ba'zi ko'ringan pages placeholder. |
-| Company user management | PARTIAL | Create/deactivate bor. Edit role/status/scope/direct permission/position yo'q. |
-| Company role management | CRITICAL PARTIAL | Role create `permissionIds: []` bilan yaratiladi. Permission editor yo'q. |
-| Area/building management | PARTIAL | List/create/deactivate bor; detail/edit/plan workflow yetishmaydi. |
-| Building plan/storage | PARTIAL/MISSING | Prisma metadata bor, real upload/storage and plan placement UI to'liq emas. |
-| Alarm occurrence count | MISSING | Latest approved blueprint bo'yicha hali implement qilinmagan. |
-| Notifications/alarm lifecycle | MISSING | Event, recipient, delivery, ack/resolve UI yo'q. |
-| Reports/export | MISSING | Sidebar placeholder, models/jobs/export yo'q. |
-| Dashboard analytics | MISSING | Admin va Company dashboard placeholder. |
-| Retention/partition/purge | MISSING | 180-day target docsda bor, real jobs/partition yo'q. |
+| Feature                             | Status                             | Audit xulosasi                                                                                           |
+| ----------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| GSS login/RBAC/super admin          | COMPLETE backend, PARTIAL frontend | Guards, permission resolver, inactive user va super-admin tests bor. Session persistence yo'q.           |
+| Company list/create                 | PARTIAL                            | Backend transaction, role templates va platform manager yaratadi. UI list/create bor. Detail route yo'q. |
+| Company Open                        | BROKEN                             | UI `/admin/companies/:id`ga navigate qiladi, routerda route yo'q, wildcard `/login`ga yuboradi.          |
+| Company detail/update/deactivate    | MISSING UI                         | Backend get/update/deactivate bor, frontend page/route yo'q.                                             |
+| Admin site/building/user management | PARTIAL                            | Backend mavjud, admin company detail tabs va pages yo'q.                                                 |
+| Gateway list/create/update          | PARTIAL                            | Backend to'liqroq, UI list/create basic. Update/lifecycle UX yo'q.                                       |
+| Node list/create/update             | PARTIAL                            | Backend to'liqroq, UI list/create basic. Update/lifecycle UX yo'q.                                       |
+| Gateway -> Company assignment       | PARTIAL                            | Backend history/audit bor. UI raw company UUID input.                                                    |
+| Gateway -> Building assignment      | PARTIAL                            | Backend company consistency/history/audit bor. UI raw building UUID input, no move/unassign/history UX.  |
+| Node -> Company assignment          | PARTIAL                            | Backend history/audit bor. UI raw company UUID input.                                                    |
+| Node -> Gateway assignment          | CRITICAL PARTIAL                   | DB assignment endpoint bor, lekin MQTT cmd 2 bilan integratsiya qilinmagan.                              |
+| MQTT cmd 2 register nodes           | PARTIAL                            | Typed command/outbox/ACK bor, lekin ACK NodeGatewayAssignmentni commit qilmaydi.                         |
+| MQTT cmd 3/4/5                      | PARTIAL                            | Low-level adapters/endpoints bor. Business configuration UI va persisted desired/applied state yo'q.     |
+| MQTT subscribe 3 sensor types       | COMPLETE                           | GATE_PUB, GATE_ANG, GATE_FORM tinglanadi; vertical gangformga normalize qilinadi.                        |
+| Sensor history                      | COMPLETE narrow scope              | Har unique reading SensorReadingga yoziladi; dedupe mavjud.                                              |
+| Latest node state                   | COMPLETE narrow scope              | LatestNodeState upsert transactionda bajariladi.                                                         |
+| Door status classification          | COMPLETE                           | doorChk open = danger, closed = safe.                                                                    |
+| Angle/gangform classification       | CRITICAL PARTIAL                   | Payload status bo'lmasa SAFE. DB alarm thresholds bo'yicha classify qilinmaydi.                          |
+| Company realtime monitoring         | COMPLETE narrow scope              | Scoped APIs, Socket.IO room authorization, history UI mavjud.                                            |
+| GSS global monitoring UI            | MISSING                            | Admin monitoring nav placeholder.                                                                        |
+| Gateway alarm level                 | MISSING domain/UI                  | AlarmLevel model, CRUD, building orchestration, desired/applied status va UI yo'q.                       |
+| Fault filter                        | MISSING domain/UI                  | Low-level cmd 5 bor, persisted rule va UI yo'q.                                                          |
+| Company scoped sidebar              | PARTIAL                            | Permission filtering bor. Ba'zi ko'ringan pages placeholder.                                             |
+| Company user management             | PARTIAL                            | Create/deactivate bor. Edit role/status/scope/direct permission/position yo'q.                           |
+| Company role management             | CRITICAL PARTIAL                   | Role create `permissionIds: []` bilan yaratiladi. Permission editor yo'q.                                |
+| Area/building management            | PARTIAL                            | List/create/deactivate bor; detail/edit/plan workflow yetishmaydi.                                       |
+| Building plan/storage               | PARTIAL/MISSING                    | Prisma metadata bor, real upload/storage and plan placement UI to'liq emas.                              |
+| Alarm occurrence count              | MISSING                            | Latest approved blueprint bo'yicha hali implement qilinmagan.                                            |
+| Notifications/alarm lifecycle       | MISSING                            | Event, recipient, delivery, ack/resolve UI yo'q.                                                         |
+| Reports/export                      | MISSING                            | Sidebar placeholder, models/jobs/export yo'q.                                                            |
+| Dashboard analytics                 | MISSING                            | Admin va Company dashboard placeholder.                                                                  |
+| Retention/partition/purge           | MISSING                            | 180-day target docsda bor, real jobs/partition yo'q.                                                     |
 
 ## Confirmed UI bugs
 

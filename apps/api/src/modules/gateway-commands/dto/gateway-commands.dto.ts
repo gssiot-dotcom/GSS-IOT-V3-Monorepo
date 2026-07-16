@@ -13,6 +13,9 @@ export class RegisterNodesCommandDto {
   gatewayId!: string;
 
   @IsString()
+  buildingId!: string;
+
+  @IsString()
   nodeTypeId!: string;
 
   @ArrayNotEmpty()

@@ -3,6 +3,7 @@ import type { CanonicalNodeType, MonitoringStatus, SensorValues } from "@gss-iot
 
 export interface ParsedGatewayResponse {
   cmd: number;
+  failureReason?: string;
   gatewaySerial: string;
   payload: Record<string, unknown>;
   success: boolean;
@@ -40,13 +41,8 @@ export class MqttPayloadParserService {
       if (!Number.isInteger(cmd)) {
         return null;
       }
-      const success =
-        record.success === true ||
-        record.result === "ok" ||
-        record.status === "ok" ||
-        record.ack === true ||
-        record.error === undefined;
-      return { cmd, gatewaySerial, payload: record, success };
+      const normalized = this.normalizeGatewayResponse(record);
+      return { cmd, gatewaySerial, payload: record, ...normalized };
     } catch {
       return null;
     }
@@ -134,6 +130,67 @@ export class MqttPayloadParserService {
     } catch {
       return null;
     }
+  }
+
+  private normalizeGatewayResponse(payload: Record<string, unknown>): {
+    failureReason?: string;
+    success: boolean;
+  } {
+    const error = this.toNonEmptyString(payload.error);
+    if (error && !this.isFalseLike(error)) {
+      return { failureReason: error, success: false };
+    }
+
+    for (const key of ["success", "ok", "ack"] as const) {
+      const normalized = this.normalizeBooleanLike(payload[key]);
+      if (normalized !== null) {
+        return normalized
+          ? { success: true }
+          : { failureReason: `${key} reported failure.`, success: false };
+      }
+    }
+
+    for (const key of ["resp", "result", "status"] as const) {
+      const normalized = this.normalizeStringOutcome(payload[key]);
+      if (normalized !== null) {
+        return normalized
+          ? { success: true }
+          : { failureReason: `${key} reported failure.`, success: false };
+      }
+    }
+
+    return {
+      failureReason: "Gateway response did not contain an accepted success value.",
+      success: false,
+    };
+  }
+
+  private normalizeBooleanLike(value: unknown): boolean | null {
+    if (value === true) {
+      return true;
+    }
+    if (value === false) {
+      return false;
+    }
+    return this.normalizeStringOutcome(value);
+  }
+
+  private normalizeStringOutcome(value: unknown): boolean | null {
+    const text = this.toNonEmptyString(value)?.toLowerCase();
+    if (!text) {
+      return null;
+    }
+    if (["success", "ok", "ack", "acknowledged", "true"].includes(text)) {
+      return true;
+    }
+    if (["fail", "failed", "failure", "error", "nack", "ng", "false"].includes(text)) {
+      return false;
+    }
+    return null;
+  }
+
+  private isFalseLike(value: string): boolean {
+    return ["false", "0", "none", "null", "undefined"].includes(value.toLowerCase());
   }
 
   private payloadNodeTypeMatchesTopic(

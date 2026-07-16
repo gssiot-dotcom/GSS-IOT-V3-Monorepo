@@ -81,6 +81,16 @@ describe("Gateway command Phase 5 helpers", () => {
       payload: { cmd: 2, success: true },
       success: true,
     });
+    expect(
+      parser.parseGatewayResponse("GW-001", JSON.stringify({ cmd: 2, resp: "success" })),
+    ).toMatchObject({ success: true });
+    expect(
+      parser.parseGatewayResponse("GW-001", JSON.stringify({ cmd: 2, status: "fail" })),
+    ).toMatchObject({ failureReason: "status reported failure.", success: false });
+    expect(parser.parseGatewayResponse("GW-001", JSON.stringify({ cmd: 2 }))).toMatchObject({
+      failureReason: "Gateway response did not contain an accepted success value.",
+      success: false,
+    });
   });
 
   it("keeps MQTT disabled mode broker-free and emits fake acknowledgements only when enabled", async () => {

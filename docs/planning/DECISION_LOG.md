@@ -254,3 +254,27 @@ Files affected:
 **Consequences:** Duplicate QoS redelivery and gateway retry are idempotent when the broker packet metadata or gateway payload carries a stable identifier. No-ID/no-time legacy payloads are preserved to avoid false-positive dedupe; gateways should send message id, sequence or measured time for deterministic retry dedupe. Reports, archival and partition maintenance are not introduced in Phase 6.
 
 **Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260715150000_phase_6_monitoring_realtime/migration.sql`, `apps/api/src/modules/monitoring/`, `apps/api/src/modules/mqtt/`, `docs/architecture/PHASE_6_MONITORING_REALTIME.md`.
+
+## DEC-2026-023
+
+**Status:** accepted
+
+**Context:** Phase 7 stabilization found that Admin Company Open navigated to `/admin/companies/:companyId`, but the frontend router had no matching route and the wildcard redirected every unknown URL to `/login`. Browser refresh and direct links also lost auth because the web app held the session only in React memory.
+
+**Decision:** Persist only the bearer access token and auth context in `sessionStorage`, then rebuild the full `AuthSession` from the matching `/auth/gss/me` or `/auth/company/me` endpoint on app bootstrap. Add explicit GSS company detail/setup routes and protected context-aware NotFound fallbacks for unknown `/admin/*` and `/company/*` URLs.
+
+**Consequences:** Missing routes are no longer misreported as login failures, refresh/direct URLs restore through the backend security boundary, invalid sessions are cleared and redirected to login, and GSS Admin and Company contexts remain separate. Phase 7 does not add refresh tokens, merge auth contexts, make protected pages public, or start Phase 8 device provisioning/alarm work.
+
+**Files affected:** `apps/web/src/shared/auth/`, `apps/web/src/shared/rbac/`, `apps/web/src/app/router.tsx`, `apps/web/src/features/organizations/`, `apps/web/src/features/shell/`, `apps/web/src/test/auth-routing.spec.tsx`.
+
+## DEC-2026-024
+
+**Status:** accepted
+
+**Context:** Phase 8 found that direct DB node-gateway assignment could diverge from physical gateway state, and legacy cmd 2 behavior updated DB state only after `resp === "success"`. Later legacy command docs accepted explicit success fields, but not missing error as success. Hardware unregister/remove command behavior remains unconfirmed.
+
+**Decision:** Node-to-gateway assignment must be created through a relational `NodeGatewayProvisioningRequest` linked to a `REGISTER_NODES` GatewayCommand. Active `NodeGatewayAssignment` rows are created only in the successful ACK transaction. Strict gateway response parsing accepts only documented success values (`success/ok/ack` true or `resp/result/status` success-like values) and treats negative or missing accepted values as failed. Response topic serial matching supports exact saved serials and suffix tokens. Node-gateway unassign remains DB history only until a hardware unregister or full replacement command is confirmed.
+
+**Consequences:** Failed, expired, cancelled, duplicate or late responses do not create active assignments. Selected node database IDs are auditable outside JSON payloads. Operators no longer use raw UUID node-to-gateway assignment; they use the MQTT provisioning flow. A future physical unassign/sync workflow needs a separate protocol decision.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260716120000_phase_8_device_provisioning/migration.sql`, `apps/api/src/modules/gateway-commands/`, `apps/api/src/modules/devices/`, `apps/api/src/modules/mqtt/`, `apps/web/src/features/devices/AdminDevicesPage.tsx`, `docs/architecture/PHASE_8_DEVICE_PROVISIONING.md`.
