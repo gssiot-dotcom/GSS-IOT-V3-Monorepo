@@ -278,3 +278,51 @@ Files affected:
 **Consequences:** Failed, expired, cancelled, duplicate or late responses do not create active assignments. Selected node database IDs are auditable outside JSON payloads. Operators no longer use raw UUID node-to-gateway assignment; they use the MQTT provisioning flow. A future physical unassign/sync workflow needs a separate protocol decision.
 
 **Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260716120000_phase_8_device_provisioning/migration.sql`, `apps/api/src/modules/gateway-commands/`, `apps/api/src/modules/devices/`, `apps/api/src/modules/mqtt/`, `apps/web/src/features/devices/AdminDevicesPage.tsx`, `docs/architecture/PHASE_8_DEVICE_PROVISIONING.md`.
+
+## DEC-2026-025
+
+**Status:** accepted
+
+**Context:** Phase 8 MQTT provisioning needs production-safe operational visibility for disabled mode, broker connection lifecycle, subscriptions, publish attempts and gateway responses. MQTT credentials must not leak through logs, API responses or UI.
+
+**Decision:** Keep MQTT observability as in-memory runtime state on `MqttClientService` and expose a protected GSS Admin status endpoint under `mqtt-commands.view`. Logs and API/UI status may include sanitized broker URL/host, client id, topic filters, command id, gateway serial, command number, payload byte size, timestamps and normalized response outcome. They must not include MQTT username or password.
+
+**Consequences:** Operators can diagnose broker connectivity and command flow without adding schema changes or exposing secrets. Status resets on API process restart and remains an operational snapshot, not an audit trail. Durable command lifecycle remains in `GatewayCommand`; Phase 9 alarm/report work is not started.
+
+**Files affected:** `apps/api/src/modules/mqtt/mqtt-client.service.ts`, `apps/api/src/modules/gateway-commands/`, `apps/web/src/features/gateway-commands/GatewayCommandsPage.tsx`, `packages/contracts/src/index.ts`, `docs/architecture/PHASE_8_DEVICE_PROVISIONING.md`.
+
+## DEC-2026-026
+
+**Status:** accepted
+
+**Context:** Live gateway testing showed the deployed legacy backend receives acknowledgements for `cmd: 2`, while V3 did not. The wire-format difference was that V3 published node numbers as JSON strings and the legacy protocol publishes them as JSON numbers.
+
+**Decision:** Keep node numbers as strings in database/domain state, but make the MQTT command adapter the wire-format boundary for `cmd: 2` register-node and `cmd: 5` fault-filter payloads. The adapter converts selected node numbers to safe JSON integers, preserves requested node order and rejects empty, non-numeric, unsafe, negative or numerically duplicated values before `GatewayCommand` persistence or publish. Gateway response parsing explicitly accepts legacy `resp: "success"` and `resp: "fail"` forms. Raw `GATE_RES` and malformed sensor payload diagnostics are debug-level and redact secret-like fields.
+
+**Consequences:** The final published legacy-compatible cmd 2 JSON for selected nodes `["100", "101", "102"]` is `{"cmd":2,"nodeType":2,"numNodes":3,"nodes":[100,101,102]}`. Existing assignment, ACK, RBAC and observability architecture is preserved. Phase 9 alarm/report work is not started.
+
+**Files affected:** `apps/api/src/modules/gateway-commands/adapters/gateway-command-adapters.ts`, `apps/api/src/modules/gateway-commands/gateway-commands.service.ts`, `apps/api/src/modules/gateway-commands/mqtt-response-handler.service.ts`, `apps/api/src/modules/monitoring/monitoring.service.ts`, `apps/api/test/gateway-commands.spec.ts`, `apps/api/test/e2e/gateway-commands.e2e-spec.ts`, `docs/architecture/PHASE_8_DEVICE_PROVISIONING.md`.
+
+## DEC-2026-027
+
+**Status:** accepted
+
+**Context:** Updated gateway firmware can echo a deterministic `requestId` when present. Legacy gateway/cmd-only correlation is vulnerable to ambiguous active commands and does not protect against fast ACK races where a response arrives before the publisher marks the command `SENT`.
+
+**Decision:** For `cmd: 2`, `cmd: 3`, `cmd: 4` and `cmd: 5`, the backend creates the `GatewayCommand` row first and then stores/publishes the final MQTT payload with `requestId` equal to `GatewayCommand.id`. Retries reuse the same id/requestId and stored payload. Response correlation prefers exact requestId and verifies gateway serial, cmd, active eligibility and command-specific fields; malformed, unknown, wrong-gateway or wrong-cmd request IDs never fall back to legacy matching. Legacy no-requestId responses match only by gateway serial plus explicit cmd when exactly one eligible active command exists. The publisher records an attempt before publish and uses conditional status updates so fast ACK/FAIL responses cannot be overwritten back to `SENT`.
+
+**Consequences:** Live firmware can deterministically acknowledge a specific command, duplicate/late responses cannot regress terminal state or duplicate side effects, and strict legacy fallback remains available for gateways that do not echo requestId. Phase 9 alarm/fault-filter models and report features remain out of scope.
+
+**Files affected:** `apps/api/src/modules/gateway-commands/gateway-command-publisher.service.ts`, `apps/api/src/modules/gateway-commands/gateway-commands.service.ts`, `apps/api/src/modules/gateway-commands/mqtt-response-handler.service.ts`, `apps/api/src/modules/mqtt/mqtt-client.service.ts`, `apps/api/src/modules/mqtt/mqtt-payload-parser.service.ts`, `apps/api/test/e2e/gateway-commands.e2e-spec.ts`, `apps/web/src/features/gateway-commands/GatewayCommandsPage.tsx`, `docs/architecture/PHASE_8_DEVICE_PROVISIONING.md`.
+
+## DEC-2026-028
+
+**Status:** accepted
+
+**Context:** Phase 8 live hardware verification was completed with physical ESP32 gateway serial `0300`, nodes `100`, `101` and `102`, and GatewayCommand `160b3e5c-139d-479b-8535-a82f25f95b02`. A prior closure checklist mentioned a specific gateway serial as if it were a permanent acceptance requirement.
+
+**Decision:** Phase 8 completion requires one explicitly selected live-test gateway to be recorded for the verification run, not a hardcoded architectural serial. The acknowledged `cmd=2` GatewayCommand must belong to that selected gateway, `requestId` must equal `GatewayCommand.id`, the ACK payload must correlate to the same command, nodes `100`, `101` and `102` must each have exactly one active `NodeGatewayAssignment`, every resulting assignment must point to the same selected gateway, every `sourceCommandId` must reference the acknowledged command, and duplicate command/audit side effects must remain idempotent. For the completed live run, the selected gateway is `0300`.
+
+**Consequences:** Phase 8 can close on the verified `0300` hardware evidence without manufacturing a new command for another gateway. Future hardware verification records may select a different gateway as long as they satisfy the same invariants. Firmware responses for `cmd 2/3/4/5` now contain `cmd` and echo `requestId` when supplied, while strict legacy no-requestId fallback remains supported.
+
+**Files affected:** `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/IMPLEMENTATION_PLAN.md`, `docs/planning/DECISION_LOG.md`, `docs/architecture/PHASE_8_DEVICE_PROVISIONING.md`, `docs/prompts/2nd-step/03_PHASE_8_MQTT_PROTOCOL_BASELINE.md`, `docs/prompts/2nd-step/99_OPEN_DECISIONS.md`.

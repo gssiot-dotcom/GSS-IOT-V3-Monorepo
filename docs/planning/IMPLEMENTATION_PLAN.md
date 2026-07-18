@@ -153,6 +153,8 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 - Require strict successful gateway acknowledgement before creating active `NodeGatewayAssignment` rows.
 - Reject cross-company, wrong-building, mixed-type and already-assigned node selections.
 - Preserve pending, sent, failed, expired, cancelled, retry, duplicate and late-ACK behavior through the GatewayCommand outbox.
+- Stamp `requestId = GatewayCommand.id` into final outbound cmd 2/3/4/5 payloads after command persistence, reuse it on retry and prefer exact requestId response correlation before strict legacy gateway/cmd fallback.
+- Preserve legacy MQTT node-number wire compatibility by publishing cmd 2/cmd 5 node arrays as JSON numbers while retaining string node numbers in database/domain state.
 - Replace raw UUID node-to-gateway UI with guided company/building/gateway/node-type/node selectors.
 - Document DB-only unassign until hardware unregister/sync protocol is confirmed.
 
@@ -160,8 +162,11 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 
 - Successful cmd 2 acknowledgement atomically creates active assignments.
 - Failed, expired, cancelled, timeout, negative, duplicate or late responses do not create false assignments.
+- Fast ACK before `SENT` does not regress acknowledged/failed terminal state.
 - Admin UI does not require manual UUID entry for provisioning.
 - Existing Phase 5 command and Phase 6 monitoring behavior remains green.
+- Real hardware live gateway acknowledgement check is completed before Phase 8 is declared complete.
+- Phase 8 closure records one explicitly selected live-test gateway for the run; the gateway serial is evidence, not a permanent architectural constant. The acknowledged `cmd=2` command must belong to that selected gateway, use `requestId = GatewayCommand.id`, correlate the ACK to the same command, create exactly one active assignment for each requested node, point every assignment to the same selected gateway and keep duplicate/audit side effects idempotent.
 
 ## Later second-step phases — Alarm levels, occurrence count, operations and reports
 

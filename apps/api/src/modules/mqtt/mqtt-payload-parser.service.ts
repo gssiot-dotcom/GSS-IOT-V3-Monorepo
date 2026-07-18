@@ -6,6 +6,7 @@ export interface ParsedGatewayResponse {
   failureReason?: string;
   gatewaySerial: string;
   payload: Record<string, unknown>;
+  requestId?: string;
   success: boolean;
 }
 
@@ -42,7 +43,10 @@ export class MqttPayloadParserService {
         return null;
       }
       const normalized = this.normalizeGatewayResponse(record);
-      return { cmd, gatewaySerial, payload: record, ...normalized };
+      const requestId = this.toNonEmptyString(record.requestId);
+      return requestId
+        ? { cmd, gatewaySerial, payload: record, requestId, ...normalized }
+        : { cmd, gatewaySerial, payload: record, ...normalized };
     } catch {
       return null;
     }
@@ -146,7 +150,10 @@ export class MqttPayloadParserService {
       if (normalized !== null) {
         return normalized
           ? { success: true }
-          : { failureReason: `${key} reported failure.`, success: false };
+          : {
+              failureReason: this.gatewayFailureReason(payload, `${key} reported failure.`),
+              success: false,
+            };
       }
     }
 
@@ -155,7 +162,10 @@ export class MqttPayloadParserService {
       if (normalized !== null) {
         return normalized
           ? { success: true }
-          : { failureReason: `${key} reported failure.`, success: false };
+          : {
+              failureReason: this.gatewayFailureReason(payload, `${key} reported failure.`),
+              success: false,
+            };
       }
     }
 
@@ -187,6 +197,16 @@ export class MqttPayloadParserService {
       return false;
     }
     return null;
+  }
+
+  private gatewayFailureReason(payload: Record<string, unknown>, fallback: string): string {
+    return (
+      this.toNonEmptyString(payload.message) ??
+      this.toNonEmptyString(payload.reason) ??
+      this.toNonEmptyString(payload.errorCode) ??
+      this.toNonEmptyString(payload.error) ??
+      fallback
+    );
   }
 
   private isFalseLike(value: string): boolean {

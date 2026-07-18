@@ -4,6 +4,8 @@ Read `AGENTS.md`, completed Phase 11 docs/code and the latest alarm blueprint.
 
 Confirm Phase 11 is complete. Start only Phase 12.
 
+Preserve the completed Phase 8 GatewayCommand/requestId outbox unchanged. Notification job IDs and provider idempotency keys are separate domains and must not reuse or overwrite MQTT GatewayCommand requestIds.
+
 ## Goal
 
 Deliver the operational alarm product: recipient resolution, in-app notifications, provider adapters, alarm list/detail, realtime badges, acknowledge and resolve workflows for GSS and Company users.

@@ -5,6 +5,7 @@ import type { AuthenticatedRequest } from "../../common/auth.types";
 import { AdminEndpoint } from "../../common/decorators/admin-endpoint.decorator";
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
+import { MqttClientService } from "../mqtt/mqtt-client.service";
 import {
   RegisterNodesCommandDto,
   SetAlarmLevelsCommandDto,
@@ -26,6 +27,7 @@ export class GatewayCommandsController {
     @Inject(GatewayCommandRetryService) private readonly retryService: GatewayCommandRetryService,
     @Inject(GatewayCommandExpirationService)
     private readonly expiration: GatewayCommandExpirationService,
+    @Inject(MqttClientService) private readonly mqtt: MqttClientService,
   ) {}
 
   @RequirePermissions("mqtt-commands.view")
@@ -35,6 +37,12 @@ export class GatewayCommandsController {
     @Query("gatewayId") gatewayId?: string,
   ) {
     return this.commands.listCommands(status, gatewayId);
+  }
+
+  @RequirePermissions("mqtt-commands.view")
+  @Get("mqtt-status")
+  getMqttStatus() {
+    return this.mqtt.getStatus();
   }
 
   @RequirePermissions("mqtt-commands.view")

@@ -2,6 +2,8 @@
 
 Read `AGENTS.md` and all completed phase docs. Confirm Phase 13 is complete. Start only Phase 14.
 
+Read and preserve `docs/prompts/2nd-step/03_PHASE_8_MQTT_PROTOCOL_BASELINE.md`. Production hardening must retain exact requestId correlation and must not enable fake ACK behavior.
+
 ## Goal
 
 Make GSS IoT V3 production-ready: telemetry retention, legacy data migration, performance, security, observability, backup/restore, CI/CD and deployment runbooks.
@@ -54,7 +56,7 @@ Requirements:
 - file upload validation;
 - object-level authorization review;
 - Socket.IO auth review;
-- MQTT credentials and TLS review;
+- MQTT credentials, unique client IDs, TLS/auth review and gateway firmware protocol compatibility;
 - audit log tamper considerations;
 - production env validation;
 - remove debug/fake ACK behavior from production mode.
@@ -63,7 +65,7 @@ Requirements:
 
 - structured logs with correlation IDs;
 - health/readiness checks for DB, MQTT, queue/storage;
-- metrics for ingestion, dedupe, command latency, ACK/failure, alarm evaluation, notification delivery;
+- metrics for ingestion, dedupe, command latency, ACK/failure, unmatched or mismatched requestId responses, legacy-fallback usage, alarm evaluation and notification delivery;
 - graceful shutdown;
 - retry/backoff limits;
 - dead-letter handling where used;

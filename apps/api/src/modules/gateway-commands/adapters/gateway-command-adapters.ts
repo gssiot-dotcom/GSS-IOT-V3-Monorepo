@@ -36,8 +36,8 @@ export class GatewayCommandAdapterRegistry {
       payload: {
         cmd: 2,
         nodeType: input.nodeTypeNumericCode,
-        nodes,
         numNodes: nodes.length,
+        nodes,
       },
       topic: this.topics.publishTopic(input.gatewaySerial),
     };
@@ -93,8 +93,8 @@ export class GatewayCommandAdapterRegistry {
       payload: {
         cmd: 5,
         nodeType: input.nodeTypeNumericCode,
-        nodes,
         numNodes: nodes.length,
+        nodes,
       },
       topic: this.topics.publishTopic(input.gatewaySerial),
     };
@@ -106,10 +106,32 @@ export class GatewayCommandAdapterRegistry {
     }
   }
 
-  private assertNodes(nodes: string[] | undefined): string[] {
+  private assertNodes(nodes: string[] | undefined): number[] {
     if (!nodes?.length) {
       throw new BadRequestException("At least one node is required.");
     }
-    return nodes;
+    const normalized = nodes.map((node) => this.normalizeNodeNumber(node));
+    if (new Set(normalized).size !== normalized.length) {
+      throw new BadRequestException("Node numbers must be unique after numeric normalization.");
+    }
+    return normalized;
+  }
+
+  private normalizeNodeNumber(node: string): number {
+    const text = node.trim();
+    if (!text) {
+      throw new BadRequestException("Node numbers cannot be empty.");
+    }
+    if (text.startsWith("-")) {
+      throw new BadRequestException("Node numbers cannot be negative.");
+    }
+    if (!/^\d+$/.test(text)) {
+      throw new BadRequestException("Node numbers must be numeric.");
+    }
+    const numberValue = Number(text);
+    if (!Number.isSafeInteger(numberValue)) {
+      throw new BadRequestException("Node numbers must be safe integers.");
+    }
+    return numberValue;
   }
 }

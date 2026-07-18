@@ -90,6 +90,9 @@ export class MonitoringService implements OnModuleInit {
   onSensorMessage(topic: string, payload: Buffer, metadata: MqttSensorMessageMetadata) {
     const parsed = this.parser.parseSensorMessage(this.topics.parseSensorTopic(topic), payload);
     if (!parsed) {
+      this.logger.debug(
+        `Malformed MQTT sensor payload content topic=${topic} payload=${this.payloadPreview(payload)}`,
+      );
       this.logger.warn(`Ignored malformed MQTT sensor payload on ${topic}.`);
       return null;
     }
@@ -541,5 +544,32 @@ export class MonitoringService implements OnModuleInit {
     return nodeType === "door_node"
       ? { batteryLevel: null, doorState: "closed" }
       : { angleX: 0, angleY: 0 };
+  }
+
+  private payloadPreview(payload: Buffer | string): string {
+    const text = Buffer.isBuffer(payload) ? payload.toString("utf8") : payload;
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      return JSON.stringify(this.redactSecrets(parsed)).slice(0, 1_000);
+    } catch {
+      return text.slice(0, 1_000);
+    }
+  }
+
+  private redactSecrets(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redactSecrets(item));
+    }
+    if (!value || typeof value !== "object") {
+      return value;
+    }
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        /password|passwd|secret|token|credential/i.test(key)
+          ? "[redacted]"
+          : this.redactSecrets(entry),
+      ]),
+    );
   }
 }

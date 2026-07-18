@@ -11,6 +11,8 @@ Bu plan eski kodni ko'chirish uchun emas. Eski loyiha faqat business behavior re
 - Company access = permission + company/site/building scope.
 - Device assignment history saqlanadi.
 - MQTT commandlar GatewayCommand outbox orqali yuradi.
+- Backend `GatewayCommand.id`ni MQTT `requestId` sifatida yuboradi; gateway aynan shu IDni ACKda qaytaradi.
+- cmd 2/3/4/5 exact requestId correlation, strict ACK, idempotent side-effect va fast-ACK race protectionni saqlaydi.
 - Super admin isSuperAdmin bypass saqlanadi.
 - Inactive user token bilan ham endpointga kira olmaydi.
 - Alarm recipient platform role bilan emas, CompanyPosition + scope bilan aniqlanadi.
@@ -29,6 +31,10 @@ Phase 0-6 tor texnik scope bo'yicha implement qilingan. Lekin product flow hali 
 7. Company user/role/scope management UI qisman: role permission editor, scope assignment, position assignment yo'q.
 8. Ko'p sidebar routelar PlaceholderPage.
 
+## Phase 8 dan keyingi majburiy protocol handoff
+
+Phase 9-14 boshlanishidan oldin har safar `03_PHASE_8_MQTT_PROTOCOL_BASELINE.md` o'qiladi. Keyingi phase hech qachon requestId correlationni gateway+cmd taxminiga qaytarmaydi.
+
 ## Phase execution order
 
 1. `07_PHASE_6_STABILIZATION_AND_ROUTE_COMPLETION.md`
@@ -39,6 +45,8 @@ Phase 0-6 tor texnik scope bo'yicha implement qilingan. Lekin product flow hali 
 6. `12_NOTIFICATIONS_AND_ALARM_OPERATIONS_UI.md`
 7. `13_REPORTS_DASHBOARDS_AND_LEGACY_PARITY.md`
 8. `14_RETENTION_MIGRATION_HARDENING_DEPLOYMENT.md`
+
+Phase 8 planning holati faqat live cmd=2 ACK va active `NodeGatewayAssignment` exactly-once tekshiruvidan keyin complete qilinadi.
 
 Har bir phase alohida commit va tag bilan tugatiladi. Keyingi phase faqat oldingi phase Definition of Done to'liq o'tgandan keyin boshlanadi.
 

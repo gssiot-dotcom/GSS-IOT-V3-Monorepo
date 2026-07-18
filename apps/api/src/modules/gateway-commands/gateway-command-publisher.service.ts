@@ -14,7 +14,7 @@ export class GatewayCommandPublisherService {
   ) {}
 
   async publishPending(commandId: string) {
-    const command = await this.commands.getCommand(commandId);
+    let command = await this.commands.getCommand(commandId);
     if (command.status !== GatewayCommandStatus.PENDING) {
       return command;
     }
@@ -22,35 +22,51 @@ export class GatewayCommandPublisherService {
       await this.commands.expireOverdueCommands();
       return this.commands.getCommand(commandId);
     }
+    if (!this.mqtt.willPublish()) {
+      return command;
+    }
     try {
+      command = await this.commands.startPublishAttempt(command.id);
+      if (command.status !== GatewayCommandStatus.PENDING) {
+        return command;
+      }
       const result = await this.mqtt.publish(
         command.topic,
         command.payload as Record<string, unknown>,
+        {
+          commandId: command.id,
+          gatewaySerial: command.gateway.serialNumber,
+          requestId: command.id,
+        },
       );
       if (result.skipped) {
         return command;
       }
       const sent = await this.commands.markSent(command.id);
-      await this.auditLog.record(this.systemActor(), {
-        action: "gateway-command.publish",
-        entityId: sent.id,
-        entityType: "GatewayCommand",
-        newValue: sent,
-        oldValue: command,
-      });
+      if (sent.status === GatewayCommandStatus.SENT) {
+        await this.auditLog.record(this.systemActor(), {
+          action: "gateway-command.publish",
+          entityId: sent.id,
+          entityType: "GatewayCommand",
+          newValue: sent,
+          oldValue: command,
+        });
+      }
       return sent;
     } catch (error) {
       const failed = await this.commands.markFailed(
         command.id,
         error instanceof Error ? error.message : "MQTT publish failed.",
       );
-      await this.auditLog.record(this.systemActor(), {
-        action: "gateway-command.publish-failed",
-        entityId: failed.id,
-        entityType: "GatewayCommand",
-        newValue: failed,
-        oldValue: command,
-      });
+      if (failed.status === GatewayCommandStatus.FAILED) {
+        await this.auditLog.record(this.systemActor(), {
+          action: "gateway-command.publish-failed",
+          entityId: failed.id,
+          entityType: "GatewayCommand",
+          newValue: failed,
+          oldValue: command,
+        });
+      }
       return failed;
     }
   }

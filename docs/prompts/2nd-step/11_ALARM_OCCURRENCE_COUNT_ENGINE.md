@@ -6,6 +6,8 @@ Then read all completed Phase 7-10 architecture docs and especially the latest a
 
 Confirm Phase 10 is complete. Start only Phase 11.
 
+Also read `docs/prompts/2nd-step/03_PHASE_8_MQTT_PROTOCOL_BASELINE.md`. Preserve the completed command correlation and provisioning provenance. Node/gateway/building reassignment must be derived only from acknowledged active assignment state, never from a merely PENDING or SENT provisioning command.
+
 ## Goal
 
 Implement the database-backed alarm evaluation engine using:

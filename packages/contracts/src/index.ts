@@ -279,6 +279,18 @@ export interface GatewayCommandRecord {
   provisioningRequest: NodeGatewayProvisioningRequestRecord | null;
 }
 
+export interface MqttStatusRecord {
+  brokerHost: string;
+  clientId: string;
+  connected: boolean;
+  enabled: boolean;
+  lastConnectedAt: string | null;
+  lastError: string | null;
+  lastMessageAt: string | null;
+  lastPublishAt: string | null;
+  subscribedTopicFilters: string[];
+}
+
 export interface NodeGatewayProvisioningItemRecord {
   id: string;
   nodeId: string;

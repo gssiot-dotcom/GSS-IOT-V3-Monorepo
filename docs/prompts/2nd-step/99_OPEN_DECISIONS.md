@@ -2,13 +2,24 @@
 
 These decisions should be resolved before or during the named phase. Codex must not silently invent answers.
 
-## Phase 8 device provisioning
+## Resolved by Phase 8 live protocol verification
 
-1. What exact success/failure payloads does real gateway send on `GATE_RES` for cmd 2/3/4/5?
-2. Does topic suffix contain full serial, last four characters, or another gateway identifier?
-3. Is there a hardware command to unregister/remove nodes, or only full register-list replacement?
-4. When moving a node, must old gateway receive an updated full node list before the new gateway command?
-5. Can cmd 2 contain only one node type per request? Current legacy behavior says yes.
+- Backend owns `requestId`, and it equals `GatewayCommand.id`.
+- Gateway echoes `cmd`, the same `requestId`, and `resp`.
+- cmd 2/3/4/5 now return GATE_RES responses.
+- Success is `resp: "success"`; failure is `resp: "fail"` with optional `errorCode`, `message`, and legacy `reason`.
+- cmd 2 and cmd 5 node arrays use JSON numbers.
+- Exact requestId correlation is primary; legacy gateway+explicit-cmd matching is fallback only.
+- Retry reuses the same requestId.
+- A cmd 2 request contains one node type.
+- Live cmd 2 request/response reached ACKNOWLEDGED with cmd + requestId using selected gateway `0300` and GatewayCommand `160b3e5c-139d-479b-8535-a82f25f95b02`. The selected serial is run evidence, not a permanent architecture constant.
+
+## Remaining Phase 8 hardware lifecycle decisions
+
+1. Is there a hardware command to unregister/remove nodes, or only full register-list replacement?
+2. When moving a node, must the old gateway receive an updated full node list before the new gateway command?
+3. Should a future explicit full-sync command be added for drift reconciliation?
+4. Should the gateway persist recent requestIds for duplicate execution protection across restart, or is backend idempotency sufficient for the current release?
 
 ## Phase 9 alarm levels/classification
 

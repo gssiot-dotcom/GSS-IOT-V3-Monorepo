@@ -4,6 +4,8 @@ Read `AGENTS.md`, completed Phase 7-12 docs, legacy feature inventory and approv
 
 Confirm Phase 12 is complete. Start only Phase 13.
 
+Read `docs/prompts/2nd-step/03_PHASE_8_MQTT_PROTOCOL_BASELINE.md`. MQTT command reports and dashboard aggregates must reflect the deterministic requestId protocol rather than infer completion from publish success.
+
 ## Goal
 
 Implement scoped dashboards and report/export capabilities, then close only the legacy feature gaps explicitly approved as still required by GSS business.
@@ -21,7 +23,7 @@ Implement report jobs and exports for approved types:
 - node status/latest;
 - sensor history;
 - alarm history with count/interval evidence;
-- MQTT command history;
+- MQTT command history, including requestId, cmd, correlation mode, sent/acknowledged timestamps, ACK latency, response/failure and terminal status;
 - user activity/audit log.
 
 Use separate permissions for view and export.

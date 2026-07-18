@@ -1,12 +1,44 @@
+import { EventEmitter } from "node:events";
+
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import { GatewayCommandStatus } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
+import type { IClientOptions, MqttClient } from "mqtt";
 
 import { GatewayCommandAdapterRegistry } from "../src/modules/gateway-commands/adapters/gateway-command-adapters";
 import { GatewayCommandTransitionService } from "../src/modules/gateway-commands/gateway-command-transition.service";
 import { MqttClientService } from "../src/modules/mqtt/mqtt-client.service";
 import { MqttPayloadParserService } from "../src/modules/mqtt/mqtt-payload-parser.service";
 import { MqttTopicService } from "../src/modules/mqtt/mqtt-topic.service";
+
+class FakeMqttClient extends EventEmitter {
+  lastPublishedPayload?: string;
+  readonly end = vi.fn((_force?: boolean, _options?: object, callback?: () => void) => {
+    callback?.();
+  });
+  publishError?: Error;
+  readonly publish = vi.fn(
+    (_topic: string, payload: string, callback?: (error?: Error) => void) => {
+      this.lastPublishedPayload = payload;
+      callback?.(this.publishError);
+    },
+  );
+  readonly subscribe = vi.fn((_filter: string, callback?: (error?: Error) => void) => {
+    callback?.();
+  });
+}
+
+class TestMqttClientService extends MqttClientService {
+  readonly fakeClient = new FakeMqttClient();
+  brokerUrl?: string;
+  options?: IClientOptions;
+
+  protected override connectClient(brokerUrl: string, options: IClientOptions): MqttClient {
+    this.brokerUrl = brokerUrl;
+    this.options = options;
+    return this.fakeClient as unknown as MqttClient;
+  }
+}
 
 describe("Gateway command Phase 5 helpers", () => {
   it("generates legacy topics and typed command payloads", () => {
@@ -21,10 +53,17 @@ describe("Gateway command Phase 5 helpers", () => {
     expect(
       adapters.buildRegisterNodes({
         gatewaySerial: "GW-001",
-        nodeNumbers: ["N-1", "N-2"],
+        nodeNumbers: ["100", "101", "102"],
+        nodeTypeNumericCode: 2,
+      }).payload,
+    ).toEqual({ cmd: 2, nodeType: 2, nodes: [100, 101, 102], numNodes: 3 });
+    expect(
+      adapters.buildSetFaultFilter({
+        gatewaySerial: "GW-001",
+        nodeNumbers: ["100", "101"],
         nodeTypeNumericCode: 0,
       }).payload,
-    ).toEqual({ cmd: 2, nodeType: 0, nodes: ["N-1", "N-2"], numNodes: 2 });
+    ).toEqual({ cmd: 5, nodeType: 0, nodes: [100, 101], numNodes: 2 });
     expect(
       adapters.buildSetAlarmLevels({
         alarmEnabled: true,
@@ -44,6 +83,41 @@ describe("Gateway command Phase 5 helpers", () => {
       adapters.buildSetFaultFilter({
         gatewaySerial: "GW-001",
         nodeNumbers: [],
+        nodeTypeNumericCode: 0,
+      }),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      adapters.buildRegisterNodes({
+        gatewaySerial: "GW-001",
+        nodeNumbers: ["100", "abc"],
+        nodeTypeNumericCode: 0,
+      }),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      adapters.buildRegisterNodes({
+        gatewaySerial: "GW-001",
+        nodeNumbers: [" "],
+        nodeTypeNumericCode: 0,
+      }),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      adapters.buildRegisterNodes({
+        gatewaySerial: "GW-001",
+        nodeNumbers: ["-1"],
+        nodeTypeNumericCode: 0,
+      }),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      adapters.buildRegisterNodes({
+        gatewaySerial: "GW-001",
+        nodeNumbers: ["0100", "100"],
+        nodeTypeNumericCode: 0,
+      }),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      adapters.buildSetFaultFilter({
+        gatewaySerial: "GW-001",
+        nodeNumbers: ["9007199254740992"],
         nodeTypeNumericCode: 0,
       }),
     ).toThrow(BadRequestException);
@@ -83,10 +157,14 @@ describe("Gateway command Phase 5 helpers", () => {
     });
     expect(
       parser.parseGatewayResponse("GW-001", JSON.stringify({ cmd: 2, resp: "success" })),
-    ).toMatchObject({ success: true });
+    ).toMatchObject({
+      cmd: 2,
+      payload: { cmd: 2, resp: "success" },
+      success: true,
+    });
     expect(
-      parser.parseGatewayResponse("GW-001", JSON.stringify({ cmd: 2, status: "fail" })),
-    ).toMatchObject({ failureReason: "status reported failure.", success: false });
+      parser.parseGatewayResponse("GW-001", JSON.stringify({ cmd: 2, resp: "fail" })),
+    ).toMatchObject({ failureReason: "resp reported failure.", success: false });
     expect(parser.parseGatewayResponse("GW-001", JSON.stringify({ cmd: 2 }))).toMatchObject({
       failureReason: "Gateway response did not contain an accepted success value.",
       success: false,
@@ -94,8 +172,15 @@ describe("Gateway command Phase 5 helpers", () => {
   });
 
   it("keeps MQTT disabled mode broker-free and emits fake acknowledgements only when enabled", async () => {
+    process.env.MQTT_ENABLED = "false";
     process.env.MQTT_FAKE_ACK = "false";
     const disabled = new MqttClientService(new MqttTopicService());
+    disabled.onModuleInit();
+    expect(disabled.getStatus()).toMatchObject({
+      connected: false,
+      enabled: false,
+      subscribedTopicFilters: [],
+    });
     await expect(disabled.publish("GSSIOT/test/GATE_SUB/GRM22P1", { cmd: 2 })).resolves.toEqual({
       skipped: true,
     });
@@ -110,5 +195,78 @@ describe("Gateway command Phase 5 helpers", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(listener).toHaveBeenCalledOnce();
     process.env.MQTT_FAKE_ACK = "false";
+  });
+
+  it("tracks MQTT connection lifecycle and subscription status without credentials", () => {
+    process.env.MQTT_ENABLED = "true";
+    process.env.MQTT_BROKER_URL = "mqtt://secret-user:secret-password@broker.example:1883";
+    process.env.MQTT_CLIENT_ID = "observability-client";
+    const service = new TestMqttClientService(new MqttTopicService());
+
+    service.onModuleInit();
+    expect(service.brokerUrl).toBe("mqtt://secret-user:secret-password@broker.example:1883");
+    service.fakeClient.emit("connect");
+
+    const status = service.getStatus();
+    expect(status).toMatchObject({
+      brokerHost: "broker.example:1883",
+      clientId: "observability-client",
+      connected: true,
+      enabled: true,
+      lastError: null,
+    });
+    expect(status.lastConnectedAt).toBeTruthy();
+    const topicBase = process.env.MQTT_TOPIC_BASE ?? "GSSIOT/test";
+    expect(status.subscribedTopicFilters).toEqual([
+      `${topicBase}/GATE_ANG/+`,
+      `${topicBase}/GATE_FORM/+`,
+      `${topicBase}/GATE_PUB/+`,
+      `${topicBase}/GATE_RES/+`,
+    ]);
+    expect(JSON.stringify(status)).not.toContain("secret");
+
+    service.fakeClient.emit("message", "GSSIOT/test/GATE_RES/GRM22JU22PGW-001", Buffer.from("{}"));
+    expect(service.getStatus().lastMessageAt).toBeTruthy();
+
+    service.fakeClient.emit("offline");
+    expect(service.getStatus().connected).toBe(false);
+    service.fakeClient.emit("reconnect");
+    expect(service.getStatus().connected).toBe(false);
+    service.fakeClient.emit("close");
+    expect(service.getStatus().connected).toBe(false);
+    process.env.MQTT_ENABLED = "false";
+    process.env.MQTT_BROKER_URL = "mqtt://localhost:1883";
+    process.env.MQTT_CLIENT_ID = "gss-iot-v3-api";
+  });
+
+  it("tracks MQTT publish success and failure status", async () => {
+    process.env.MQTT_ENABLED = "true";
+    const service = new TestMqttClientService(new MqttTopicService());
+    service.onModuleInit();
+    service.fakeClient.emit("connect");
+
+    await expect(
+      service.publish(
+        "GSSIOT/test/GATE_SUB/GRM22JU22PGW-001",
+        { cmd: 2, nodeType: 2, numNodes: 3, nodes: [100, 101, 102] },
+        { commandId: "command-1", gatewaySerial: "GW-001" },
+      ),
+    ).resolves.toEqual({ skipped: false });
+    expect(service.getStatus().lastPublishAt).toBeTruthy();
+    expect(service.fakeClient.lastPublishedPayload).toBe(
+      '{"cmd":2,"nodeType":2,"numNodes":3,"nodes":[100,101,102]}',
+    );
+    expect(service.fakeClient.lastPublishedPayload).not.toContain('"100"');
+
+    service.fakeClient.publishError = new Error("broker rejected publish");
+    await expect(
+      service.publish(
+        "GSSIOT/test/GATE_SUB/GRM22JU22PGW-001",
+        { cmd: 2 },
+        { commandId: "command-2", gatewaySerial: "GW-001" },
+      ),
+    ).rejects.toThrow("broker rejected publish");
+    expect(service.getStatus().lastError).toContain("MQTT publish failed");
+    process.env.MQTT_ENABLED = "false";
   });
 });

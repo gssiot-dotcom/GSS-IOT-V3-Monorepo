@@ -107,6 +107,10 @@
 - [x] Document DB-only unassign while hardware unregister/remove protocol remains unconfirmed.
 - [x] Add Phase 8 unit, API E2E and web UI coverage.
 - [x] Apply `20260716120000_phase_8_device_provisioning` without resetting the database and verify seed idempotency.
+- [x] Add production-safe MQTT observability logs, protected sanitized status API and Admin status UI without exposing MQTT username/password.
+- [x] Fix legacy MQTT cmd 2/cmd 5 node-number wire compatibility by publishing node arrays as JSON numbers, rejecting invalid numeric normalization before command persistence and adding raw response/malformed sensor debug diagnostics.
+- [x] Add deterministic `requestId = GatewayCommand.id` payload stamping and response correlation for cmd 2/3/4/5, including retry reuse, exact requestId matching, strict legacy fallback and fast-ACK-safe status updates.
+- [x] Run real hardware live gateway verification for Phase 8 requestId/numeric-node payload acknowledgement using selected gateway `0300`, command `160b3e5c-139d-479b-8535-a82f25f95b02` and nodes `100`, `101` and `102`.
 
 ## Deferred
 

@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { loadApiEnv } from "@gss-iot/config";
@@ -14,6 +15,7 @@ import { AUTH_CONTEXT } from "../../common/auth.types";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { GatewayCommandAdapterRegistry } from "./adapters/gateway-command-adapters";
+import type { ParsedGatewayResponse } from "../mqtt/mqtt-payload-parser.service";
 import type {
   RegisterNodesCommandDto,
   SetAlarmLevelsCommandDto,
@@ -78,9 +80,19 @@ type SelectedGatewayCommand = Prisma.GatewayCommandGetPayload<{
   select: typeof gatewayCommandSelect;
 }>;
 
+export type GatewayResponseCorrelationMode = "legacy_cmd" | "legacy_shape" | "request_id";
+
+export interface GatewayResponseHandleResult {
+  appliedAssignmentCount?: number;
+  command: SelectedGatewayCommand | null;
+  correlationMode: GatewayResponseCorrelationMode;
+  unmatchedReason?: string;
+}
+
 @Injectable()
 export class GatewayCommandsService {
   private readonly env = loadApiEnv();
+  private readonly logger = new Logger(GatewayCommandsService.name);
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -123,7 +135,7 @@ export class GatewayCommandsService {
         actor.context === AUTH_CONTEXT.gssAdmin
           ? AuditActorType.GSS_ADMIN
           : AuditActorType.COMPANY_USER;
-      const command = await tx.gatewayCommand.create({
+      const created = await tx.gatewayCommand.create({
         data: {
           commandNumber: built.commandNumber,
           commandType: built.commandType,
@@ -138,6 +150,7 @@ export class GatewayCommandsService {
         },
         select: gatewayCommandSelect,
       });
+      const command = await this.finalizeCommandPayload(created.id, built.payload, tx);
       const request = await tx.nodeGatewayProvisioningRequest.create({
         data: {
           buildingId: gateway.buildingId,
@@ -218,42 +231,65 @@ export class GatewayCommandsService {
   async markSent(commandId: string) {
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
-      const command = await tx.gatewayCommand.update({
-        where: { id: commandId },
-        data: {
-          attemptCount: { increment: 1 },
-          failureReason: null,
-          lastAttemptAt: now,
-          sentAt: now,
-          status: GatewayCommandStatus.SENT,
-        },
-        select: gatewayCommandSelect,
+      const updated = await tx.gatewayCommand.updateMany({
+        data: { sentAt: now, status: GatewayCommandStatus.SENT },
+        where: { id: commandId, status: GatewayCommandStatus.PENDING },
       });
-      await tx.nodeGatewayProvisioningRequest.updateMany({
-        where: { commandId },
-        data: { failureReason: null, status: GatewayCommandStatus.SENT },
-      });
-      return command;
+      if (updated.count > 0) {
+        await tx.nodeGatewayProvisioningRequest.updateMany({
+          where: { commandId },
+          data: { failureReason: null, status: GatewayCommandStatus.SENT },
+        });
+      }
+      return this.getCommandOrThrow(commandId, tx);
     });
   }
 
   async markFailed(commandId: string, reason: string) {
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
-      const command = await tx.gatewayCommand.update({
-        where: { id: commandId },
+      const updated = await tx.gatewayCommand.updateMany({
         data: { failedAt: now, failureReason: reason, status: GatewayCommandStatus.FAILED },
-        select: gatewayCommandSelect,
+        where: {
+          id: commandId,
+          status: { in: [GatewayCommandStatus.PENDING, GatewayCommandStatus.SENT] },
+        },
+      });
+      if (updated.count > 0) {
+        await tx.nodeGatewayProvisioningRequest.updateMany({
+          where: { commandId },
+          data: { failedAt: now, failureReason: reason, status: GatewayCommandStatus.FAILED },
+        });
+        await tx.nodeGatewayProvisioningItem.updateMany({
+          where: { request: { commandId } },
+          data: { failureReason: reason },
+        });
+      }
+      return this.getCommandOrThrow(commandId, tx);
+    });
+  }
+
+  async startPublishAttempt(commandId: string) {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const current = await this.getCommandOrThrow(commandId, tx);
+      const currentPayload = this.jsonRecord(current.payload);
+      if (currentPayload && currentPayload.requestId !== commandId) {
+        await this.finalizeCommandPayload(commandId, currentPayload, tx);
+      }
+      await tx.gatewayCommand.updateMany({
+        data: {
+          attemptCount: { increment: 1 },
+          failureReason: null,
+          lastAttemptAt: now,
+        },
+        where: { id: commandId, status: GatewayCommandStatus.PENDING },
       });
       await tx.nodeGatewayProvisioningRequest.updateMany({
-        where: { commandId },
-        data: { failedAt: now, failureReason: reason, status: GatewayCommandStatus.FAILED },
+        where: { commandId, status: GatewayCommandStatus.PENDING },
+        data: { failureReason: null },
       });
-      await tx.nodeGatewayProvisioningItem.updateMany({
-        where: { request: { commandId } },
-        data: { failureReason: reason },
-      });
-      return command;
+      return this.getCommandOrThrow(commandId, tx);
     });
   }
 
@@ -263,41 +299,11 @@ export class GatewayCommandsService {
     responsePayload: Prisma.InputJsonValue,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const command = await this.findSentCommand(gatewaySerial, commandNumber, tx);
+      const command = await this.findSingleLegacyCommand(gatewaySerial, commandNumber, tx);
       if (!command) {
         return null;
       }
-      if (command.commandType === "REGISTER_NODES") {
-        const failureReason = await this.validateProvisioningApply(command.id, tx);
-        if (failureReason) {
-          return this.failSentCommand(command, responsePayload, failureReason, tx);
-        }
-      }
-      const acknowledged = await tx.gatewayCommand.update({
-        where: { id: command.id },
-        data: {
-          acknowledgedAt: new Date(),
-          activeKey: command.id,
-          responsePayload,
-          status: GatewayCommandStatus.ACKNOWLEDGED,
-        },
-        select: gatewayCommandSelect,
-      });
-      if (command.commandType === "REGISTER_NODES") {
-        await this.applyProvisioningRequest(command.id, responsePayload, tx);
-      }
-      await this.auditLog.record(
-        this.systemActor(),
-        {
-          action: "gateway-command.acknowledge",
-          entityId: acknowledged.id,
-          entityType: "GatewayCommand",
-          newValue: acknowledged,
-          oldValue: command,
-        },
-        tx,
-      );
-      return this.getCommandOrThrow(command.id, tx);
+      return (await this.acknowledgeCommand(command, responsePayload, tx, "legacy_cmd")).command;
     });
   }
 
@@ -308,12 +314,21 @@ export class GatewayCommandsService {
     reason: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const command = await this.findSentCommand(gatewaySerial, commandNumber, tx);
+      const command = await this.findSingleLegacyCommand(gatewaySerial, commandNumber, tx);
       if (!command) {
         return null;
       }
       return this.failSentCommand(command, responsePayload, reason, tx);
     });
+  }
+
+  async handleGatewayResponse(
+    response: ParsedGatewayResponse,
+  ): Promise<GatewayResponseHandleResult> {
+    if (response.requestId) {
+      return this.handleRequestIdResponse(response);
+    }
+    return this.handleLegacyCommandResponse(response);
   }
 
   async retryCommand(actor: AuthTokenPayload, commandId: string) {
@@ -404,11 +419,7 @@ export class GatewayCommandsService {
       where: {
         expiresAt: { lte: now },
         status: {
-          in: [
-            GatewayCommandStatus.PENDING,
-            GatewayCommandStatus.SENT,
-            GatewayCommandStatus.FAILED,
-          ],
+          in: [GatewayCommandStatus.PENDING, GatewayCommandStatus.SENT],
         },
       },
     });
@@ -447,12 +458,128 @@ export class GatewayCommandsService {
     });
   }
 
-  private async findSentCommand(
+  private async handleRequestIdResponse(
+    response: ParsedGatewayResponse,
+  ): Promise<GatewayResponseHandleResult> {
+    if (!this.isUuid(response.requestId!)) {
+      return {
+        command: null,
+        correlationMode: "request_id",
+        unmatchedReason: "malformed_request_id",
+      };
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const command = await tx.gatewayCommand.findUnique({
+        where: { id: response.requestId },
+        select: gatewayCommandSelect,
+      });
+      if (!command) {
+        return {
+          command: null,
+          correlationMode: "request_id",
+          unmatchedReason: "unknown_request_id",
+        };
+      }
+      if (!this.gatewaySerialMatches(command.gateway.serialNumber, response.gatewaySerial)) {
+        return {
+          command: null,
+          correlationMode: "request_id",
+          unmatchedReason: "request_id_gateway_mismatch",
+        };
+      }
+      if (command.commandNumber !== response.cmd) {
+        return {
+          command: null,
+          correlationMode: "request_id",
+          unmatchedReason: "request_id_cmd_mismatch",
+        };
+      }
+      const ineligibleReason = this.responseIneligibleReason(command, true);
+      if (ineligibleReason) {
+        return {
+          command: null,
+          correlationMode: "request_id",
+          unmatchedReason: ineligibleReason,
+        };
+      }
+      return this.applyParsedResponse(command, response, tx, "request_id");
+    });
+  }
+
+  private async handleLegacyCommandResponse(
+    response: ParsedGatewayResponse,
+  ): Promise<GatewayResponseHandleResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const candidates = await this.findLegacyCandidates(response.gatewaySerial, response.cmd, tx);
+      if (candidates.length === 0) {
+        return {
+          command: null,
+          correlationMode: "legacy_cmd",
+          unmatchedReason: "no_eligible_legacy_command",
+        };
+      }
+      if (candidates.length > 1) {
+        return {
+          command: null,
+          correlationMode: "legacy_cmd",
+          unmatchedReason: "ambiguous_legacy_command",
+        };
+      }
+      return this.applyParsedResponse(candidates[0]!, response, tx, "legacy_cmd");
+    });
+  }
+
+  private async applyParsedResponse(
+    command: SelectedGatewayCommand,
+    response: ParsedGatewayResponse,
+    tx: Prisma.TransactionClient,
+    correlationMode: GatewayResponseCorrelationMode,
+  ): Promise<GatewayResponseHandleResult> {
+    if (!response.success) {
+      const failed = await this.failSentCommand(
+        command,
+        response.payload as Prisma.InputJsonObject,
+        response.failureReason ?? "Gateway returned a negative acknowledgement.",
+        tx,
+      );
+      return { command: failed, correlationMode };
+    }
+    const responseMismatch = this.validateSuccessfulResponsePayload(command, response.payload);
+    if (responseMismatch) {
+      if (correlationMode === "legacy_cmd") {
+        return { command: null, correlationMode, unmatchedReason: responseMismatch };
+      }
+      const failed = await this.failSentCommand(
+        command,
+        response.payload as Prisma.InputJsonObject,
+        responseMismatch,
+        tx,
+      );
+      return { command: failed, correlationMode, unmatchedReason: responseMismatch };
+    }
+    return this.acknowledgeCommand(
+      command,
+      response.payload as Prisma.InputJsonObject,
+      tx,
+      correlationMode,
+    );
+  }
+
+  private async findSingleLegacyCommand(
     gatewaySerial: string,
     commandNumber: number,
     executor: PrismaExecutor,
   ) {
-    return executor.gatewayCommand.findFirst({
+    const candidates = await this.findLegacyCandidates(gatewaySerial, commandNumber, executor);
+    return candidates.length === 1 ? candidates[0]! : null;
+  }
+
+  private async findLegacyCandidates(
+    gatewaySerial: string,
+    commandNumber: number,
+    executor: PrismaExecutor,
+  ) {
+    return executor.gatewayCommand.findMany({
       orderBy: { sentAt: "asc" },
       select: gatewayCommandSelect,
       where: {
@@ -466,6 +593,60 @@ export class GatewayCommandsService {
     });
   }
 
+  private async acknowledgeCommand(
+    command: SelectedGatewayCommand,
+    responsePayload: Prisma.InputJsonValue,
+    tx: Prisma.TransactionClient,
+    correlationMode: GatewayResponseCorrelationMode,
+  ): Promise<GatewayResponseHandleResult> {
+    if (command.commandType === "REGISTER_NODES") {
+      const failureReason = await this.validateProvisioningApply(command.id, tx);
+      if (failureReason) {
+        const failed = await this.failSentCommand(command, responsePayload, failureReason, tx);
+        return { command: failed, correlationMode };
+      }
+    }
+    const updated = await tx.gatewayCommand.updateMany({
+      data: {
+        acknowledgedAt: new Date(),
+        activeKey: command.id,
+        responsePayload,
+        status: GatewayCommandStatus.ACKNOWLEDGED,
+      },
+      where: {
+        id: command.id,
+        status: { in: [GatewayCommandStatus.PENDING, GatewayCommandStatus.SENT] },
+      },
+    });
+    if (updated.count === 0) {
+      return {
+        command: null,
+        correlationMode,
+        unmatchedReason: this.terminalResponseReason(command.status),
+      };
+    }
+    let appliedAssignmentCount = 0;
+    if (command.commandType === "REGISTER_NODES") {
+      appliedAssignmentCount = await this.applyProvisioningRequest(command.id, responsePayload, tx);
+    }
+    const acknowledged = await this.getCommandOrThrow(command.id, tx);
+    await this.auditLog.record(
+      this.systemActor(),
+      {
+        action: "gateway-command.acknowledge",
+        entityId: acknowledged.id,
+        entityType: "GatewayCommand",
+        newValue: acknowledged,
+        oldValue: command,
+      },
+      tx,
+    );
+    this.logger.log(
+      `Gateway command acknowledged commandId=${acknowledged.id} correlationMode=${correlationMode} appliedAssignmentCount=${appliedAssignmentCount}`,
+    );
+    return { appliedAssignmentCount, command: acknowledged, correlationMode };
+  }
+
   private async failSentCommand(
     command: SelectedGatewayCommand,
     responsePayload: Prisma.InputJsonValue,
@@ -473,16 +654,21 @@ export class GatewayCommandsService {
     tx: Prisma.TransactionClient,
   ) {
     const now = new Date();
-    const failed = await tx.gatewayCommand.update({
-      where: { id: command.id },
+    const updated = await tx.gatewayCommand.updateMany({
       data: {
         failedAt: now,
         failureReason: reason,
         responsePayload,
         status: GatewayCommandStatus.FAILED,
       },
-      select: gatewayCommandSelect,
+      where: {
+        id: command.id,
+        status: { in: [GatewayCommandStatus.PENDING, GatewayCommandStatus.SENT] },
+      },
     });
+    if (updated.count === 0) {
+      return this.getCommandOrThrow(command.id, tx);
+    }
     await tx.nodeGatewayProvisioningRequest.updateMany({
       where: { commandId: command.id },
       data: {
@@ -496,6 +682,7 @@ export class GatewayCommandsService {
       where: { request: { commandId: command.id }, assignmentId: null },
       data: { failureReason: reason },
     });
+    const failed = await this.getCommandOrThrow(command.id, tx);
     await this.auditLog.record(
       this.systemActor(),
       {
@@ -507,6 +694,7 @@ export class GatewayCommandsService {
       },
       tx,
     );
+    this.logger.warn(`Gateway command failed commandId=${failed.id} reason=${reason}`);
     return failed;
   }
 
@@ -583,13 +771,13 @@ export class GatewayCommandsService {
     commandId: string,
     responsePayload: Prisma.InputJsonValue,
     tx: Prisma.TransactionClient,
-  ) {
+  ): Promise<number> {
     const request = await tx.nodeGatewayProvisioningRequest.findUnique({
       where: { commandId },
       include: { items: true },
     });
     if (!request || request.status === GatewayCommandStatus.ACKNOWLEDGED) {
-      return;
+      return 0;
     }
     const now = new Date();
     const appliedAssignments: Array<{ gatewayId: string; id: string; nodeId: string }> = [];
@@ -645,6 +833,7 @@ export class GatewayCommandsService {
       },
       tx,
     );
+    return appliedAssignments.length;
   }
 
   private async createCommand(
@@ -667,7 +856,7 @@ export class GatewayCommandsService {
       const expiresAt = new Date(
         Date.now() + (expiresInSeconds ?? this.env.MQTT_COMMAND_EXPIRES_IN_SECONDS) * 1000,
       );
-      const command = await tx.gatewayCommand.create({
+      const created = await tx.gatewayCommand.create({
         data: {
           commandNumber: built.commandNumber,
           commandType: built.commandType,
@@ -685,6 +874,7 @@ export class GatewayCommandsService {
         },
         select: gatewayCommandSelect,
       });
+      const command = await this.finalizeCommandPayload(created.id, built.payload, tx);
       await this.auditLog.record(
         actor,
         {
@@ -783,9 +973,10 @@ export class GatewayCommandsService {
     companyId: string,
     executor: PrismaExecutor,
   ) {
+    const uniqueNodeIds = [...new Set(nodeIds)];
     const nodes = await executor.node.findMany({
       where: {
-        id: { in: nodeIds },
+        id: { in: uniqueNodeIds },
         companyAssignments: { some: { companyId, status: AssignmentStatus.ACTIVE } },
       },
       select: {
@@ -799,10 +990,11 @@ export class GatewayCommandsService {
         },
       },
     });
-    if (nodes.length !== new Set(nodeIds).size) {
+    if (nodes.length !== uniqueNodeIds.length) {
       throw new BadRequestException("All nodes must exist and belong to the gateway company.");
     }
-    return nodes;
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    return nodeIds.map((nodeId) => nodesById.get(nodeId)!);
   }
 
   private async getCommandOrThrow(commandId: string, executor: PrismaExecutor) {
@@ -814,6 +1006,141 @@ export class GatewayCommandsService {
       throw new NotFoundException("The gateway command was not found.");
     }
     return command;
+  }
+
+  private async finalizeCommandPayload(
+    commandId: string,
+    payload: Record<string, unknown>,
+    executor: PrismaExecutor,
+  ) {
+    return executor.gatewayCommand.update({
+      where: { id: commandId },
+      data: { payload: this.withRequestId(commandId, payload) },
+      select: gatewayCommandSelect,
+    });
+  }
+
+  private withRequestId(
+    commandId: string,
+    payload: Record<string, unknown>,
+  ): Prisma.InputJsonObject {
+    const { cmd, ...rest } = payload;
+    return { cmd, requestId: commandId, ...rest } as Prisma.InputJsonObject;
+  }
+
+  private responseIneligibleReason(
+    command: SelectedGatewayCommand,
+    allowPublishSelectedPending: boolean,
+  ): string | null {
+    if (command.status === GatewayCommandStatus.ACKNOWLEDGED) {
+      return "duplicate_response_ignored";
+    }
+    if (
+      command.status === GatewayCommandStatus.EXPIRED ||
+      command.status === GatewayCommandStatus.CANCELLED ||
+      command.status === GatewayCommandStatus.FAILED
+    ) {
+      return "late_response_ignored";
+    }
+    if (command.status === GatewayCommandStatus.SENT) {
+      return null;
+    }
+    if (
+      allowPublishSelectedPending &&
+      command.status === GatewayCommandStatus.PENDING &&
+      command.attemptCount > 0 &&
+      command.lastAttemptAt
+    ) {
+      return null;
+    }
+    return "command_not_selected_for_publish";
+  }
+
+  private terminalResponseReason(status: GatewayCommandStatus): string {
+    return status === GatewayCommandStatus.ACKNOWLEDGED
+      ? "duplicate_response_ignored"
+      : "late_response_ignored";
+  }
+
+  private validateSuccessfulResponsePayload(
+    command: SelectedGatewayCommand,
+    responsePayload: Record<string, unknown>,
+  ): string | null {
+    const commandPayload = this.jsonRecord(command.payload);
+    if (!commandPayload) {
+      return "stored_command_payload_invalid";
+    }
+    if (command.commandType === "REGISTER_NODES") {
+      return this.validateNodeCommandResponse(commandPayload, responsePayload, true);
+    }
+    if (command.commandType === "SET_FAULT_FILTER") {
+      return this.validateNodeCommandResponse(commandPayload, responsePayload, false);
+    }
+    if (
+      command.commandType === "SET_ALARM_LEVELS" &&
+      responsePayload.nodeType !== undefined &&
+      Number(responsePayload.nodeType) !== Number(commandPayload.nodeType)
+    ) {
+      return "response_node_type_mismatch";
+    }
+    return null;
+  }
+
+  private validateNodeCommandResponse(
+    commandPayload: Record<string, unknown>,
+    responsePayload: Record<string, unknown>,
+    requireFields: boolean,
+  ): string | null {
+    const hasNodeType = responsePayload.nodeType !== undefined;
+    const hasNumNodes = responsePayload.numNodes !== undefined;
+    const hasNodes = responsePayload.nodes !== undefined;
+    if (requireFields && (!hasNodeType || !hasNumNodes || !hasNodes)) {
+      return "response_missing_node_identifiers";
+    }
+    if (hasNodeType && Number(responsePayload.nodeType) !== Number(commandPayload.nodeType)) {
+      return "response_node_type_mismatch";
+    }
+    if (hasNumNodes && Number(responsePayload.numNodes) !== Number(commandPayload.numNodes)) {
+      return "response_num_nodes_mismatch";
+    }
+    if (hasNodes) {
+      const commandNodes = this.numberArray(commandPayload.nodes);
+      const responseNodes = this.numberArray(responsePayload.nodes);
+      if (!commandNodes || !responseNodes || !this.sameNumberSet(commandNodes, responseNodes)) {
+        return "response_nodes_mismatch";
+      }
+    }
+    return null;
+  }
+
+  private jsonRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  private numberArray(value: unknown): number[] | null {
+    if (!Array.isArray(value)) {
+      return null;
+    }
+    const numbers = value.map((entry) => Number(entry));
+    return numbers.every((entry) => Number.isSafeInteger(entry)) ? numbers : null;
+  }
+
+  private sameNumberSet(left: number[], right: number[]): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+    const normalize = (values: number[]) => [...values].sort((a, b) => a - b).join(",");
+    return normalize(left) === normalize(right);
+  }
+
+  private gatewaySerialMatches(storedSerial: string, topicSerial: string): boolean {
+    return storedSerial === topicSerial || storedSerial.endsWith(topicSerial);
+  }
+
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 
   private systemActor(): AuthTokenPayload {

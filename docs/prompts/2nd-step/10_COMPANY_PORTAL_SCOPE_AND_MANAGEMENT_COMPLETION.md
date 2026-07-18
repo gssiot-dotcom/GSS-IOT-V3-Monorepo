@@ -4,6 +4,8 @@ Read `AGENTS.md`, completed Phase 7-9 docs, RBAC requirements and latest archite
 
 Confirm Phase 9 is complete. Start only Phase 10.
 
+Preserve the completed Phase 8 MQTT requestId/outbox protocol and Phase 9 desired/applied configuration state. This phase must not redesign command correlation, publish configuration directly, or update applied hardware state without ACK.
+
 ## Goal
 
 Complete the Company Platform Manager, Site Manager, Building Manager and Viewer management experience so permissions, scopes and CompanyPosition can actually be configured from the UI before alarm recipients are implemented.

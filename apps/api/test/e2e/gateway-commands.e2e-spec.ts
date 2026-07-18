@@ -8,12 +8,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../src/app.module";
 import { configureApiApp } from "../../src/bootstrap";
 import { MqttResponseHandlerService } from "../../src/modules/gateway-commands/mqtt-response-handler.service";
+import { GatewayCommandsService } from "../../src/modules/gateway-commands/gateway-commands.service";
 import { PrismaService } from "../../src/prisma/prisma.service";
 
 describe("Phase 5 gateway command outbox e2e", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let responseHandler: MqttResponseHandlerService;
+  let commandsService: GatewayCommandsService;
   let companyId: string;
   let foreignCompanyId: string;
   let gatewayId: string;
@@ -23,6 +25,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
   let nodeTypeId: string;
   let angleNodeTypeId: string;
   let commandTopic: string;
+  let provisioningNodeNumber = 200;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -32,6 +35,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
     await app.init();
     prisma = app.get(PrismaService);
     responseHandler = app.get(MqttResponseHandlerService);
+    commandsService = app.get(GatewayCommandsService);
 
     await prisma.latestNodeState.deleteMany();
     await prisma.sensorReading.deleteMany();
@@ -174,7 +178,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
     gatewayId = gateway.id;
     commandTopic = `${process.env.MQTT_TOPIC_BASE}/GATE_SUB/GRM22JU22PGW-P5-001`;
     const node = await prisma.node.create({
-      data: { nodeTypeId, number: "NODE-P5-001" },
+      data: { nodeTypeId, number: "100" },
     });
     nodeId = node.id;
     await Promise.all([
@@ -214,25 +218,37 @@ describe("Phase 5 gateway command outbox e2e", () => {
       data: { gatewayType: "NODES_GATEWAY", serialNumber },
     });
     const node = await prisma.node.create({
-      data: { nodeTypeId, number: `NODE-P8-${name}` },
+      data: { nodeTypeId, number: String(provisioningNodeNumber++) },
     });
     await Promise.all([
       prisma.companyDeviceAssignment.create({ data: { companyId, gatewayId: gateway.id } }),
       prisma.companyDeviceAssignment.create({ data: { companyId, nodeId: node.id } }),
       prisma.gatewayBuildingAssignment.create({ data: { buildingId, gatewayId: gateway.id } }),
     ]);
-    const command = await prisma.gatewayCommand.create({
+    const created = await prisma.gatewayCommand.create({
       data: {
         commandNumber: 2,
         commandType: "REGISTER_NODES",
         correlationKey: `${serialNumber}:2`,
         expiresAt: new Date(Date.now() + 60_000),
         gatewayId: gateway.id,
-        payload: { cmd: 2, nodeType: 0, nodes: [node.number], numNodes: 1 },
+        payload: { cmd: 2, nodeType: 0, numNodes: 1, nodes: [Number(node.number)] },
         requesterType: "GSS_ADMIN",
         sentAt: status === "SENT" ? new Date() : undefined,
         status,
         topic: `${process.env.MQTT_TOPIC_BASE}/GATE_SUB/GRM22JU22P${serialNumber}`,
+      },
+    });
+    const command = await prisma.gatewayCommand.update({
+      where: { id: created.id },
+      data: {
+        payload: {
+          cmd: 2,
+          nodeType: 0,
+          numNodes: 1,
+          nodes: [Number(node.number)],
+          requestId: created.id,
+        },
       },
     });
     await prisma.nodeGatewayProvisioningRequest.create({
@@ -250,6 +266,17 @@ describe("Phase 5 gateway command outbox e2e", () => {
     return { command, gateway, node, serialNumber };
   }
 
+  function registerSuccessPayload(fixture: Awaited<ReturnType<typeof createProvisioningFixture>>) {
+    return {
+      cmd: 2,
+      nodeType: 0,
+      numNodes: 1,
+      nodes: [Number(fixture.node.number)],
+      requestId: fixture.command.id,
+      resp: "success",
+    };
+  }
+
   it("allows a command manager to create, publish, acknowledge, list, and inspect commands", async () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const token = await login("p5-manager@example.com");
@@ -260,6 +287,13 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .send({ buildingId, gatewayId, nodeIds: [nodeId], nodeTypeId })
       .expect(201);
     expect(created.body.commandNumber).toBe(2);
+    expect(created.body.payload).toEqual({
+      cmd: 2,
+      nodeType: 0,
+      numNodes: 1,
+      nodes: [100],
+      requestId: created.body.id,
+    });
     await waitForStatus(created.body.id, "ACKNOWLEDGED");
     expect(
       await prisma.nodeGatewayAssignment.count({
@@ -279,6 +313,43 @@ describe("Phase 5 gateway command outbox e2e", () => {
     expect(
       await prisma.auditLog.count({ where: { entityType: "GatewayCommand" } }),
     ).toBeGreaterThanOrEqual(2);
+
+    const wakeSecurity = await request(server)
+      .post("/admin/gateway-commands/wake-security")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ alarmActive: true, alertLevel: 1, gatewayId })
+      .expect(201);
+    expect(wakeSecurity.body.payload).toMatchObject({
+      cmd: 3,
+      requestId: wakeSecurity.body.id,
+    });
+    await waitForStatus(wakeSecurity.body.id, "ACKNOWLEDGED");
+
+    const alarmLevels = await request(server)
+      .post("/admin/gateway-commands/alarm-levels")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ alarmEnabled: true, enabled: true, gatewayId, nodeTypeId })
+      .expect(201);
+    expect(alarmLevels.body.payload).toMatchObject({
+      cmd: 4,
+      requestId: alarmLevels.body.id,
+    });
+    await waitForStatus(alarmLevels.body.id, "ACKNOWLEDGED");
+
+    const faultFilter = await request(server)
+      .post("/admin/gateway-commands/fault-filter")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayId, nodeIds: [nodeId], nodeTypeId })
+      .expect(201);
+    expect(faultFilter.body.commandNumber).toBe(5);
+    expect(faultFilter.body.payload).toEqual({
+      cmd: 5,
+      nodeType: 0,
+      numNodes: 1,
+      nodes: [100],
+      requestId: faultFilter.body.id,
+    });
+    await waitForStatus(faultFilter.body.id, "ACKNOWLEDGED");
   });
 
   it("enforces view, manage, direct deny, inactive, and validation failures", async () => {
@@ -302,6 +373,10 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .set("Authorization", `Bearer ${denyToken}`)
       .expect(403);
     await request(server)
+      .get("/admin/gateway-commands/mqtt-status")
+      .set("Authorization", `Bearer ${denyToken}`)
+      .expect(403);
+    await request(server)
       .post("/auth/gss/login")
       .send({ email: "p5-inactive@example.com", password: "test-password" })
       .expect(401);
@@ -317,6 +392,27 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .set("Authorization", `Bearer ${managerToken}`)
       .send({ buildingId, gatewayId, nodeIds: [], nodeTypeId })
       .expect(400);
+  });
+
+  it("returns sanitized protected MQTT status for GSS command viewers", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const viewToken = await login("p5-view@example.com");
+
+    const status = await request(server)
+      .get("/admin/gateway-commands/mqtt-status")
+      .set("Authorization", `Bearer ${viewToken}`)
+      .expect(200);
+
+    expect(status.body).toMatchObject({
+      brokerHost: expect.any(String),
+      clientId: expect.any(String),
+      connected: false,
+      enabled: false,
+      subscribedTopicFilters: expect.any(Array),
+    });
+    expect(status.body).not.toHaveProperty("username");
+    expect(status.body).not.toHaveProperty("password");
+    expect(JSON.stringify(status.body)).not.toContain(process.env.MQTT_PASSWORD ?? "secret");
   });
 
   it("supports retry, cancel, expiration, and super-admin bypass", async () => {
@@ -342,6 +438,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(201);
     await waitForStatus(failed.id, "ACKNOWLEDGED");
+    const retried = await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: failed.id } });
+    expect(retried.payload).toMatchObject({ cmd: 3, requestId: failed.id });
 
     const pending = await prisma.gatewayCommand.create({
       data: {
@@ -370,7 +468,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
         correlationKey: "GW-P5-001:5",
         expiresAt: new Date(Date.now() - 1_000),
         gatewayId,
-        payload: { cmd: 5, nodeType: 0, nodes: ["NODE-P5-001"], numNodes: 1 },
+        payload: { cmd: 5, nodeType: 0, numNodes: 1, nodes: [100] },
         requesterType: "GSS_ADMIN",
         status: "PENDING",
         topic: commandTopic,
@@ -422,6 +520,137 @@ describe("Phase 5 gateway command outbox e2e", () => {
     ).toBe(0);
   });
 
+  it("correlates exact requestId success and failure without gateway/cmd fallback", async () => {
+    const exact = await createProvisioningFixture("REQUEST-ID-SUCCESS");
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${exact.serialNumber}`,
+      JSON.stringify(registerSuccessPayload(exact)),
+    );
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: exact.command.id } }),
+    ).toMatchObject({ status: "ACKNOWLEDGED" });
+    expect(await prisma.nodeGatewayAssignment.count({ where: { nodeId: exact.node.id } })).toBe(1);
+
+    const failed = await createProvisioningFixture("REQUEST-ID-FAILURE");
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${failed.serialNumber}`,
+      JSON.stringify({ cmd: 2, requestId: failed.command.id, resp: "fail" }),
+    );
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: failed.command.id } }),
+    ).toMatchObject({ failureReason: "resp reported failure.", status: "FAILED" });
+    expect(await prisma.nodeGatewayAssignment.count({ where: { nodeId: failed.node.id } })).toBe(0);
+
+    const unknown = await createProvisioningFixture("REQUEST-ID-UNKNOWN");
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${unknown.serialNumber}`,
+      JSON.stringify({
+        ...registerSuccessPayload(unknown),
+        requestId: "00000000-0000-4000-8000-000000000001",
+      }),
+    );
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: unknown.command.id } }),
+    ).toMatchObject({ status: "SENT" });
+
+    const malformed = await createProvisioningFixture("REQUEST-ID-MALFORMED");
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${malformed.serialNumber}`,
+      JSON.stringify({ ...registerSuccessPayload(malformed), requestId: "not-a-uuid" }),
+    );
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: malformed.command.id } }),
+    ).toMatchObject({ status: "SENT" });
+
+    const wrongGateway = await createProvisioningFixture("REQUEST-ID-WRONG-GATEWAY");
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22POTHER-GATEWAY`,
+      JSON.stringify(registerSuccessPayload(wrongGateway)),
+    );
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: wrongGateway.command.id } }),
+    ).toMatchObject({ status: "SENT" });
+
+    const wrongCmd = await createProvisioningFixture("REQUEST-ID-WRONG-CMD");
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${wrongCmd.serialNumber}`,
+      JSON.stringify({ cmd: 3, requestId: wrongCmd.command.id, resp: "success" }),
+    );
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: wrongCmd.command.id } }),
+    ).toMatchObject({ status: "SENT" });
+  });
+
+  it("supports unambiguous legacy cmd correlation and rejects ambiguous legacy responses", async () => {
+    const legacy = await createProvisioningFixture("LEGACY-CMD");
+    const legacyPayload = registerSuccessPayload(legacy);
+    delete (legacyPayload as Partial<typeof legacyPayload>).requestId;
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${legacy.serialNumber}`,
+      JSON.stringify(legacyPayload),
+    );
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: legacy.command.id } }),
+    ).toMatchObject({ status: "ACKNOWLEDGED" });
+
+    const left = await createProvisioningFixture("LEFT-SHARED");
+    const right = await createProvisioningFixture("RIGHT-SHARED");
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22PSHARED`,
+      JSON.stringify({
+        cmd: 2,
+        nodeType: 0,
+        nodes: [Number(left.node.number)],
+        numNodes: 1,
+        resp: "success",
+      }),
+    );
+    const ambiguousCommands = await prisma.gatewayCommand.findMany({
+      where: { id: { in: [left.command.id, right.command.id] } },
+      select: { status: true },
+    });
+    expect(ambiguousCommands.map((command) => command.status).sort()).toEqual(["SENT", "SENT"]);
+    expect(
+      await prisma.nodeGatewayAssignment.count({
+        where: { nodeId: { in: [left.node.id, right.node.id] } },
+      }),
+    ).toBe(0);
+  });
+
+  it("handles fast requestId ACK before SENT without regressing or duplicating side effects", async () => {
+    const fixture = await createProvisioningFixture("FAST-ACK", "PENDING");
+    await commandsService.startPublishAttempt(fixture.command.id);
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${fixture.serialNumber}`,
+      JSON.stringify(registerSuccessPayload(fixture)),
+    );
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: fixture.command.id } }),
+    ).toMatchObject({ status: "ACKNOWLEDGED" });
+
+    await commandsService.markSent(fixture.command.id);
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: fixture.command.id } }),
+    ).toMatchObject({ status: "ACKNOWLEDGED" });
+    expect(await prisma.nodeGatewayAssignment.count({ where: { nodeId: fixture.node.id } })).toBe(
+      1,
+    );
+  });
+
+  it("fails mismatched cmd=2 requestId success responses without applying assignments", async () => {
+    const fixture = await createProvisioningFixture("REQUEST-ID-MISMATCH");
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${fixture.serialNumber}`,
+      JSON.stringify({ ...registerSuccessPayload(fixture), nodes: [999] }),
+    );
+    expect(
+      await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: fixture.command.id } }),
+    ).toMatchObject({ failureReason: "response_nodes_mismatch", status: "FAILED" });
+    expect(await prisma.nodeGatewayAssignment.count({ where: { nodeId: fixture.node.id } })).toBe(
+      0,
+    );
+  });
+
   it("handles expiry, cancellation, late ACK, and duplicate ACK without duplicate assignments", async () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const token = await login("p5-manager@example.com");
@@ -440,7 +669,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
     );
     await responseHandler.handleRawResponse(
       `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${expired.serialNumber}`,
-      JSON.stringify({ cmd: 2, resp: "success" }),
+      JSON.stringify(registerSuccessPayload(expired)),
     );
     expect(await prisma.nodeGatewayAssignment.count({ where: { nodeId: expired.node.id } })).toBe(
       0,
@@ -453,7 +682,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .expect(201);
     await responseHandler.handleRawResponse(
       `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${cancelled.serialNumber}`,
-      JSON.stringify({ cmd: 2, resp: "success" }),
+      JSON.stringify(registerSuccessPayload(cancelled)),
     );
     expect(await prisma.nodeGatewayAssignment.count({ where: { nodeId: cancelled.node.id } })).toBe(
       0,
@@ -461,8 +690,14 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const duplicate = await createProvisioningFixture("DUPLICATE");
     const topic = `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${duplicate.serialNumber}`;
-    await responseHandler.handleRawResponse(topic, JSON.stringify({ cmd: 2, resp: "success" }));
-    await responseHandler.handleRawResponse(topic, JSON.stringify({ cmd: 2, resp: "success" }));
+    await responseHandler.handleRawResponse(
+      topic,
+      JSON.stringify(registerSuccessPayload(duplicate)),
+    );
+    await responseHandler.handleRawResponse(
+      topic,
+      JSON.stringify(registerSuccessPayload(duplicate)),
+    );
     expect(await prisma.nodeGatewayAssignment.count({ where: { nodeId: duplicate.node.id } })).toBe(
       1,
     );
@@ -542,5 +777,47 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ buildingId, gatewayId: gateway.id, nodeIds: [assignedNode.id], nodeTypeId })
       .expect(409);
+  });
+
+  it("rejects invalid numeric wire node numbers before command persistence", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("p5-manager@example.com");
+    const gateway = await prisma.gateway.create({
+      data: { gatewayType: "NODES_GATEWAY", serialNumber: "GW-P8-NUMERIC-VALIDATION" },
+    });
+    const [nonNumericNode, paddedNode, normalizedDuplicateNode] = await Promise.all([
+      prisma.node.create({ data: { nodeTypeId, number: "NODE-P8-NONNUM" } }),
+      prisma.node.create({ data: { nodeTypeId, number: "0101" } }),
+      prisma.node.create({ data: { nodeTypeId, number: "101" } }),
+    ]);
+    await Promise.all([
+      prisma.companyDeviceAssignment.create({ data: { companyId, gatewayId: gateway.id } }),
+      prisma.gatewayBuildingAssignment.create({ data: { buildingId, gatewayId: gateway.id } }),
+      prisma.companyDeviceAssignment.create({ data: { companyId, nodeId: nonNumericNode.id } }),
+      prisma.companyDeviceAssignment.create({ data: { companyId, nodeId: paddedNode.id } }),
+      prisma.companyDeviceAssignment.create({
+        data: { companyId, nodeId: normalizedDuplicateNode.id },
+      }),
+    ]);
+
+    const beforeCount = await prisma.gatewayCommand.count();
+    await request(server)
+      .post("/admin/gateway-commands/register-nodes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ buildingId, gatewayId: gateway.id, nodeIds: [nonNumericNode.id], nodeTypeId })
+      .expect(400);
+    expect(await prisma.gatewayCommand.count()).toBe(beforeCount);
+
+    await request(server)
+      .post("/admin/gateway-commands/register-nodes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        buildingId,
+        gatewayId: gateway.id,
+        nodeIds: [paddedNode.id, normalizedDuplicateNode.id],
+        nodeTypeId,
+      })
+      .expect(400);
+    expect(await prisma.gatewayCommand.count()).toBe(beforeCount);
   });
 });

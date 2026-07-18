@@ -1,7 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { OnModuleInit } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
-
 import { MqttPayloadParserService } from "../mqtt/mqtt-payload-parser.service";
 import { MqttClientService } from "../mqtt/mqtt-client.service";
 import { MqttTopicService } from "../mqtt/mqtt-topic.service";
@@ -9,6 +7,8 @@ import { GatewayCommandsService } from "./gateway-commands.service";
 
 @Injectable()
 export class MqttResponseHandlerService implements OnModuleInit {
+  private readonly logger = new Logger(MqttResponseHandlerService.name);
+
   constructor(
     @Inject(GatewayCommandsService) private readonly commands: GatewayCommandsService,
     @Inject(MqttClientService) private readonly client: MqttClientService,
@@ -23,6 +23,9 @@ export class MqttResponseHandlerService implements OnModuleInit {
   }
 
   async handleRawResponse(topic: string, payload: Buffer | string) {
+    this.logger.debug(
+      `Raw MQTT GATE_RES message topic=${topic} payload=${this.payloadPreview(payload)}`,
+    );
     const parsed = this.parser.parseGatewayResponse(
       this.topics.parseResponseGatewaySerial(topic),
       payload,
@@ -30,18 +33,44 @@ export class MqttResponseHandlerService implements OnModuleInit {
     if (!parsed) {
       return null;
     }
-    if (!parsed.success) {
-      return this.commands.failSentGatewayResponse(
-        parsed.gatewaySerial,
-        parsed.cmd,
-        parsed.payload as Prisma.InputJsonObject,
-        parsed.failureReason ?? "Gateway returned a negative acknowledgement.",
-      );
+    const result = await this.commands.handleGatewayResponse(parsed);
+    this.client.recordGatewayResponse({
+      cmd: parsed.cmd,
+      correlationMode: result.correlationMode,
+      gatewaySerial: parsed.gatewaySerial,
+      matchedCommandId: result.command?.id,
+      requestId: parsed.requestId,
+      success: parsed.success,
+      topic,
+      unmatchedReason: result.unmatchedReason,
+    });
+    return result.command;
+  }
+
+  private payloadPreview(payload: Buffer | string): string {
+    const text = Buffer.isBuffer(payload) ? payload.toString("utf8") : payload;
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      return JSON.stringify(this.redactSecrets(parsed)).slice(0, 1_000);
+    } catch {
+      return text.slice(0, 1_000);
     }
-    return this.commands.acknowledgeSentCommand(
-      parsed.gatewaySerial,
-      parsed.cmd,
-      parsed.payload as Prisma.InputJsonObject,
+  }
+
+  private redactSecrets(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redactSecrets(item));
+    }
+    if (!value || typeof value !== "object") {
+      return value;
+    }
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        /password|passwd|secret|token|credential/i.test(key)
+          ? "[redacted]"
+          : this.redactSecrets(entry),
+      ]),
     );
   }
 }
