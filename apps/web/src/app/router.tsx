@@ -15,6 +15,11 @@ import {
 } from "../features/monitoring/CompanyMonitoringPage";
 import { AdminCompanyDetailPage } from "../features/organizations/AdminCompanyDetailPage";
 import { CompaniesPage } from "../features/organizations/CompaniesPage";
+import {
+  CompanyAreaDetailPage,
+  CompanyBuildingDetailPage,
+  CompanyBuildingPlanPage,
+} from "../features/organizations/CompanyResourceDetailPages";
 import { CompanyResourcesPage } from "../features/organizations/CompanyResourcesPage";
 import { DesignSystemDemoPage } from "../features/shell/DesignSystemDemoPage";
 import { adminNavItems, companyNavItems } from "../features/shell/navigation";
@@ -138,6 +143,30 @@ export function AppRouter(): ReactElement {
                 path={item.path}
               />
             ))}
+            <Route
+              element={
+                <ProtectedPage context="company-user" permission="areas.view">
+                  <CompanyAreaDetailPage />
+                </ProtectedPage>
+              }
+              path="/company/areas/:areaId"
+            />
+            <Route
+              element={
+                <ProtectedPage context="company-user" permission="buildings.view">
+                  <CompanyBuildingDetailPage />
+                </ProtectedPage>
+              }
+              path="/company/buildings/:buildingId"
+            />
+            <Route
+              element={
+                <ProtectedPage context="company-user" permission="building-plans.view">
+                  <CompanyBuildingPlanPage />
+                </ProtectedPage>
+              }
+              path="/company/buildings/:buildingId/plan"
+            />
             <Route
               element={
                 <ProtectedPage context="company-user" permission="monitoring.view">

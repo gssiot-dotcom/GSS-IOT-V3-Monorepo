@@ -2,11 +2,11 @@
 
 ## Current phase
 
-`PHASE_9_IMPLEMENTED_AUTOMATED_VERIFIED_LIVE_PENDING`
+`PHASE_10_IMPLEMENTED_AUTOMATED_VERIFIED_MANUAL_UI_PENDING`
 
 ## Last completed milestone
 
-Phase 9 alarm-levels, fault filters and authoritative monitoring classification are implemented with automated verification as of 2026-07-18, but Phase 9 is not complete until live cmd 4 and cmd 5 hardware verification passes. Phase 8 device provisioning remains complete, including live ESP32 verification with selected gateway `0300`, command `160b3e5c-139d-479b-8535-a82f25f95b02`, and nodes `100`, `101` and `102`.
+Phase 10 Company Portal scope and management completion is implemented with automated verification as of 2026-07-19, but it is not complete until manual browser acceptance is performed. Phase 9 alarm-levels, fault filters and authoritative monitoring classification remain implemented with automated verification, but Phase 9 is still `PHASE_9_IMPLEMENTED_AUTOMATED_VERIFIED_LIVE_PENDING` until live cmd 4 and cmd 5 hardware verification passes. Phase 8 device provisioning remains complete, including live ESP32 verification with selected gateway `0300`, command `160b3e5c-139d-479b-8535-a82f25f95b02`, and nodes `100`, `101` and `102`.
 
 ## Current repository status
 
@@ -36,6 +36,10 @@ Phase 9 alarm-levels, fault filters and authoritative monitoring classification 
 - Phase 9 monitoring: angle/gangform payload status is diagnostic only. Backend classification uses `max(abs(angleX), abs(angleY))`, inclusive configured thresholds, explicit `UNCONFIGURED` for missing configuration and `faultFiltered=true` evidence for ACK-applied filtered nodes. Door remains `doorChk` safe/danger.
 - Phase 9 UI: Company monitoring node-type pages include permission-aware alarm-level and fault-filter tabs with threshold validation, enabled/disabled control, per-gateway command status, filtered node selection grouped by gateway and retry for failed commands.
 - Phase 9 maintenance: legacy per-gateway + node-type alarm enable/disable is implemented through the existing cmd 4 GatewayCommand outbox. Thresholds remain canonical at building + node type, while `GatewayAlarmLevelApplication` tracks desired/applied enabled state per gateway and node type.
+- Phase 10 API: Company role update/delete, position update, inactive-position assignment rejection, canonical role/position key normalization, duplicate direct/scope assignment validation and read-only effective-access preview are implemented on top of the existing Company RBAC/scope schema.
+- Phase 10 maintenance: Company management read endpoints now use authenticated company-user context plus effective permissions instead of hidden platform-manager identity checks. The platform-manager owner policy remains in protected management mutations and last-platform-manager lockout checks.
+- Phase 10 UI: Company `/company/roles` has a permission editor and protected custom-role deletion; `/company/users` has create/edit flows for role, active status, contact, direct allow/deny permissions, site/building scope, CompanyPosition assignments and effective-access preview.
+- Phase 10 routes: Company `/company/areas/:areaId`, `/company/buildings/:buildingId` and `/company/buildings/:buildingId/plan` render functional detail/metadata workflows using existing scoped APIs. Area/building base detail loads are independent from optional assigned-user/device panels, and optional 403 responses no longer replace the whole page. Building plan remains provider-neutral storage-key metadata until the production storage decision is resolved.
 - Shared UI: `packages/ui` exports the normalized GSS Mantine theme, page header, data table/pagination footer, status badge, universal states and node-type selection card primitives.
 - Runtime configuration: API CORS is environment-driven through `CORS_ALLOWED_ORIGINS`; local development defaults support both `http://localhost:5173` and `http://127.0.0.1:5173`. Auth remains bearer-token based with no login cookies.
 - CI: template only
@@ -106,10 +110,12 @@ Phase 8 automated verification commands passed on 2026-07-18: `pnpm format`, `pn
 
 Phase 9 automated verification currently includes passing `pnpm format`, `pnpm typecheck`, `pnpm test` and `pnpm test:e2e`. API E2E applied migration `20260718120000_phase_9_alarm_levels_fault_filters` to the isolated E2E schema without reset. Live hardware verification is pending and Phase 9 must not be marked complete until real cmd 4 and cmd 5 ACK evidence is recorded.
 
+Phase 10 automated verification includes passing `pnpm typecheck`, `pnpm test` and `pnpm test:e2e` on 2026-07-19 before the final full command set. API E2E now covers custom role create/update, GSS-only permission rejection, cross-company role mutation denial, direct deny effective preview, site-inherited building preview, inactive-position assignment rejection, non-platform-manager read access for users/roles/positions, scoped area/building detail access, missing permission, missing scope, sibling scope and cross-company denial, last-platform-manager self-lockout, no-permission protected API denial and inactive existing-token rejection. Web unit tests cover role permission editor mutation, no-permission sidebar filtering, building-plan metadata add flow, optional area/building detail queries, optional users 403 partial rendering and users/roles pages driven by explicit view permissions.
+
 API, web, contracts, config and UI unit suites, API E2E, lint, typecheck, build and browser E2E pass.
 
 Runtime CORS verification covers `http://localhost:5173`, `http://127.0.0.1:5173`, unknown-origin rejection, GSS login followed by `/auth/gss/me`, company login CORS behavior and no-cookie bearer-token responses.
 
 ## Next action
 
-Complete Phase 9 live hardware verification for one explicitly selected available gateway. Do not start Phase 10 until Phase 9 live verification and the full final command set pass.
+Perform manual browser acceptance for Phase 10 Company Portal workflows, then complete Phase 9 live hardware verification separately before marking Phase 9 complete. Do not start Phase 11 until Phase 10 manual acceptance is recorded and approved.

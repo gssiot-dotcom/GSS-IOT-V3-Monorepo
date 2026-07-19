@@ -127,6 +127,21 @@ export class CreateCompanyRoleDto {
   permissionIds!: string[];
 }
 
+export class UpdateCompanyRoleDto {
+  @IsOptional()
+  @IsString()
+  key?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsArray()
+  @IsOptional()
+  @IsUUID("4", { each: true })
+  permissionIds?: string[];
+}
+
 export class UpdateCompanyRolePermissionsDto {
   @IsArray()
   @IsUUID("4", { each: true })
@@ -139,6 +154,20 @@ export class CreateCompanyPositionDto {
 
   @IsString()
   name!: string;
+}
+
+export class UpdateCompanyPositionDto {
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  key?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
 }
 
 export class PositionAssignmentDto {

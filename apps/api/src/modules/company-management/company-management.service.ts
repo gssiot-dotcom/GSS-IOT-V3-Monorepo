@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -19,6 +20,8 @@ import type {
   CreateCompanyRoleDto,
   CreateCompanyUserDto,
   ReplaceUserPositionAssignmentsDto,
+  UpdateCompanyPositionDto,
+  UpdateCompanyRoleDto,
   UpdateCompanyRolePermissionsDto,
   UpdateCompanyUserDto,
 } from "./dto/company-management.dto";
@@ -36,12 +39,35 @@ const userSelect = {
   createdAt: true,
   updatedAt: true,
   role: { select: { id: true, key: true, name: true, isCompanyOwnerRole: true } },
-  areaAccess: { select: { areaId: true, accessLevel: true } },
-  buildingAccess: { select: { buildingId: true, accessLevel: true } },
-  permissions: { select: { permissionId: true, effect: true } },
+  areaAccess: {
+    select: { accessLevel: true, area: { select: { id: true, name: true } }, areaId: true },
+  },
+  buildingAccess: {
+    select: {
+      accessLevel: true,
+      building: { select: { areaId: true, id: true, title: true } },
+      buildingId: true,
+    },
+  },
+  permissions: {
+    select: {
+      effect: true,
+      permission: { select: { action: true, id: true, key: true, module: true, scopeType: true } },
+      permissionId: true,
+    },
+  },
   positionAssignments: {
     where: { status: PositionAssignmentStatus.ACTIVE },
-    select: { id: true, positionId: true, areaId: true, buildingId: true, assignedAt: true },
+    select: {
+      area: { select: { id: true, name: true } },
+      areaId: true,
+      assignedAt: true,
+      building: { select: { areaId: true, id: true, title: true } },
+      buildingId: true,
+      id: true,
+      position: { select: { id: true, isActive: true, key: true, name: true } },
+      positionId: true,
+    },
   },
 } satisfies Prisma.CompanyUserSelect;
 
@@ -54,7 +80,13 @@ const roleSelect = {
   isCompanyOwnerRole: true,
   createdAt: true,
   updatedAt: true,
-  permissions: { select: { permissionId: true } },
+  _count: { select: { users: true } },
+  permissions: {
+    select: {
+      permission: { select: { action: true, id: true, key: true, module: true, scopeType: true } },
+      permissionId: true,
+    },
+  },
 } satisfies Prisma.CompanyRoleSelect;
 
 const positionSelect = {
@@ -88,10 +120,12 @@ export class CompanyManagementService {
       await this.assertCompany(companyId, tx);
       await this.assertRole(companyId, dto.roleId, tx);
       await this.assertScopes(companyId, dto.areaAccess, dto.buildingAccess, tx);
+      this.assertNoDuplicateAssignments(dto.areaAccess, dto.buildingAccess);
       await this.assertCompanyPermissionIds(
         dto.directPermissions?.map(({ permissionId }) => permissionId) ?? [],
         tx,
       );
+      this.assertNoDuplicateDirectPermissions(dto.directPermissions ?? []);
 
       const user = await tx.companyUser.create({
         data: {
@@ -154,12 +188,14 @@ export class CompanyManagementService {
 
       if (dto.areaAccess || dto.buildingAccess) {
         await this.assertScopes(companyId, dto.areaAccess, dto.buildingAccess, tx);
+        this.assertNoDuplicateAssignments(dto.areaAccess, dto.buildingAccess);
       }
       if (dto.directPermissions) {
         await this.assertCompanyPermissionIds(
           dto.directPermissions.map(({ permissionId }) => permissionId),
           tx,
         );
+        this.assertNoDuplicateDirectPermissions(dto.directPermissions);
       }
 
       const user = await tx.companyUser.update({
@@ -232,10 +268,12 @@ export class CompanyManagementService {
     return this.prisma.$transaction(async (tx) => {
       await this.assertCompany(companyId, tx);
       await this.assertCompanyPermissionIds(dto.permissionIds, tx);
+      this.assertUniqueIds(dto.permissionIds, "Duplicate role permissions are not allowed.");
+      const key = this.normalizeCatalogKey(dto.key);
       const role = await tx.companyRole.create({
         data: {
           companyId,
-          key: dto.key,
+          key,
           name: dto.name,
           permissions: {
             createMany: { data: dto.permissionIds.map((permissionId) => ({ permissionId })) },
@@ -257,6 +295,50 @@ export class CompanyManagementService {
     });
   }
 
+  async updateCompanyRole(
+    actor: AuthTokenPayload,
+    companyId: string,
+    roleId: string,
+    dto: UpdateCompanyRoleDto,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const oldRole = await this.assertRole(companyId, roleId, tx);
+      if (oldRole.isSystem || oldRole.isCompanyOwnerRole) {
+        throw new ForbiddenException("System company roles cannot be edited.");
+      }
+      if (dto.permissionIds) {
+        await this.assertCompanyPermissionIds(dto.permissionIds, tx);
+        this.assertUniqueIds(dto.permissionIds, "Duplicate role permissions are not allowed.");
+      }
+      const role = await tx.companyRole.update({
+        where: { id: roleId },
+        data: {
+          key: dto.key ? this.normalizeCatalogKey(dto.key) : undefined,
+          name: dto.name,
+          permissions: dto.permissionIds
+            ? {
+                deleteMany: {},
+                createMany: { data: dto.permissionIds.map((permissionId) => ({ permissionId })) },
+              }
+            : undefined,
+        },
+        select: roleSelect,
+      });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "company-role.update",
+          entityId: role.id,
+          entityType: "CompanyRole",
+          newValue: role,
+          oldValue: oldRole,
+        },
+        tx,
+      );
+      return role;
+    });
+  }
+
   async updateCompanyRolePermissions(
     actor: AuthTokenPayload,
     companyId: string,
@@ -271,6 +353,7 @@ export class CompanyManagementService {
         );
       }
       await this.assertCompanyPermissionIds(dto.permissionIds, tx);
+      this.assertUniqueIds(dto.permissionIds, "Duplicate role permissions are not allowed.");
       const role = await tx.companyRole.update({
         where: { id: roleId },
         data: {
@@ -293,6 +376,30 @@ export class CompanyManagementService {
         tx,
       );
       return role;
+    });
+  }
+
+  async deleteCompanyRole(actor: AuthTokenPayload, companyId: string, roleId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const oldRole = await this.assertRole(companyId, roleId, tx);
+      if (oldRole.isSystem || oldRole.isCompanyOwnerRole) {
+        throw new ForbiddenException("System company roles cannot be deleted.");
+      }
+      const userCount = await tx.companyUser.count({ where: { roleId } });
+      if (userCount > 0) {
+        throw new ConflictException("A company role assigned to users cannot be deleted.");
+      }
+      await tx.companyRole.delete({ where: { id: roleId } });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "company-role.delete",
+          entityId: roleId,
+          entityType: "CompanyRole",
+          oldValue: oldRole,
+        },
+        tx,
+      );
     });
   }
 
@@ -326,8 +433,9 @@ export class CompanyManagementService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       await this.assertCompany(companyId, tx);
+      const key = this.normalizeCatalogKey(dto.key);
       const position = await tx.companyPosition.create({
-        data: { ...dto, companyId },
+        data: { ...dto, companyId, key },
         select: positionSelect,
       });
       await this.auditLog.record(
@@ -337,6 +445,38 @@ export class CompanyManagementService {
           entityId: position.id,
           entityType: "CompanyPosition",
           newValue: position,
+        },
+        tx,
+      );
+      return position;
+    });
+  }
+
+  async updateCompanyPosition(
+    actor: AuthTokenPayload,
+    companyId: string,
+    positionId: string,
+    dto: UpdateCompanyPositionDto,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const oldPosition = await this.assertPosition(companyId, positionId, tx);
+      const position = await tx.companyPosition.update({
+        where: { id: positionId },
+        data: {
+          isActive: dto.isActive,
+          key: dto.key ? this.normalizeCatalogKey(dto.key) : undefined,
+          name: dto.name,
+        },
+        select: positionSelect,
+      });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "company-position.update",
+          entityId: position.id,
+          entityType: "CompanyPosition",
+          newValue: position,
+          oldValue: oldPosition,
         },
         tx,
       );
@@ -403,6 +543,69 @@ export class CompanyManagementService {
       );
       return assignments;
     });
+  }
+
+  async getCompanyUserEffectiveAccess(companyId: string, userId: string) {
+    const user = await this.assertCompanyUser(companyId, userId, this.prisma);
+    const [rolePermissions, areaBuildings] = await Promise.all([
+      this.prisma.companyRolePermission.findMany({
+        where: { roleId: user.roleId },
+        select: {
+          permission: {
+            select: { action: true, id: true, key: true, module: true, scopeType: true },
+          },
+        },
+        orderBy: { permission: { key: "asc" } },
+      }),
+      this.prisma.constructionBuilding.findMany({
+        where: {
+          areaId: { in: user.areaAccess.map((access) => access.areaId) },
+          companyId,
+        },
+        orderBy: { title: "asc" },
+        select: { areaId: true, id: true, title: true },
+      }),
+    ]);
+    const directAllow = user.permissions
+      .filter(({ effect }) => effect === "ALLOW")
+      .map(({ permission }) => permission);
+    const directDeny = user.permissions
+      .filter(({ effect }) => effect === "DENY")
+      .map(({ permission }) => permission);
+    const effectivePermissions = new Map(
+      rolePermissions.map(({ permission }) => [permission.key, permission]),
+    );
+    for (const permission of directAllow) {
+      effectivePermissions.set(permission.key, permission);
+    }
+    for (const permission of directDeny) {
+      effectivePermissions.delete(permission.key);
+    }
+    const directBuildingIds = new Set(user.buildingAccess.map((access) => access.buildingId));
+    return {
+      assignedAreas: user.areaAccess,
+      assignedBuildings: user.buildingAccess,
+      directAllowPermissions: directAllow,
+      directDenyPermissions: directDeny,
+      effectivePermissions: [...effectivePermissions.values()].sort((a, b) =>
+        a.key.localeCompare(b.key),
+      ),
+      inheritedBuildings: areaBuildings.filter((building) => !directBuildingIds.has(building.id)),
+      positionAssignments: user.positionAssignments,
+      rolePermissions: rolePermissions.map(({ permission }) => permission),
+      user,
+    };
+  }
+
+  async getCompanyIdForCompanyUser(companyUserId: string) {
+    const user = await this.prisma.companyUser.findUnique({
+      where: { id: companyUserId },
+      select: { companyId: true },
+    });
+    if (!user) {
+      throw new NotFoundException("The company user was not found.");
+    }
+    return user.companyId;
   }
 
   async assertCompanyManager(companyUserId: string) {
@@ -473,6 +676,45 @@ export class CompanyManagementService {
     }
   }
 
+  private normalizeCatalogKey(key: string) {
+    const normalized = key.trim().toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
+    if (!/^[a-z][a-z0-9_]*$/.test(normalized)) {
+      throw new BadRequestException(
+        "Keys must start with a letter and contain only lowercase letters, numbers, and underscores.",
+      );
+    }
+    return normalized;
+  }
+
+  private assertUniqueIds(ids: string[], message: string) {
+    if (new Set(ids).size !== ids.length) {
+      throw new ConflictException(message);
+    }
+  }
+
+  private assertNoDuplicateDirectPermissions(
+    directPermissions: CreateCompanyUserDto["directPermissions"],
+  ) {
+    this.assertUniqueIds(
+      directPermissions?.map(({ permissionId }) => permissionId) ?? [],
+      "Duplicate direct permissions are not allowed.",
+    );
+  }
+
+  private assertNoDuplicateAssignments(
+    areaAccess: CreateCompanyUserDto["areaAccess"],
+    buildingAccess: CreateCompanyUserDto["buildingAccess"],
+  ) {
+    this.assertUniqueIds(
+      areaAccess?.map(({ areaId }) => areaId) ?? [],
+      "Duplicate area scope assignments are not allowed.",
+    );
+    this.assertUniqueIds(
+      buildingAccess?.map(({ buildingId }) => buildingId) ?? [],
+      "Duplicate building scope assignments are not allowed.",
+    );
+  }
+
   private async assertScopes(
     companyId: string,
     areaAccess: CreateCompanyUserDto["areaAccess"],
@@ -505,7 +747,10 @@ export class CompanyManagementService {
       }
       seen.add(key);
 
-      await this.assertPosition(companyId, assignment.positionId, executor);
+      const position = await this.assertPosition(companyId, assignment.positionId, executor);
+      if (!position.isActive) {
+        throw new ForbiddenException("Inactive positions cannot receive active assignments.");
+      }
       if (assignment.areaId) {
         const area = await executor.constructionArea.findFirst({
           where: { id: assignment.areaId, companyId },

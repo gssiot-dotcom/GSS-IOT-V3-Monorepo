@@ -362,3 +362,27 @@ Files affected:
 **Consequences:** No per-gateway threshold overrides are introduced. Desired enabled state is visible before ACK; applied enabled state changes only after exact successful ACK. Failed, expired, cancelled, negative and late responses do not change applied state. Future occurrence counting must use ACK-applied gateway/node-type enabled state, not merely desired state. Phase 10 role/company management remains out of scope.
 
 **Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260718143000_phase_9_gateway_alarm_enabled_state/migration.sql`, `apps/api/src/modules/alarm-levels/`, `apps/api/src/modules/gateway-commands/gateway-commands.service.ts`, `apps/web/src/features/monitoring/CompanyMonitoringPage.tsx`, `packages/contracts/src/index.ts`, `docs/architecture/PHASE_9_ALARM_LEVELS_FAULT_FILTERS_CLASSIFICATION.md`.
+
+## DEC-2026-032
+
+**Status:** accepted
+
+**Context:** Phase 10 needed to make existing Company RBAC, scope and CompanyPosition management usable without direct database edits. The schema already contained CompanyRole, CompanyUserPermission, CompanyUserAreaAccess, CompanyUserBuildingAccess, CompanyPosition, CompanyUserPositionAssignment and BuildingPlanImage metadata. Production object storage is still an open decision.
+
+**Decision:** Complete Phase 10 through service/API/UI/test work without a Prisma schema change. Custom company roles can be edited and deleted only when they are not system/default roles, not company owner roles and not assigned to users. Default company roles remain protected. Role and position keys are normalized to lowercase underscore keys and validated centrally. Building-plan UI remains limited to provider-neutral `storageKey` metadata until the production storage provider and browser transfer mechanism are approved.
+
+**Consequences:** Company Platform Managers can manage roles, users, direct permissions, scopes and CompanyPosition assignments through supported APIs and UI. Company users still cannot create arbitrary global permission rows or assign GSS-only permissions. No file-system or cloud-provider storage shortcut is introduced during Phase 10. Manual browser acceptance remains required before Phase 10 is complete.
+
+**Files affected:** `apps/api/src/modules/company-management/`, `apps/web/src/features/company-management/`, `apps/web/src/features/organizations/CompanyResourceDetailPages.tsx`, `packages/contracts/src/index.ts`, `docs/architecture/PHASE_10_COMPANY_PORTAL_SCOPE_AND_MANAGEMENT.md`.
+
+## DEC-2026-033
+
+**Status:** accepted
+
+**Context:** Manual Phase 10 browser testing found that scoped non-platform-manager users could see permitted sidebar entries and scoped list rows, but area/building detail pages and Company users/roles pages failed. The root cause was twofold: normal company-management read endpoints still derived company context through the platform-manager-only `assertCompanyManager` helper, and frontend detail/users/roles pages grouped required base data with optional users/devices/permission-catalog requests in all-or-nothing `Promise.all` calls.
+
+**Decision:** Company-management read routes use the authenticated company-user company id plus existing effective-permission guards, while protected mutations and last-platform-manager/self-lockout checks keep the platform-manager owner policy. Area/building detail base queries load independently; assigned users, devices, roles and permission catalogs are requested only when the current session has the relevant permission, and optional 403 failures cannot replace an authorized base page with a full-page error.
+
+**Consequences:** Custom and site-manager users with explicit permissions and assigned scope can open area/building detail pages and users/roles read pages without being platform managers. Missing permissions, missing scope, sibling resources and cross-company resources remain forbidden. Phase 10 still requires manual browser acceptance before completion; Phase 9 MQTT/GatewayCommand/alarm behavior is unchanged.
+
+**Files affected:** `apps/api/src/modules/company-management/company-management-company.controller.ts`, `apps/api/src/modules/company-management/company-management.service.ts`, `apps/web/src/features/organizations/CompanyResourceDetailPages.tsx`, `apps/web/src/features/company-management/CompanyUsersPage.tsx`, `apps/web/src/features/company-management/CompanyRolesPage.tsx`, `apps/api/test/e2e/rbac.e2e-spec.ts`, `apps/web/src/test/company-management.spec.tsx`, `docs/architecture/PHASE_10_COMPANY_PORTAL_SCOPE_AND_MANAGEMENT.md`, `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`.

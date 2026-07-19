@@ -49,3 +49,9 @@
 - [ ] Cross-company IDOR tests.
 - [ ] Cross-building WebSocket tests.
 - [ ] Direct endpoint call despite hidden button.
+
+## Phase 10 automated coverage note
+
+As of 2026-07-19, Phase 10 adds API E2E coverage for custom company role create/update, GSS-only permission rejection, cross-company role mutation denial, direct-deny effective permission preview, site-inherited building preview, inactive-position assignment rejection, no-permission protected API denial and inactive existing-token rejection. Web unit coverage verifies Company Portal role permission editing, no-permission sidebar filtering and building-plan metadata mutation.
+
+The checklist remains partially open because report/export scope enforcement, alarm recipient resolution and later provider-specific flows are scheduled for later phases.

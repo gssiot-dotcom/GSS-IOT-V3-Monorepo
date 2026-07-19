@@ -28,25 +28,25 @@
 
 ## Company Dashboard
 
-| Route                                                 | Purpose              | Main blocks                                | Permission + scope                         |
-| ----------------------------------------------------- | -------------------- | ------------------------------------------ | ------------------------------------------ |
-| `/company/welcome`                                    | landing/profile      | profile and assigned scope                 | authenticated                              |
-| `/company/dashboard`                                  | company overview     | accessible site/building/device/alarm KPIs | `company.dashboard.view`                   |
-| `/company/profile`                                    | company profile      | profile/detail                             | `company.profile.view`                     |
-| `/company/construction-sites`                         | accessible sites     | scoped list/CRUD                           | `company.construction-sites.view` + scope  |
-| `/company/construction-sites/:siteId`                 | site detail          | buildings, users, alarms                   | same + site scope                          |
-| `/company/buildings`                                  | accessible buildings | cards/table, status                        | `company.buildings.view` + scope           |
-| `/company/buildings/:buildingId`                      | building detail      | overview, devices, plans, monitoring entry | same + building scope                      |
-| `/company/buildings/:buildingId/plan`                 | plan/images          | plan viewer and upload                     | `company.building-plans.view` + scope      |
-| `/company/buildings/:buildingId/monitoring`           | node-type selection  | 3 immutable image cards + counts           | `company.monitoring.view` + building scope |
-| `/company/buildings/:buildingId/monitoring/:nodeType` | realtime monitoring  | node cards/table, realtime, history        | same + realtime permission for socket      |
-| `/company/buildings/:buildingId/alarm-levels`         | thresholds           | caution/warning/danger settings            | `company.alarm-levels.view` + scope        |
-| `/company/alarm-rules`                                | recipient policies   | position/count/interval/channel matrix     | `company.alarm-rules.view` + scope         |
-| `/company/alarms`                                     | scoped alarm history | filters, detail, ack/resolve               | `company.alarms.view` + event scope        |
-| `/company/reports`                                    | scoped reports       | job/export                                 | `company.reports.view` + scope             |
-| `/company/users`                                      | company users        | roles, scopes, positions                   | `company.users.view`                       |
-| `/company/roles`                                      | role management      | fixed permission catalog assignment        | `company.roles.view`                       |
-| `/company/settings`                                   | company settings     | allowed company config                     | `company.settings.view`                    |
+| Route                                                 | Purpose              | Main blocks                                | Permission + scope                     |
+| ----------------------------------------------------- | -------------------- | ------------------------------------------ | -------------------------------------- |
+| `/company/welcome`                                    | landing/profile      | profile and assigned scope                 | authenticated                          |
+| `/company/dashboard`                                  | company overview     | accessible site/building/device/alarm KPIs | `dashboard.view`                       |
+| `/company/profile`                                    | company profile      | profile/detail                             | `company-profile.view`                 |
+| `/company/areas`                                      | accessible sites     | scoped list/CRUD                           | `areas.view` + scope                   |
+| `/company/areas/:areaId`                              | site detail          | buildings, users                           | `areas.view` + site scope              |
+| `/company/buildings`                                  | accessible buildings | cards/table, status                        | `buildings.view` + scope               |
+| `/company/buildings/:buildingId`                      | building detail      | overview, devices, plans, monitoring entry | `buildings.view` + building scope      |
+| `/company/buildings/:buildingId/plan`                 | plan/images          | provider-neutral image metadata            | `building-plans.view` + building scope |
+| `/company/buildings/:buildingId/monitoring`           | node-type selection  | 3 immutable image cards + counts           | `monitoring.view` + building scope     |
+| `/company/buildings/:buildingId/monitoring/:nodeType` | realtime monitoring  | node cards/table, realtime, history        | same + realtime permission for socket  |
+| `/company/buildings/:buildingId/alarm-levels`         | thresholds           | caution/warning/danger settings            | `company.alarm-levels.view` + scope    |
+| `/company/alarm-rules`                                | recipient policies   | position/count/interval/channel matrix     | `company.alarm-rules.view` + scope     |
+| `/company/alarms`                                     | scoped alarm history | filters, detail, ack/resolve               | `company.alarms.view` + event scope    |
+| `/company/reports`                                    | scoped reports       | job/export                                 | `company.reports.view` + scope         |
+| `/company/users`                                      | company users        | roles, scopes, positions                   | `company-users.view`                   |
+| `/company/roles`                                      | role management      | fixed permission catalog assignment        | `company-roles.view`                   |
+| `/company/settings`                                   | company settings     | allowed company config                     | `settings.company.view`                |
 
 ## Detailed page acceptance template
 

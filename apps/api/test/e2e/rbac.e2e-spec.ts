@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { loadApiEnv } from "@gss-iot/config";
 import { hash } from "bcrypt";
+import { PermissionScopeType } from "@prisma/client";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -499,6 +500,452 @@ describe("RBAC e2e", () => {
       await prisma.auditLog.count({ where: { entityType: "Company" } }),
     ).toBeGreaterThanOrEqual(2);
   });
+
+  it("supports Phase 10 company role, user, scope, permission and position management", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    await ensurePhaseTenSeed(prisma);
+    const gssToken = await login("/auth/gss/login", "super@example.com");
+    const companyResponse = await request(server)
+      .post("/admin/companies")
+      .set("Authorization", `Bearer ${gssToken}`)
+      .send({
+        name: "Phase 10 Company",
+        platformManager: {
+          email: "phase10-manager@example.com",
+          name: "Phase 10 Manager",
+          password: "test-password",
+        },
+      })
+      .expect(201);
+    const managerToken = await login("/auth/company/login", "phase10-manager@example.com");
+    const permissions = await request(server)
+      .get("/company/permissions")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    const permissionByKey = new Map(
+      (permissions.body as Array<{ id: string; key: string }>).map((permission) => [
+        permission.key,
+        permission.id,
+      ]),
+    );
+    const monitoringPermissionId = permissionByKey.get("monitoring.view")!;
+    const reportsPermissionId = permissionByKey.get("reports.view")!;
+    const userViewPermissionId = permissionByKey.get("company-users.view")!;
+
+    const customRole = await request(server)
+      .post("/company/roles")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        key: "Safety Lead",
+        name: "Safety Lead",
+        permissionIds: [monitoringPermissionId],
+      })
+      .expect(201);
+    expect(customRole.body.key).toBe("safety_lead");
+
+    const updatedRole = await request(server)
+      .patch(`/company/roles/${customRole.body.id}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        name: "Safety Lead Updated",
+        permissionIds: [monitoringPermissionId, reportsPermissionId],
+      })
+      .expect(200);
+    expect(updatedRole.body.permissions).toHaveLength(2);
+
+    const gssOnlyPermission = await prisma.permission.create({
+      data: {
+        action: "phase10",
+        key: "phase10-gss-only.manage",
+        module: "phase10-gss-only",
+        scopeType: PermissionScopeType.GSS,
+      },
+    });
+    await request(server)
+      .patch(`/company/roles/${customRole.body.id}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ permissionIds: [gssOnlyPermission.id] })
+      .expect(403);
+
+    const area = await request(server)
+      .post("/company/areas")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ name: "Phase 10 Site" })
+      .expect(201);
+    const building = await request(server)
+      .post(`/company/areas/${area.body.id}/buildings`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ title: "Phase 10 Building" })
+      .expect(201);
+    const position = await request(server)
+      .post("/company/positions")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ key: "safety_owner", name: "Safety Owner" })
+      .expect(201);
+
+    const user = await request(server)
+      .post("/company/users")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        areaAccess: [{ accessLevel: "VIEW", areaId: area.body.id }],
+        directPermissions: [
+          { effect: "ALLOW", permissionId: userViewPermissionId },
+          { effect: "DENY", permissionId: monitoringPermissionId },
+        ],
+        email: "phase10-user@example.com",
+        name: "Phase 10 User",
+        password: "test-password",
+        roleId: customRole.body.id,
+      })
+      .expect(201);
+    await request(server)
+      .patch(`/company/users/${user.body.id}/positions`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        assignments: [
+          { areaId: area.body.id, buildingId: building.body.id, positionId: position.body.id },
+        ],
+      })
+      .expect(200);
+    const effectiveAccess = await request(server)
+      .get(`/company/users/${user.body.id}/effective-access`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    expect(
+      effectiveAccess.body.effectivePermissions.map(
+        (permission: { key: string }) => permission.key,
+      ),
+    ).toContain("reports.view");
+    expect(
+      effectiveAccess.body.effectivePermissions.map(
+        (permission: { key: string }) => permission.key,
+      ),
+    ).not.toContain("monitoring.view");
+    expect(
+      effectiveAccess.body.inheritedBuildings.map((inherited: { id: string }) => inherited.id),
+    ).toContain(building.body.id);
+
+    await request(server)
+      .delete(`/company/positions/${position.body.id}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    await request(server)
+      .patch(`/company/users/${user.body.id}/positions`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ assignments: [{ positionId: position.body.id }] })
+      .expect(403);
+
+    const companyRoles = await request(server)
+      .get("/company/roles")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    const noPermissionRole = (companyRoles.body as Array<{ id: string; key: string }>).find(
+      (role) => role.key === "no_permission",
+    )!;
+    await request(server)
+      .post("/company/users")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        email: "phase10-none@example.com",
+        name: "Phase 10 None",
+        password: "test-password",
+        roleId: noPermissionRole.id,
+      })
+      .expect(201);
+    const noPermissionToken = await login("/auth/company/login", "phase10-none@example.com");
+    await request(server)
+      .get("/auth/company/me")
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .expect(200);
+    await request(server)
+      .get("/company/buildings")
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .expect(403);
+
+    const activeToken = await login("/auth/company/login", "phase10-user@example.com");
+    await request(server)
+      .delete(`/company/users/${user.body.id}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    await request(server)
+      .get("/auth/company/me")
+      .set("Authorization", `Bearer ${activeToken}`)
+      .expect(401);
+
+    const foreignCompany = await request(server)
+      .post("/admin/companies")
+      .set("Authorization", `Bearer ${gssToken}`)
+      .send({
+        name: "Phase 10 Foreign Company",
+        platformManager: {
+          email: "phase10-foreign-manager@example.com",
+          name: "Phase 10 Foreign Manager",
+          password: "test-password",
+        },
+      })
+      .expect(201);
+    await request(server)
+      .patch(`/company/roles/${foreignCompany.body.platformManager.roleId}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ name: "Cross Company Mutation" })
+      .expect(404);
+
+    expect(companyResponse.body.company.id).toBeDefined();
+  });
+
+  it("allows scoped non-platform-manager Phase 10 reads without weakening scope or lockout rules", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    await ensurePhaseTenSeed(prisma);
+    const gssToken = await login("/auth/gss/login", "super@example.com");
+    const companyResponse = await request(server)
+      .post("/admin/companies")
+      .set("Authorization", `Bearer ${gssToken}`)
+      .send({
+        name: "Phase 10 Maintenance Company",
+        platformManager: {
+          email: "phase10-maintenance-manager@example.com",
+          name: "Phase 10 Maintenance Manager",
+          password: "test-password",
+        },
+      })
+      .expect(201);
+    const managerToken = await login(
+      "/auth/company/login",
+      "phase10-maintenance-manager@example.com",
+    );
+    const permissions = await request(server)
+      .get("/company/permissions")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    const permissionByKey = new Map(
+      (permissions.body as Array<{ id: string; key: string }>).map((permission) => [
+        permission.key,
+        permission.id,
+      ]),
+    );
+
+    const area = await request(server)
+      .post("/company/areas")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ name: "Phase 10 Maintenance Site" })
+      .expect(201);
+    const building = await request(server)
+      .post(`/company/areas/${area.body.id}/buildings`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ title: "Phase 10 Maintenance Building" })
+      .expect(201);
+    const siblingArea = await request(server)
+      .post("/company/areas")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ name: "Phase 10 Maintenance Sibling Site" })
+      .expect(201);
+    const siblingBuilding = await request(server)
+      .post(`/company/areas/${siblingArea.body.id}/buildings`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ title: "Phase 10 Maintenance Sibling Building" })
+      .expect(201);
+
+    const customRole = await request(server)
+      .post("/company/roles")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        key: "Scoped Maintenance Reader",
+        name: "Scoped Maintenance Reader",
+        permissionIds: [
+          permissionByKey.get("welcome.view")!,
+          permissionByKey.get("areas.view")!,
+          permissionByKey.get("buildings.view")!,
+        ],
+      })
+      .expect(201);
+    const scopedUser = await request(server)
+      .post("/company/users")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        areaAccess: [{ accessLevel: "VIEW", areaId: area.body.id }],
+        directPermissions: [
+          { effect: "ALLOW", permissionId: permissionByKey.get("company-users.view")! },
+          { effect: "ALLOW", permissionId: permissionByKey.get("company-roles.view")! },
+        ],
+        email: "phase10-maintenance-reader@example.com",
+        name: "Phase 10 Maintenance Reader",
+        password: "test-password",
+        roleId: customRole.body.id,
+      })
+      .expect(201);
+    const scopedToken = await login(
+      "/auth/company/login",
+      "phase10-maintenance-reader@example.com",
+    );
+    const session = await request(server)
+      .get("/auth/company/me")
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200);
+    expect(session.body.user.permissions).toEqual(
+      expect.arrayContaining([
+        "areas.view",
+        "buildings.view",
+        "company-users.view",
+        "company-roles.view",
+      ]),
+    );
+
+    await request(server)
+      .get("/company/users")
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200);
+    await request(server)
+      .get(`/company/users/${scopedUser.body.id}/effective-access`)
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200);
+    await request(server)
+      .get("/company/roles")
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200);
+    await request(server)
+      .get("/company/positions")
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200);
+    await request(server)
+      .get(`/company/areas/${area.body.id}`)
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200);
+    await request(server)
+      .get(`/company/buildings/${building.body.id}`)
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200);
+    await request(server)
+      .get(`/company/areas/${siblingArea.body.id}`)
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(403);
+    await request(server)
+      .get(`/company/buildings/${siblingBuilding.body.id}`)
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(403);
+
+    const companyRoles = await request(server)
+      .get("/company/roles")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    const siteManagerRole = (companyRoles.body as Array<{ id: string; key: string }>).find(
+      (role) => role.key === "site_manager",
+    )!;
+    await request(server)
+      .post("/company/users")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        areaAccess: [{ accessLevel: "VIEW", areaId: area.body.id }],
+        email: "phase10-maintenance-site-manager@example.com",
+        name: "Phase 10 Maintenance Site Manager",
+        password: "test-password",
+        roleId: siteManagerRole.id,
+      })
+      .expect(201);
+    const siteManagerToken = await login(
+      "/auth/company/login",
+      "phase10-maintenance-site-manager@example.com",
+    );
+    await request(server)
+      .get(`/company/areas/${area.body.id}`)
+      .set("Authorization", `Bearer ${siteManagerToken}`)
+      .expect(200);
+    await request(server)
+      .get(`/company/buildings/${building.body.id}`)
+      .set("Authorization", `Bearer ${siteManagerToken}`)
+      .expect(200);
+
+    await request(server)
+      .post("/company/users")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        email: "phase10-maintenance-no-scope@example.com",
+        name: "Phase 10 Maintenance No Scope",
+        password: "test-password",
+        roleId: customRole.body.id,
+      })
+      .expect(201);
+    const noScopeToken = await login(
+      "/auth/company/login",
+      "phase10-maintenance-no-scope@example.com",
+    );
+    await request(server)
+      .get(`/company/areas/${area.body.id}`)
+      .set("Authorization", `Bearer ${noScopeToken}`)
+      .expect(403);
+    await request(server)
+      .get(`/company/buildings/${building.body.id}`)
+      .set("Authorization", `Bearer ${noScopeToken}`)
+      .expect(403);
+
+    const noPermissionRole = (companyRoles.body as Array<{ id: string; key: string }>).find(
+      (role) => role.key === "no_permission",
+    )!;
+    await request(server)
+      .post("/company/users")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        areaAccess: [{ accessLevel: "VIEW", areaId: area.body.id }],
+        email: "phase10-maintenance-no-permission@example.com",
+        name: "Phase 10 Maintenance No Permission",
+        password: "test-password",
+        roleId: noPermissionRole.id,
+      })
+      .expect(201);
+    const noPermissionToken = await login(
+      "/auth/company/login",
+      "phase10-maintenance-no-permission@example.com",
+    );
+    await request(server)
+      .get(`/company/areas/${area.body.id}`)
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .expect(403);
+    await request(server)
+      .get(`/company/buildings/${building.body.id}`)
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .expect(403);
+
+    const foreignCompany = await request(server)
+      .post("/admin/companies")
+      .set("Authorization", `Bearer ${gssToken}`)
+      .send({
+        name: "Phase 10 Maintenance Foreign Company",
+        platformManager: {
+          email: "phase10-maintenance-foreign-manager@example.com",
+          name: "Phase 10 Maintenance Foreign Manager",
+          password: "test-password",
+        },
+      })
+      .expect(201);
+    const foreignManagerToken = await login(
+      "/auth/company/login",
+      "phase10-maintenance-foreign-manager@example.com",
+    );
+    const foreignArea = await request(server)
+      .post("/company/areas")
+      .set("Authorization", `Bearer ${foreignManagerToken}`)
+      .send({ name: "Phase 10 Maintenance Foreign Site" })
+      .expect(201);
+    const foreignBuilding = await request(server)
+      .post(`/company/areas/${foreignArea.body.id}/buildings`)
+      .set("Authorization", `Bearer ${foreignManagerToken}`)
+      .send({ title: "Phase 10 Maintenance Foreign Building" })
+      .expect(201);
+    await request(server)
+      .get(`/company/areas/${foreignArea.body.id}`)
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(403);
+    await request(server)
+      .get(`/company/buildings/${foreignBuilding.body.id}`)
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(403);
+
+    await request(server)
+      .patch(`/company/users/${companyResponse.body.platformManager.id}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ roleId: customRole.body.id })
+      .expect(403);
+    expect(foreignCompany.body.company.id).toBeDefined();
+  });
 });
 
 function defaultRoleName(roleKey: (typeof DEFAULT_COMPANY_ROLE_KEYS)[number]) {
@@ -510,4 +957,91 @@ function defaultRoleName(roleKey: (typeof DEFAULT_COMPANY_ROLE_KEYS)[number]) {
     viewer: "Viewer",
   } satisfies Record<(typeof DEFAULT_COMPANY_ROLE_KEYS)[number], string>;
   return names[roleKey];
+}
+
+async function ensurePhaseTenSeed(prisma: PrismaService) {
+  const permissionKeys = [
+    "welcome.view",
+    "dashboard.view",
+    "areas.view",
+    "areas.create",
+    "areas.update",
+    "areas.delete",
+    "buildings.view",
+    "buildings.create",
+    "buildings.update",
+    "buildings.delete",
+    "building-plans.view",
+    "company-users.view",
+    "company-users.create",
+    "company-users.update",
+    "company-users.delete",
+    "company-users.manage",
+    "company-roles.view",
+    "company-roles.manage",
+    "company-permissions.view",
+    "monitoring.view",
+    "reports.view",
+    "companies.create",
+  ];
+  for (const key of permissionKeys) {
+    const [module, action] = key.split(".") as [string, string];
+    await prisma.permission.upsert({
+      where: { key },
+      create: {
+        action,
+        key,
+        module,
+        scopeType:
+          key === "companies.create" ? PermissionScopeType.GSS : PermissionScopeType.COMPANY,
+      },
+      update: {
+        action,
+        module,
+        scopeType:
+          key === "companies.create" ? PermissionScopeType.GSS : PermissionScopeType.COMPANY,
+      },
+    });
+  }
+
+  const companyPermissions = await prisma.permission.findMany({
+    where: { key: { in: permissionKeys.filter((key) => key !== "companies.create") } },
+    select: { id: true },
+  });
+
+  for (const roleKey of DEFAULT_COMPANY_ROLE_KEYS) {
+    const existing = await prisma.companyRole.findFirst({
+      where: { companyId: null, isSystem: true, key: roleKey },
+      select: { id: true },
+    });
+    const role = existing
+      ? await prisma.companyRole.update({
+          where: { id: existing.id },
+          data: {
+            isCompanyOwnerRole: roleKey === "platform_manager",
+            isSystem: true,
+            name: defaultRoleName(roleKey),
+          },
+          select: { id: true },
+        })
+      : await prisma.companyRole.create({
+          data: {
+            isCompanyOwnerRole: roleKey === "platform_manager",
+            isSystem: true,
+            key: roleKey,
+            name: defaultRoleName(roleKey),
+          },
+          select: { id: true },
+        });
+    await prisma.companyRolePermission.deleteMany({ where: { roleId: role.id } });
+    const noPermissionWelcome = await prisma.permission.findUnique({
+      where: { key: "welcome.view" },
+      select: { id: true },
+    });
+    await prisma.companyRolePermission.createMany({
+      data: (roleKey === "no_permission" ? [noPermissionWelcome!] : companyPermissions).map(
+        ({ id }) => ({ permissionId: id, roleId: role.id }),
+      ),
+    });
+  }
 }

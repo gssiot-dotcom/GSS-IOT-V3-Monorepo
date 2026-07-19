@@ -97,6 +97,15 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
               label: t("organizations.actions"),
               render: (row) => (
                 <Stack gap={6}>
+                  <Button
+                    onClick={() =>
+                      navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)
+                    }
+                    size="xs"
+                    variant="light"
+                  >
+                    {t("organizations.open")}
+                  </Button>
                   {!isAreas ? (
                     <Can permission="monitoring.view">
                       <Button

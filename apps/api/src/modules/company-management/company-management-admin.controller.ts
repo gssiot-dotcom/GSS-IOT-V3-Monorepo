@@ -19,6 +19,8 @@ import {
   CreateCompanyRoleDto,
   CreateCompanyUserDto,
   ReplaceUserPositionAssignmentsDto,
+  UpdateCompanyPositionDto,
+  UpdateCompanyRoleDto,
   UpdateCompanyRolePermissionsDto,
   UpdateCompanyUserDto,
 } from "./dto/company-management.dto";
@@ -46,6 +48,12 @@ export class CompanyManagementAdminController {
     dto: CreateCompanyUserDto,
   ) {
     return this.companyManagement.createCompanyUser(auth!.principal, companyId, dto);
+  }
+
+  @RequirePermissions("company-users.view")
+  @Get("companies/:companyId/users/:userId/effective-access")
+  getUserEffectiveAccess(@Param("companyId") companyId: string, @Param("userId") userId: string) {
+    return this.companyManagement.getCompanyUserEffectiveAccess(companyId, userId);
   }
 
   @RequirePermissions("company-users.update")
@@ -88,6 +96,18 @@ export class CompanyManagementAdminController {
   }
 
   @RequirePermissions("company-roles.manage")
+  @Patch("companies/:companyId/roles/:roleId")
+  updateRole(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("companyId") companyId: string,
+    @Param("roleId") roleId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateCompanyRoleDto, transform: true }))
+    dto: UpdateCompanyRoleDto,
+  ) {
+    return this.companyManagement.updateCompanyRole(auth!.principal, companyId, roleId, dto);
+  }
+
+  @RequirePermissions("company-roles.manage")
   @Patch("companies/:companyId/roles/:roleId/permissions")
   updateRolePermissions(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
@@ -102,6 +122,16 @@ export class CompanyManagementAdminController {
       roleId,
       dto,
     );
+  }
+
+  @RequirePermissions("company-roles.manage")
+  @Delete("companies/:companyId/roles/:roleId")
+  deleteRole(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("companyId") companyId: string,
+    @Param("roleId") roleId: string,
+  ) {
+    return this.companyManagement.deleteCompanyRole(auth!.principal, companyId, roleId);
   }
 
   @RequirePermissions("company-permissions.view")
@@ -125,6 +155,23 @@ export class CompanyManagementAdminController {
     dto: CreateCompanyPositionDto,
   ) {
     return this.companyManagement.createCompanyPosition(auth!.principal, companyId, dto);
+  }
+
+  @RequirePermissions("company-users.manage")
+  @Patch("companies/:companyId/positions/:positionId")
+  updatePosition(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("companyId") companyId: string,
+    @Param("positionId") positionId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateCompanyPositionDto, transform: true }))
+    dto: UpdateCompanyPositionDto,
+  ) {
+    return this.companyManagement.updateCompanyPosition(
+      auth!.principal,
+      companyId,
+      positionId,
+      dto,
+    );
   }
 
   @RequirePermissions("company-users.manage")

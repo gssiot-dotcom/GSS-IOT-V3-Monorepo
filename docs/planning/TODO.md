@@ -129,6 +129,22 @@
 - [ ] Perform live hardware verification for one explicitly selected available gateway: building-level cmd 4 fan-out, selected gateway/node-type disable, selected gateway/node-type re-enable, cmd 5 numeric-node success ACK, exact requestId ACK, desired/applied state and duplicate ACK idempotency.
 - [ ] Mark Phase 9 complete only after all automated checks, migration/seed checks and live hardware verification pass.
 
+## Phase 10
+
+- [x] Audit Phase 3, Phase 7, Phase 8 and Phase 9 Company Portal/RBAC implementation before coding.
+- [x] Preserve Phase 8 MQTT requestId/outbox protocol and Phase 9 desired/applied alarm configuration state.
+- [x] Complete custom company role create/edit permission editor with company-only permission catalog.
+- [x] Add safe custom-role update/delete behavior and protected default/system role handling.
+- [x] Complete Company user create/edit workflows for role, active status, contact, direct allow/deny permissions and site/building scope.
+- [x] Add read-only effective-access preview with role permissions, direct allow, direct deny, final permissions, direct buildings and area-inherited buildings.
+- [x] Complete CompanyPosition catalog create/deactivate and scoped user-position assignments.
+- [x] Reject inactive-position assignments and duplicate direct/scope/position assignments.
+- [x] Add Company area detail, building detail and building-plan metadata routes.
+- [x] Keep building-plan workflow at provider-neutral storage-key metadata boundary until production storage is decided.
+- [x] Add API E2E and web unit coverage for Phase 10 role/user/scope/position/no-permission/inactive-token behavior.
+- [x] Fix Phase 10 maintenance defect where normal read flows required platform-manager identity and optional frontend panel requests could replace authorized detail/users/roles pages with full-page errors.
+- [ ] Complete manual browser acceptance checklist before marking Phase 10 complete.
+
 ## Deferred
 
 Occurrence counting, AlarmEvent, recipient resolution, notifications, reports, partitioning, archival, migration, deployment and external delivery providers remain deferred to Phase 11 or later according to the approved 2nd-step execution order.

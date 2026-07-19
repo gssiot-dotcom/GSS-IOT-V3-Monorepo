@@ -19,6 +19,8 @@ import {
   CreateCompanyRoleDto,
   CreateCompanyUserDto,
   ReplaceUserPositionAssignmentsDto,
+  UpdateCompanyPositionDto,
+  UpdateCompanyRoleDto,
   UpdateCompanyRolePermissionsDto,
   UpdateCompanyUserDto,
 } from "./dto/company-management.dto";
@@ -35,7 +37,7 @@ export class CompanyManagementCompanyController {
   @Get("users")
   async listUsers(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
     return this.companyManagement.listCompanyUsers(
-      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      await this.companyManagement.getCompanyIdForCompanyUser(auth!.principal.sub),
     );
   }
 
@@ -50,6 +52,18 @@ export class CompanyManagementCompanyController {
       auth!.principal,
       await this.companyManagement.assertCompanyManager(auth!.principal.sub),
       dto,
+    );
+  }
+
+  @RequirePermissions("company-users.view")
+  @Get("users/:userId/effective-access")
+  async getUserEffectiveAccess(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("userId") userId: string,
+  ) {
+    return this.companyManagement.getCompanyUserEffectiveAccess(
+      await this.companyManagement.getCompanyIdForCompanyUser(auth!.principal.sub),
+      userId,
     );
   }
 
@@ -86,7 +100,7 @@ export class CompanyManagementCompanyController {
   @Get("roles")
   async listRoles(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
     return this.companyManagement.listCompanyRoles(
-      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      await this.companyManagement.getCompanyIdForCompanyUser(auth!.principal.sub),
     );
   }
 
@@ -100,6 +114,22 @@ export class CompanyManagementCompanyController {
     return this.companyManagement.createCompanyRole(
       auth!.principal,
       await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      dto,
+    );
+  }
+
+  @RequirePermissions("company-roles.manage")
+  @Patch("roles/:roleId")
+  async updateRole(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("roleId") roleId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateCompanyRoleDto, transform: true }))
+    dto: UpdateCompanyRoleDto,
+  ) {
+    return this.companyManagement.updateCompanyRole(
+      auth!.principal,
+      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      roleId,
       dto,
     );
   }
@@ -120,6 +150,19 @@ export class CompanyManagementCompanyController {
     );
   }
 
+  @RequirePermissions("company-roles.manage")
+  @Delete("roles/:roleId")
+  async deleteRole(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("roleId") roleId: string,
+  ) {
+    return this.companyManagement.deleteCompanyRole(
+      auth!.principal,
+      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      roleId,
+    );
+  }
+
   @RequirePermissions("company-permissions.view")
   @Get("permissions")
   listPermissions() {
@@ -130,7 +173,7 @@ export class CompanyManagementCompanyController {
   @Get("positions")
   async listPositions(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
     return this.companyManagement.listCompanyPositions(
-      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      await this.companyManagement.getCompanyIdForCompanyUser(auth!.principal.sub),
     );
   }
 
@@ -144,6 +187,22 @@ export class CompanyManagementCompanyController {
     return this.companyManagement.createCompanyPosition(
       auth!.principal,
       await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      dto,
+    );
+  }
+
+  @RequirePermissions("company-users.manage")
+  @Patch("positions/:positionId")
+  async updatePosition(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("positionId") positionId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateCompanyPositionDto, transform: true }))
+    dto: UpdateCompanyPositionDto,
+  ) {
+    return this.companyManagement.updateCompanyPosition(
+      auth!.principal,
+      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      positionId,
       dto,
     );
   }

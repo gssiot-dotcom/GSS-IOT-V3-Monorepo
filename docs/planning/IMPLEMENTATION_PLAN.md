@@ -195,11 +195,16 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 - Complete company user/role/scope/position management UI.
 - Complete role permission editor, scope assignment and position assignment.
 - Keep backend permission + company/site/building scope as the security boundary.
+- Add safe custom-role edit/delete rules without changing default/system roles.
+- Add read-only effective permission and resource-scope preview.
+- Complete Company area detail, building detail and building-plan metadata routes.
+- Keep building-plan binary upload/provider integration deferred until the storage-provider decision is approved.
 
 ### Exit criteria
 
 - Company portal management workflows work without raw IDs.
 - Scope and permission denial paths are covered.
+- `PHASE_10_IMPLEMENTED_AUTOMATED_VERIFIED_MANUAL_UI_PENDING` is the correct status until the manual browser checklist is completed.
 
 ## Phase 11 — Alarm occurrence count engine
 

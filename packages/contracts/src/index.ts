@@ -111,8 +111,13 @@ export interface CompanyRoleRecord {
   companyId: string | null;
   key: string;
   name: string;
+  isSystem: boolean;
   isCompanyOwnerRole: boolean;
-  permissions: { permissionId: string }[];
+  _count?: { users: number };
+  permissions: Array<{
+    permissionId: string;
+    permission?: CompanyPermissionRecord & { scopeType?: "GSS" | "COMPANY" | "BOTH" };
+  }>;
 }
 
 export interface CompanyUserRecord {
@@ -123,6 +128,31 @@ export interface CompanyUserRecord {
   email: string;
   phone: string | null;
   isActive: boolean;
+  areaAccess?: Array<{
+    accessLevel: AccessLevel;
+    area?: { id: string; name: string };
+    areaId: string;
+  }>;
+  buildingAccess?: Array<{
+    accessLevel: AccessLevel;
+    building?: { areaId: string; id: string; title: string };
+    buildingId: string;
+  }>;
+  permissions?: Array<{
+    effect: PermissionEffect;
+    permission: CompanyPermissionRecord;
+    permissionId: string;
+  }>;
+  positionAssignments?: Array<{
+    area?: { id: string; name: string } | null;
+    areaId: string | null;
+    assignedAt: string;
+    building?: { areaId: string; id: string; title: string } | null;
+    buildingId: string | null;
+    id: string;
+    position: CompanyPositionRecord;
+    positionId: string;
+  }>;
   role: Pick<CompanyRoleRecord, "id" | "key" | "name" | "isCompanyOwnerRole">;
 }
 
@@ -139,6 +169,31 @@ export interface CompanyPermissionRecord {
   key: string;
   module: string;
   action: string;
+  description?: string | null;
+  scopeType?: "GSS" | "COMPANY" | "BOTH";
+}
+
+export interface CompanyUserEffectiveAccessRecord {
+  assignedAreas: NonNullable<CompanyUserRecord["areaAccess"]>;
+  assignedBuildings: NonNullable<CompanyUserRecord["buildingAccess"]>;
+  directAllowPermissions: CompanyPermissionRecord[];
+  directDenyPermissions: CompanyPermissionRecord[];
+  effectivePermissions: CompanyPermissionRecord[];
+  inheritedBuildings: Array<{ areaId: string; id: string; title: string }>;
+  positionAssignments: NonNullable<CompanyUserRecord["positionAssignments"]>;
+  rolePermissions: CompanyPermissionRecord[];
+  user: CompanyUserRecord;
+}
+
+export interface BuildingPlanImageRecord {
+  id: string;
+  buildingId: string;
+  kind: "PLAN" | "REAL";
+  storageKey: string;
+  orderIndex: number;
+  width: number | null;
+  height: number | null;
+  createdAt: string;
 }
 
 export interface NodeTypeRecord {
