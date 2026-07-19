@@ -3,6 +3,7 @@ import {
   IsArray,
   IsBoolean,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Min,
@@ -60,17 +61,17 @@ export class SetAlarmLevelsCommandDto {
   enabled!: boolean;
 
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
   alarmLevel1?: number;
 
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
   alarmLevel2?: number;
 
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
   alarmLevel3?: number;
 

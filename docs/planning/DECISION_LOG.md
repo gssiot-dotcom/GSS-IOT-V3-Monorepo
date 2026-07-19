@@ -326,3 +326,39 @@ Files affected:
 **Consequences:** Phase 8 can close on the verified `0300` hardware evidence without manufacturing a new command for another gateway. Future hardware verification records may select a different gateway as long as they satisfy the same invariants. Firmware responses for `cmd 2/3/4/5` now contain `cmd` and echo `requestId` when supplied, while strict legacy no-requestId fallback remains supported.
 
 **Files affected:** `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/IMPLEMENTATION_PLAN.md`, `docs/planning/DECISION_LOG.md`, `docs/architecture/PHASE_8_DEVICE_PROVISIONING.md`, `docs/prompts/2nd-step/03_PHASE_8_MQTT_PROTOCOL_BASELINE.md`, `docs/prompts/2nd-step/99_OPEN_DECISIONS.md`.
+
+## DEC-2026-029
+
+**Status:** accepted
+
+**Context:** Phase 9 needed explicit alarm-level, fault-filter and classification decisions before implementation. Legacy code used `BuildingAlarmLevel.green/yellow/red`, `GatewayAlarmSetting`, cmd 4/cmd 5 and raw absolute X/Y angle behavior, while Phase 6 monitoring still treated payload status as authoritative for angle/gangform fallback.
+
+**Decision:** Phase 9 maps legacy `green/yellow/red` to `cautionThreshold/warningThreshold/dangerThreshold`, scoped by building + node type. Enabled angle/gangform configurations require `0 < caution < warning < danger <= 12` and classify inclusively using `metric = max(abs(angleX), abs(angleY))`. Door remains `doorChk = 0 => safe` and `doorChk = 1 => danger`; door cmd 4 controls enabled/alarmEnabled only. Calibration is deferred because the active legacy MQTT classification used raw absolute `angle_x/angle_y`. Missing angle/gangform configuration is explicit `UNCONFIGURED`, not safe. Fault-filter desired state is persisted by gateway + node type + node; applied state changes only after strict successful cmd 5 ACK for the exact GatewayCommand/requestId. ACK-applied filtered readings remain in SensorReading/latest state with `faultFiltered=true` evidence and are reserved for future occurrence-count exclusion.
+
+**Consequences:** Phase 9 adds additive Prisma state for desired/applied alarm levels and fault filters, extends monitoring status with `UNCONFIGURED`, stores classification evidence and preserves the existing GatewayCommand outbox and requestId lifecycle. Occurrence counting, AlarmEvent, recipient resolution, notifications, reports, calibration, retention, partitioning, migration and deployment remain out of scope.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260718120000_phase_9_alarm_levels_fault_filters/migration.sql`, `apps/api/src/modules/alarm-levels/`, `apps/api/src/modules/gateway-commands/`, `apps/api/src/modules/monitoring/`, `apps/web/src/features/monitoring/CompanyMonitoringPage.tsx`, `packages/contracts/src/index.ts`, `packages/ui/src/status-badge.tsx`, `docs/architecture/PHASE_9_ALARM_LEVELS_FAULT_FILTERS_CLASSIFICATION.md`.
+
+## DEC-2026-030
+
+**Status:** accepted
+
+**Context:** Manual browser testing found the GSS Admin company-user create form showed an empty role dropdown for Company A. Database inspection showed Company A had no company-owned `CompanyRole` rows, while the default system templates existed. The company predated the current default-role provisioning path and its legacy test users referenced non-company-owned roles.
+
+**Decision:** The approved per-company default role keys are `platform_manager`, `site_manager`, `building_manager`, `viewer` and `no_permission`. Company creation provisions these roles from system templates idempotently, seed backfills all existing companies, and company role listing backfills the requested company before returning roles. Existing roles with approved keys are updated in place instead of duplicated. Default company roles are system roles and cannot be edited through the existing role-permission endpoint.
+
+**Consequences:** The GSS Admin company-user form receives company-owned roles for legacy and newly created companies without starting the Phase 10 role editor, without merging GSS/Company RBAC, and without allowing arbitrary permission creation. Historical `area_manager` rows or templates are not deleted, but new default provisioning uses `site_manager`.
+
+**Files affected:** `apps/api/src/modules/company-management/default-company-roles.ts`, `apps/api/src/modules/organizations/organizations.service.ts`, `apps/api/src/modules/company-management/company-management.service.ts`, `apps/api/prisma/seed.ts`, `apps/web/src/features/organizations/AdminCompanyDetailPage.tsx`.
+
+## DEC-2026-031
+
+**Status:** accepted
+
+**Context:** Manual Phase 9 browser/hardware testing found that building-level alarm threshold save and fault filters worked, but the new UI lacked the legacy ability to temporarily enable or disable one selected gateway for one selected node type. Legacy `sendAlarmLevelToGateways` kept thresholds at building/node-type scope and persisted per-gateway `alarmEnabled` state in `GatewayAlarmSetting`.
+
+**Decision:** Keep canonical thresholds scoped to building + node type. Add per-gateway + node-type hardware alarm activation to `GatewayAlarmLevelApplication` as `desiredEnabled` and `appliedEnabled`, linked to the existing cmd 4 `GatewayCommand` outbox. Building-level saves fan out cmd 4 with `enabled=true` and `alarmEnabled=true` to every active building gateway. Selected-gateway toggles create exactly one cmd 4: angle/gangform disable uses `enabled=false` and `alarmEnabled=false`, while door disable preserves legacy firmware shape `enabled=true` and `alarmEnabled=false`.
+
+**Consequences:** No per-gateway threshold overrides are introduced. Desired enabled state is visible before ACK; applied enabled state changes only after exact successful ACK. Failed, expired, cancelled, negative and late responses do not change applied state. Future occurrence counting must use ACK-applied gateway/node-type enabled state, not merely desired state. Phase 10 role/company management remains out of scope.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260718143000_phase_9_gateway_alarm_enabled_state/migration.sql`, `apps/api/src/modules/alarm-levels/`, `apps/api/src/modules/gateway-commands/gateway-commands.service.ts`, `apps/web/src/features/monitoring/CompanyMonitoringPage.tsx`, `packages/contracts/src/index.ts`, `docs/architecture/PHASE_9_ALARM_LEVELS_FAULT_FILTERS_CLASSIFICATION.md`.

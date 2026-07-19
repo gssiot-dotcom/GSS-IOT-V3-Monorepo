@@ -13,6 +13,7 @@ import type { AuthTokenPayload } from "../../common/auth.types";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { SafeAdminPolicyService } from "../rbac/safe-admin-policy.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { ensureDefaultCompanyRoles } from "./default-company-roles";
 import type {
   CreateCompanyPositionDto,
   CreateCompanyRoleDto,
@@ -211,10 +212,19 @@ export class CompanyManagementService {
   }
 
   async listCompanyRoles(companyId: string) {
-    return this.prisma.companyRole.findMany({
-      where: { companyId },
-      orderBy: { name: "asc" },
-      select: roleSelect,
+    return this.prisma.$transaction(async (tx) => {
+      await this.assertCompany(companyId, tx);
+      const defaultRoles = await ensureDefaultCompanyRoles(companyId, tx);
+      if (defaultRoles.missingTemplateKeys.length > 0) {
+        throw new ConflictException(
+          `Default company role templates are unavailable: ${defaultRoles.missingTemplateKeys.join(", ")}.`,
+        );
+      }
+      return tx.companyRole.findMany({
+        where: { companyId },
+        orderBy: { name: "asc" },
+        select: roleSelect,
+      });
     });
   }
 
@@ -255,9 +265,9 @@ export class CompanyManagementService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const oldRole = await this.assertRole(companyId, roleId, tx);
-      if (oldRole.isCompanyOwnerRole) {
+      if (oldRole.isSystem || oldRole.isCompanyOwnerRole) {
         throw new ForbiddenException(
-          "The platform manager role cannot be edited through this endpoint.",
+          "System company roles cannot be edited through this endpoint.",
         );
       }
       await this.assertCompanyPermissionIds(dto.permissionIds, tx);

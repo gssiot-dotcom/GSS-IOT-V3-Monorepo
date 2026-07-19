@@ -18,6 +18,7 @@ export const gssStatusColors = {
   danger: "#dc2626",
   offline: "#7c8797",
   safe: "#0b80b7",
+  unconfigured: "#64748b",
   warning: "#d18a00",
 } as const;
 

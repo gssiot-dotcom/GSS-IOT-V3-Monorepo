@@ -66,7 +66,7 @@ export class GatewayCommandAdapterRegistry {
       enabled: input.enabled,
       nodeType: input.nodeTypeNumericCode,
     };
-    if (input.nodeTypeNumericCode !== 0) {
+    if (input.nodeTypeNumericCode !== 0 && input.enabled && input.alarmEnabled) {
       for (const key of ["alarmLevel1", "alarmLevel2", "alarmLevel3"] as const) {
         if (typeof input[key] !== "number") {
           throw new BadRequestException(
@@ -86,7 +86,7 @@ export class GatewayCommandAdapterRegistry {
 
   buildSetFaultFilter(input: GatewayCommandAdapterInput): BuiltGatewayCommand {
     this.assertNodeType(input.nodeTypeNumericCode);
-    const nodes = this.assertNodes(input.nodeNumbers);
+    const nodes = this.assertNodes(input.nodeNumbers, true);
     return {
       commandNumber: 5,
       commandType: "SET_FAULT_FILTER",
@@ -106,8 +106,11 @@ export class GatewayCommandAdapterRegistry {
     }
   }
 
-  private assertNodes(nodes: string[] | undefined): number[] {
+  private assertNodes(nodes: string[] | undefined, allowEmpty = false): number[] {
     if (!nodes?.length) {
+      if (allowEmpty) {
+        return [];
+      }
       throw new BadRequestException("At least one node is required.");
     }
     const normalized = nodes.map((node) => this.normalizeNodeNumber(node));

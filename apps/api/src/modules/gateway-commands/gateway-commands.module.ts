@@ -17,6 +17,7 @@ import { MqttResponseHandlerService } from "./mqtt-response-handler.service";
 
 @Module({
   controllers: [GatewayCommandsController],
+  exports: [GatewayCommandPublisherService, GatewayCommandRetryService, GatewayCommandsService],
   imports: [PrismaModule, AuditLogsModule, AuthModule, RbacModule, MqttModule],
   providers: [
     GatewayCommandAdapterRegistry,

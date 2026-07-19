@@ -4,7 +4,7 @@
 
 Yangi loyiha eski repositoryni in-place refactor qilish orqali emas, yangi monorepoda vertical slice usulida quriladi. Eski loyiha business flow, MQTT contract, rasmlar va foydali UX behavior uchun reference bo‘ladi.
 
-> Current execution note: the post-Phase-6 execution order in `docs/prompts/2nd-step/00_README_EXECUTION_ORDER.md` supersedes the older alarm-oriented numbering below. In the current repository state, Phase 7 is route/session stabilization and Phase 8 is MQTT-backed device provisioning. Alarm levels, fault filters, classification, occurrence counting, notifications and reports start only in later second-step phases.
+> Current execution note: the post-Phase-6 execution order in `docs/prompts/2nd-step/00_README_EXECUTION_ORDER.md` supersedes the older alarm-oriented numbering below. The approved order is Phase 9 alarm levels/fault filters/classification, Phase 10 company portal scope and management completion, Phase 11 occurrence engine, Phase 12 notifications and alarm operations UI, Phase 13 reports/dashboards/legacy parity and Phase 14 retention/migration/hardening/deployment.
 
 ## Phase 0 — Repository bootstrap va discovery freeze
 
@@ -168,18 +168,49 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 - Real hardware live gateway acknowledgement check is completed before Phase 8 is declared complete.
 - Phase 8 closure records one explicitly selected live-test gateway for the run; the gateway serial is evidence, not a permanent architectural constant. The acknowledged `cmd=2` command must belong to that selected gateway, use `requestId = GatewayCommand.id`, correlate the ACK to the same command, create exactly one active assignment for each requested node, point every assignment to the same selected gateway and keep duplicate/audit side effects idempotent.
 
-## Later second-step phases — Alarm levels, occurrence count, operations and reports
+## Phase 9 — Alarm levels, fault filters and authoritative classification
 
 ### Ishlar
 
-- AlarmLevel: caution/warning/danger thresholds.
+- Building + node-type alarm-level desired configuration and version history.
+- Per-gateway desired/applied cmd 4 application state through existing GatewayCommand outbox.
+- Gateway + node-type + node fault-filter desired/applied state through existing cmd 5 outbox.
+- Door classification from `doorChk`.
+- Angle/gangform classification from `max(abs(angleX), abs(angleY))`.
+- Explicit `UNCONFIGURED` state for missing angle/gangform configuration.
+- Monitoring UI controls from building monitoring without raw UUID entry.
+
+### Exit criteria
+
+- Desired/applied state links to exact GatewayCommand/requestId.
+- cmd 4 and cmd 5 use existing requestId correlation and lifecycle.
+- Backend classification is authoritative and payload status is diagnostic only.
+- Automated checks pass.
+- Live cmd 4 and cmd 5 hardware verification passes before Phase 9 is marked complete.
+
+## Phase 10 — Company portal scope and management completion
+
+### Ishlar
+
+- Complete company user/role/scope/position management UI.
+- Complete role permission editor, scope assignment and position assignment.
+- Keep backend permission + company/site/building scope as the security boundary.
+
+### Exit criteria
+
+- Company portal management workflows work without raw IDs.
+- Scope and permission denial paths are covered.
+
+## Phase 11 — Alarm occurrence count engine
+
+### Ishlar
+
 - AlarmRule va AlarmRecipientPolicy.
 - CompanyPosition + scope recipient resolver.
 - AlarmCounterState transaction logic.
 - `requiredOccurrenceCount` (`회수`) va `countIntervalSeconds` (`지속시간`).
 - Safe/severity transition reset.
-- AlarmEvent, AlarmNotification, AlarmDeliveryLog.
-- In-app va selected external provider adapter.
+- AlarmEvent evidence model without notification delivery side effects leaking into counting.
 
 ### Exit criteria
 
@@ -188,7 +219,20 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 - Triggerdan keyingi eligible reading yangi cycle boshlaydi.
 - Duplicate MQTT reading counter yoki notificationni takrorlamaydi.
 
-## Phase 9+ — Reports va audit
+## Phase 12 — Notifications and alarm operations UI
+
+### Ishlar
+
+- AlarmNotification, AlarmDeliveryLog and provider retry.
+- In-app va selected external provider adapter.
+- Alarm list/detail/ack/resolve UI.
+
+### Exit criteria
+
+- Recipients resolve from CompanyPosition + scope.
+- Alarm operations remain permission and scope guarded.
+
+## Phase 13 — Reports, dashboards and legacy parity
 
 ### Ishlar
 
@@ -203,7 +247,7 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 - Company user scope tashqarisidagi report data chiqarmaydi.
 - Katta export request lifecycle orqali ishlaydi.
 
-## Phase 10 — Migration, hardening va deployment
+## Phase 14 — Retention, migration, hardening and deployment
 
 ### Ishlar
 

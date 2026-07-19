@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
 import { AuditLogService } from "../audit-logs/audit-log.service";
+import { ensureDefaultCompanyRoles } from "../company-management/default-company-roles";
 import { PrismaService } from "../../prisma/prisma.service";
 import type {
   CreateAreaDto,
@@ -72,16 +73,6 @@ export class OrganizationsService {
 
   async createCompany(actor: AuthTokenPayload, dto: CreateCompanyDto) {
     return this.prisma.$transaction(async (tx) => {
-      const templates = await tx.companyRole.findMany({
-        where: { companyId: null, isSystem: true },
-        include: { permissions: { select: { permissionId: true } } },
-      });
-      const platformTemplate = templates.find((template) => template.key === "platform_manager");
-
-      if (!platformTemplate) {
-        throw new ConflictException("The platform manager role template is unavailable.");
-      }
-
       const company = await tx.company.create({
         data: {
           address: dto.address,
@@ -93,22 +84,15 @@ export class OrganizationsService {
         select: companySelect,
       });
 
-      const roleByKey = new Map<string, string>();
-      for (const template of templates) {
-        const role = await tx.companyRole.create({
-          data: {
-            companyId: company.id,
-            isCompanyOwnerRole: template.isCompanyOwnerRole,
-            key: template.key,
-            name: template.name,
-            permissions: {
-              createMany: {
-                data: template.permissions.map(({ permissionId }) => ({ permissionId })),
-              },
-            },
-          },
-        });
-        roleByKey.set(template.key, role.id);
+      const defaultRoles = await ensureDefaultCompanyRoles(company.id, tx);
+      if (defaultRoles.missingTemplateKeys.length > 0) {
+        throw new ConflictException(
+          `Default company role templates are unavailable: ${defaultRoles.missingTemplateKeys.join(", ")}.`,
+        );
+      }
+      const platformManagerRoleId = defaultRoles.roleIdsByKey.get("platform_manager");
+      if (!platformManagerRoleId) {
+        throw new ConflictException("The platform manager role template is unavailable.");
       }
 
       const platformManager = await tx.companyUser.create({
@@ -118,7 +102,7 @@ export class OrganizationsService {
           name: dto.platformManager.name,
           passwordHash: await hash(dto.platformManager.password, 12),
           phone: dto.platformManager.phone,
-          roleId: roleByKey.get("platform_manager")!,
+          roleId: platformManagerRoleId,
         },
         select: { email: true, id: true, name: true, roleId: true },
       });

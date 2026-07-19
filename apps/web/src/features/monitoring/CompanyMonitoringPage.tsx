@@ -1,6 +1,10 @@
 import type {
   BuildingRecord,
+  BuildingAlarmLevelsResponse,
+  BuildingFaultFiltersResponse,
   CanonicalNodeType,
+  FaultFilterGatewayGroup,
+  GatewayCommandStatus,
   MonitoringBuildingOverview,
   MonitoringNodeStateEvent,
   MonitoringNodeStateRecord,
@@ -17,8 +21,25 @@ import {
   PageHeader,
   StatusBadge,
 } from "@gss-iot/ui";
-import { Badge, Button, Group, SimpleGrid, Stack, Tabs, Text } from "@mantine/core";
-import { IconHistory, IconPlugConnected, IconPlugConnectedX } from "@tabler/icons-react";
+import {
+  Badge,
+  Button,
+  Checkbox,
+  Group,
+  NumberInput,
+  Paper,
+  SimpleGrid,
+  Stack,
+  Switch,
+  Tabs,
+  Text,
+} from "@mantine/core";
+import {
+  IconHistory,
+  IconPlugConnected,
+  IconPlugConnectedX,
+  IconRefresh,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
@@ -28,6 +49,7 @@ import { t, tf } from "../../app/i18n";
 import type { TranslationKey } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { Can } from "../../shared/rbac/Can";
 
 type RealtimeStatus = "connected" | "offline" | "reconnecting";
 type StateRow = MonitoringNodeStateRecord & { id: string };
@@ -157,6 +179,8 @@ export function NodeTypeMonitoringPage() {
   const { session } = useAuth();
   const [response, setResponse] = useState<MonitoringNodeTypeResponse>();
   const [history, setHistory] = useState<PaginatedSensorHistory>();
+  const [alarmLevels, setAlarmLevels] = useState<BuildingAlarmLevelsResponse>();
+  const [faultFilters, setFaultFilters] = useState<BuildingFaultFiltersResponse>();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("offline");
   const [error, setError] = useState(false);
@@ -220,6 +244,28 @@ export function NodeTypeMonitoringPage() {
       .catch(() => setHistory(undefined));
   }, [buildingId, canonicalNodeType, selectedNodeId, session]);
 
+  useEffect(() => {
+    if (!session || !buildingId || !canonicalNodeType) return;
+    void Promise.all([
+      apiRequest<BuildingAlarmLevelsResponse>(
+        session,
+        `/company/buildings/${buildingId}/alarm-levels`,
+      ),
+      apiRequest<BuildingFaultFiltersResponse>(
+        session,
+        `/company/buildings/${buildingId}/alarm-levels/fault-filters`,
+      ),
+    ])
+      .then(([levels, filters]) => {
+        setAlarmLevels(levels);
+        setFaultFilters(filters);
+      })
+      .catch(() => {
+        setAlarmLevels(undefined);
+        setFaultFilters(undefined);
+      });
+  }, [buildingId, canonicalNodeType, session]);
+
   const rows = useMemo<StateRow[]>(
     () => response?.states.map((state) => ({ ...state, id: state.nodeId })) ?? [],
     [response],
@@ -241,6 +287,8 @@ export function NodeTypeMonitoringPage() {
           <Tabs.List>
             <Tabs.Tab value="states">{t("monitoring.latestStates")}</Tabs.Tab>
             <Tabs.Tab value="history">{t("monitoring.history")}</Tabs.Tab>
+            <Tabs.Tab value="alarm-levels">{t("alarmLevels.title")}</Tabs.Tab>
+            <Tabs.Tab value="fault-filters">{t("alarmLevels.faultFilters")}</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel pt="md" value="states">
             <DataTable
@@ -293,6 +341,22 @@ export function NodeTypeMonitoringPage() {
           <Tabs.Panel pt="md" value="history">
             <HistoryTable history={history} />
           </Tabs.Panel>
+          <Tabs.Panel pt="md" value="alarm-levels">
+            <AlarmLevelPanel
+              buildingId={buildingId!}
+              data={alarmLevels}
+              nodeType={canonicalNodeType}
+              onRefresh={setAlarmLevels}
+            />
+          </Tabs.Panel>
+          <Tabs.Panel pt="md" value="fault-filters">
+            <FaultFilterPanel
+              buildingId={buildingId!}
+              data={faultFilters}
+              nodeType={canonicalNodeType}
+              onRefresh={setFaultFilters}
+            />
+          </Tabs.Panel>
         </Tabs>
       ) : (
         <EmptyState description={t("monitoring.emptyNodes")} title={t("common.emptyTitle")} />
@@ -302,6 +366,424 @@ export function NodeTypeMonitoringPage() {
       </Text>
     </Stack>
   );
+}
+
+function AlarmLevelPanel({
+  buildingId,
+  data,
+  nodeType,
+  onRefresh,
+}: {
+  buildingId: string;
+  data?: BuildingAlarmLevelsResponse;
+  nodeType: CanonicalNodeType;
+  onRefresh: (data: BuildingAlarmLevelsResponse) => void;
+}) {
+  const { session } = useAuth();
+  const nodeTypeRecord = data?.nodeTypes.find((item) => item.key === nodeType);
+  const configuration = data?.configurations.find((item) => item.nodeType.key === nodeType);
+  const [enabled, setEnabled] = useState(true);
+  const [cautionThreshold, setCautionThreshold] = useState<number | "">(1);
+  const [warningThreshold, setWarningThreshold] = useState<number | "">(2);
+  const [dangerThreshold, setDangerThreshold] = useState<number | "">(4);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<TranslationKey | null>(null);
+
+  useEffect(() => {
+    if (!configuration) return;
+    setEnabled(configuration.enabled);
+    setCautionThreshold(configuration.cautionThreshold ?? 1);
+    setWarningThreshold(configuration.warningThreshold ?? 2);
+    setDangerThreshold(configuration.dangerThreshold ?? 4);
+  }, [configuration]);
+
+  if (!data || !nodeTypeRecord) return <LoadingState title={t("common.loading")} />;
+  const isDoor = nodeType === "door_node";
+  const applications = data.gatewayApplications.filter(
+    (item) => item.nodeTypeId === nodeTypeRecord.id,
+  );
+  const invalid =
+    !isDoor &&
+    enabled &&
+    !(
+      typeof cautionThreshold === "number" &&
+      typeof warningThreshold === "number" &&
+      typeof dangerThreshold === "number" &&
+      0 < cautionThreshold &&
+      cautionThreshold < warningThreshold &&
+      warningThreshold < dangerThreshold &&
+      dangerThreshold <= 12
+    );
+
+  const save = async () => {
+    if (!session || invalid) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      const next = await apiRequest<BuildingAlarmLevelsResponse>(
+        session,
+        `/company/buildings/${buildingId}/alarm-levels/node-types/${nodeTypeRecord.id}`,
+        {
+          body: JSON.stringify({
+            cautionThreshold: isDoor ? undefined : cautionThreshold,
+            dangerThreshold: isDoor ? undefined : dangerThreshold,
+            enabled,
+            warningThreshold: isDoor ? undefined : warningThreshold,
+          }),
+          method: "PATCH",
+        },
+      );
+      onRefresh(next);
+      setMessage("alarmLevels.saved");
+    } catch {
+      setMessage("alarmLevels.saveFailed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Stack gap="md">
+      <Paper withBorder p="md">
+        <Stack gap="sm">
+          <Group justify="space-between">
+            <Text fw={600}>{t("alarmLevels.configuration")}</Text>
+            <Can permission="alarm-levels.manage">
+              <Switch
+                checked={enabled}
+                label={enabled ? t("gatewayCommands.enabled") : t("gatewayCommands.disabled")}
+                onChange={(event) => setEnabled(event.currentTarget.checked)}
+              />
+            </Can>
+          </Group>
+          {!isDoor ? (
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              <NumberInput
+                label={t("alarmLevels.caution")}
+                max={12}
+                min={0}
+                onChange={(value) => setCautionThreshold(value === "" ? "" : Number(value))}
+                value={cautionThreshold}
+              />
+              <NumberInput
+                label={t("alarmLevels.warning")}
+                max={12}
+                min={0}
+                onChange={(value) => setWarningThreshold(value === "" ? "" : Number(value))}
+                value={warningThreshold}
+              />
+              <NumberInput
+                label={t("alarmLevels.danger")}
+                max={12}
+                min={0}
+                onChange={(value) => setDangerThreshold(value === "" ? "" : Number(value))}
+                value={dangerThreshold}
+              />
+            </SimpleGrid>
+          ) : (
+            <Text c="dimmed" size="sm">
+              {t("alarmLevels.doorHint")}
+            </Text>
+          )}
+          {invalid ? (
+            <Text c="red" size="sm">
+              {t("alarmLevels.thresholdValidation")}
+            </Text>
+          ) : null}
+          <Group justify="space-between">
+            <Text c={message === "alarmLevels.saveFailed" ? "red" : "dimmed"} size="sm">
+              {message ? t(message) : t("alarmLevels.requestIdHint")}
+            </Text>
+            <Can permission="alarm-levels.manage">
+              <Button disabled={invalid} loading={saving} onClick={save}>
+                {t("organizations.save")}
+              </Button>
+            </Can>
+          </Group>
+        </Stack>
+      </Paper>
+      <GatewayApplicationTable
+        applications={applications}
+        buildingId={buildingId}
+        nodeType={nodeType}
+        onRefresh={async (next) => {
+          if (next) {
+            onRefresh(next);
+            return;
+          }
+          if (!session) return;
+          onRefresh(
+            await apiRequest<BuildingAlarmLevelsResponse>(
+              session,
+              `/company/buildings/${buildingId}/alarm-levels`,
+            ),
+          );
+        }}
+      />
+    </Stack>
+  );
+}
+
+function GatewayApplicationTable({
+  applications,
+  buildingId,
+  nodeType,
+  onRefresh,
+}: {
+  applications: BuildingAlarmLevelsResponse["gatewayApplications"];
+  buildingId: string;
+  nodeType: CanonicalNodeType;
+  onRefresh: (data?: BuildingAlarmLevelsResponse) => Promise<void>;
+}) {
+  const { session } = useAuth();
+  const [updatingGatewayId, setUpdatingGatewayId] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  async function retry(commandId: string | null) {
+    if (!session || !commandId) return;
+    await apiRequest(
+      session,
+      `/company/buildings/${buildingId}/alarm-levels/commands/${commandId}/retry`,
+      {
+        method: "POST",
+      },
+    );
+    await onRefresh();
+  }
+
+  async function toggleGateway(gatewayId: string, enabled: boolean) {
+    if (!session) return;
+    setUpdatingGatewayId(gatewayId);
+    setError(false);
+    try {
+      const next = await apiRequest<BuildingAlarmLevelsResponse>(
+        session,
+        `/company/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`,
+        {
+          body: JSON.stringify({ enabled, nodeType }),
+          method: "PATCH",
+        },
+      );
+      await onRefresh(next);
+    } catch {
+      setError(true);
+    } finally {
+      setUpdatingGatewayId(null);
+    }
+  }
+
+  if (!applications.length) {
+    return <EmptyState description={t("alarmLevels.noGateways")} title={t("common.emptyTitle")} />;
+  }
+  return (
+    <Stack gap="xs">
+      {error ? (
+        <Text c="red" size="sm">
+          {t("alarmLevels.gatewayToggleFailed")}
+        </Text>
+      ) : null}
+      <DataTable
+        columns={[
+          {
+            key: "gateway",
+            label: t("devices.gateway"),
+            render: (row) => row.gateway.serialNumber,
+          },
+          {
+            key: "desired",
+            label: t("alarmLevels.desired"),
+            render: (row) => (
+              <Group gap="xs">
+                <Badge color={row.desiredEnabled ? "green" : "gray"} variant="light">
+                  {row.desiredEnabled
+                    ? t("gatewayCommands.enabled")
+                    : t("gatewayCommands.disabled")}
+                </Badge>
+                <Can permission="alarm-levels.manage">
+                  <Switch
+                    aria-label={tf("alarmLevels.gatewayToggle", {
+                      gateway: row.gateway.serialNumber,
+                    })}
+                    checked={row.desiredEnabled}
+                    disabled={updatingGatewayId === row.gatewayId}
+                    onChange={(event) =>
+                      void toggleGateway(row.gatewayId, event.currentTarget.checked)
+                    }
+                    size="sm"
+                  />
+                </Can>
+              </Group>
+            ),
+          },
+          {
+            key: "applied",
+            label: t("alarmLevels.applied"),
+            render: (row) =>
+              row.appliedEnabled === null ? (
+                t("alarmLevels.notApplied")
+              ) : (
+                <Badge color={row.appliedEnabled ? "green" : "gray"} variant="light">
+                  {row.appliedEnabled
+                    ? t("gatewayCommands.enabled")
+                    : t("gatewayCommands.disabled")}
+                </Badge>
+              ),
+          },
+          {
+            key: "status",
+            label: t("gatewayCommands.status"),
+            render: (row) => commandStatusBadge(row.desiredStatus),
+          },
+          {
+            key: "requestId",
+            label: t("gatewayCommands.requestId"),
+            render: (row) => row.desiredCommandId ?? "-",
+          },
+          {
+            key: "appliedAt",
+            label: t("gatewayCommands.acknowledgedAt"),
+            render: (row) => formatDate(row.appliedAt),
+          },
+          {
+            key: "retry",
+            label: t("common.retry"),
+            render: (row) =>
+              row.desiredStatus === "FAILED" && row.desiredCommandId ? (
+                <Can permission="alarm-levels.manage">
+                  <Button
+                    leftSection={<IconRefresh size={14} />}
+                    onClick={() => retry(row.desiredCommandId)}
+                    size="xs"
+                    variant="light"
+                  >
+                    {t("common.retry")}
+                  </Button>
+                </Can>
+              ) : null,
+          },
+        ]}
+        rows={applications}
+      />
+    </Stack>
+  );
+}
+
+function FaultFilterPanel({
+  buildingId,
+  data,
+  nodeType,
+  onRefresh,
+}: {
+  buildingId: string;
+  data?: BuildingFaultFiltersResponse;
+  nodeType: CanonicalNodeType;
+  onRefresh: (data: BuildingFaultFiltersResponse) => void;
+}) {
+  const { session } = useAuth();
+  if (!data) return <LoadingState title={t("common.loading")} />;
+  const groups = data.gateways.map((gateway) => ({
+    gateway: gateway.gateway,
+    nodeTypes: gateway.nodeTypes.filter((item) => item.nodeType.key === nodeType),
+  }));
+
+  async function saveGroup(group: FaultFilterGatewayGroup, selectedNodeIds: string[]) {
+    const nodeTypeRecord = group.nodeTypes[0]?.nodeType;
+    if (!session || !nodeTypeRecord) return;
+    const next = await apiRequest<BuildingFaultFiltersResponse>(
+      session,
+      `/company/buildings/${buildingId}/alarm-levels/fault-filters`,
+      {
+        body: JSON.stringify({
+          gatewayId: group.gateway.id,
+          nodeIds: selectedNodeIds,
+          nodeTypeId: nodeTypeRecord.id,
+        }),
+        method: "PATCH",
+      },
+    );
+    onRefresh(next);
+  }
+
+  return (
+    <Stack gap="md">
+      {groups.map((group) => (
+        <FaultFilterGatewayEditor group={group} key={group.gateway.id} onSave={saveGroup} />
+      ))}
+      {!groups.length ? (
+        <EmptyState description={t("alarmLevels.noGateways")} title={t("common.emptyTitle")} />
+      ) : null}
+    </Stack>
+  );
+}
+
+function FaultFilterGatewayEditor({
+  group,
+  onSave,
+}: {
+  group: FaultFilterGatewayGroup;
+  onSave: (group: FaultFilterGatewayGroup, selectedNodeIds: string[]) => Promise<void>;
+}) {
+  const nodes = group.nodeTypes[0]?.nodes ?? [];
+  const [selected, setSelected] = useState<string[]>(() =>
+    nodes.filter((node) => node.desiredEnabled).map((node) => node.nodeId),
+  );
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setSelected(nodes.filter((node) => node.desiredEnabled).map((node) => node.nodeId));
+  }, [nodes]);
+
+  return (
+    <Paper withBorder p="md">
+      <Stack>
+        <Group justify="space-between">
+          <Text fw={600}>{group.gateway.serialNumber}</Text>
+          <Can permission="alarm-levels.manage">
+            <Button
+              loading={saving}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await onSave(group, selected);
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              size="xs"
+            >
+              {t("organizations.save")}
+            </Button>
+          </Can>
+        </Group>
+        {nodes.length ? (
+          <Checkbox.Group onChange={setSelected} value={selected}>
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              {nodes.map((node) => (
+                <Checkbox
+                  key={node.nodeId}
+                  label={`${node.node.number} (${node.applied ? t("alarmLevels.applied") : t("alarmLevels.notApplied")})`}
+                  value={node.nodeId}
+                />
+              ))}
+            </SimpleGrid>
+          </Checkbox.Group>
+        ) : (
+          <EmptyState description={t("monitoring.emptyNodes")} title={t("common.emptyTitle")} />
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
+function commandStatusBadge(status: GatewayCommandStatus) {
+  const color =
+    status === "ACKNOWLEDGED"
+      ? "green"
+      : status === "FAILED" || status === "EXPIRED" || status === "CANCELLED"
+        ? "red"
+        : status === "SENT"
+          ? "blue"
+          : "gray";
+  return <Badge color={color}>{status}</Badge>;
 }
 
 function RealtimeBadge({ status }: { status: RealtimeStatus }) {
@@ -366,6 +848,10 @@ function formatAge(lastSeenAt: string): string {
   const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
   if (seconds < 60) return tf("monitoring.ageSeconds", { count: seconds });
   return tf("monitoring.ageMinutes", { count: Math.floor(seconds / 60) });
+}
+
+function formatDate(value: string | null): string {
+  return value ? new Date(value).toLocaleString() : "-";
 }
 
 function upsertState(

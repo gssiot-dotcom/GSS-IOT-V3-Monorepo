@@ -50,6 +50,7 @@
 - [x] Add transaction-backed audit records for organization, role, scope, position and company-user changes.
 - [x] Add Phase 3 API E2E coverage for company boundaries, position scope, global-permission denial and last platform-manager self-lockout.
 - [x] Replace relevant Phase 2 placeholders with shared-shell Admin company creation and Company organization/user/role management screens.
+- [x] Backfill missing approved default company roles idempotently so existing companies render role choices in the GSS Admin company-user create form.
 
 ## Phase 4
 
@@ -112,6 +113,22 @@
 - [x] Add deterministic `requestId = GatewayCommand.id` payload stamping and response correlation for cmd 2/3/4/5, including retry reuse, exact requestId matching, strict legacy fallback and fast-ACK-safe status updates.
 - [x] Run real hardware live gateway verification for Phase 8 requestId/numeric-node payload acknowledgement using selected gateway `0300`, command `160b3e5c-139d-479b-8535-a82f25f95b02` and nodes `100`, `101` and `102`.
 
+## Phase 9
+
+- [x] Add additive Prisma models and migration for building/node-type alarm-level desired state, version history, per-gateway application status, fault-filter desired/applied state and classification evidence.
+- [x] Preserve existing GatewayCommand outbox for cmd 4 and cmd 5, including `requestId = GatewayCommand.id`, retry reuse, exact requestId correlation, fast-ACK safety and idempotent duplicate ACK behavior.
+- [x] Implement guarded GSS Admin and Company APIs for viewing/updating building alarm levels, inspecting per-gateway status, viewing/updating fault filters and retrying failed configuration commands.
+- [x] Validate angle/gangform thresholds with `0 < caution < warning < danger <= 12` and map legacy green/yellow/red to caution/warning/danger.
+- [x] Validate fault-filter nodes by company, active gateway assignment, node type and numeric wire node number without numeric-normalization duplicates.
+- [x] Make monitoring classification authoritative: door from `doorChk`, angle/gangform from `max(abs(angleX), abs(angleY))`, payload status diagnostic only and missing configuration `UNCONFIGURED`.
+- [x] Retain ACK-applied fault-filtered readings with `faultFiltered=true` evidence for later occurrence-count exclusion.
+- [x] Add Company monitoring UI tabs for alarm-level configuration, per-gateway application status, fault-filter node selection and retry action without raw UUID entry.
+- [x] Add legacy-parity per-gateway + node-type alarm enable/disable using the existing GatewayCommand cmd 4 outbox, with desired/applied enabled state and no per-gateway threshold overrides.
+- [x] Add focused unit/API E2E/web regression coverage for thresholds, backend classification, unconfigured state, cmd 4/cmd 5 requestId payloads, applied-state ACK behavior, numeric node arrays, duplicate ACK idempotency and Phase 1-8 cleanup compatibility.
+- [ ] Run the full final Phase 9 verification command set after docs are complete.
+- [ ] Perform live hardware verification for one explicitly selected available gateway: building-level cmd 4 fan-out, selected gateway/node-type disable, selected gateway/node-type re-enable, cmd 5 numeric-node success ACK, exact requestId ACK, desired/applied state and duplicate ACK idempotency.
+- [ ] Mark Phase 9 complete only after all automated checks, migration/seed checks and live hardware verification pass.
+
 ## Deferred
 
-Alarm levels, fault filters, backend alarm classification, occurrence counting, notifications, reports, partitioning, archival and external delivery providers remain deferred to Phase 9 or later.
+Occurrence counting, AlarmEvent, recipient resolution, notifications, reports, partitioning, archival, migration, deployment and external delivery providers remain deferred to Phase 11 or later according to the approved 2nd-step execution order.

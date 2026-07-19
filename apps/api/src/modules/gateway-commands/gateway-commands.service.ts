@@ -240,6 +240,14 @@ export class GatewayCommandsService {
           where: { commandId },
           data: { failureReason: null, status: GatewayCommandStatus.SENT },
         });
+        await tx.gatewayAlarmLevelApplication.updateMany({
+          where: { desiredCommandId: commandId },
+          data: { desiredStatus: GatewayCommandStatus.SENT, failureReason: null },
+        });
+        await tx.gatewayFaultFilterDesiredState.updateMany({
+          where: { desiredCommandId: commandId },
+          data: { desiredStatus: GatewayCommandStatus.SENT, failureReason: null },
+        });
       }
       return this.getCommandOrThrow(commandId, tx);
     });
@@ -264,6 +272,14 @@ export class GatewayCommandsService {
           where: { request: { commandId } },
           data: { failureReason: reason },
         });
+        await tx.gatewayAlarmLevelApplication.updateMany({
+          where: { desiredCommandId: commandId },
+          data: { desiredStatus: GatewayCommandStatus.FAILED, failureReason: reason },
+        });
+        await tx.gatewayFaultFilterDesiredState.updateMany({
+          where: { desiredCommandId: commandId },
+          data: { desiredStatus: GatewayCommandStatus.FAILED, failureReason: reason },
+        });
       }
       return this.getCommandOrThrow(commandId, tx);
     });
@@ -287,6 +303,14 @@ export class GatewayCommandsService {
       });
       await tx.nodeGatewayProvisioningRequest.updateMany({
         where: { commandId, status: GatewayCommandStatus.PENDING },
+        data: { failureReason: null },
+      });
+      await tx.gatewayAlarmLevelApplication.updateMany({
+        where: { desiredCommandId: commandId, desiredStatus: GatewayCommandStatus.PENDING },
+        data: { failureReason: null },
+      });
+      await tx.gatewayFaultFilterDesiredState.updateMany({
+        where: { desiredCommandId: commandId, desiredStatus: GatewayCommandStatus.PENDING },
         data: { failureReason: null },
       });
       return this.getCommandOrThrow(commandId, tx);
@@ -357,6 +381,14 @@ export class GatewayCommandsService {
         where: { request: { commandId }, assignmentId: null },
         data: { failureReason: null },
       });
+      await tx.gatewayAlarmLevelApplication.updateMany({
+        where: { desiredCommandId: commandId },
+        data: { desiredStatus: GatewayCommandStatus.PENDING, failureReason: null },
+      });
+      await tx.gatewayFaultFilterDesiredState.updateMany({
+        where: { desiredCommandId: commandId },
+        data: { desiredStatus: GatewayCommandStatus.PENDING, failureReason: null },
+      });
       await this.auditLog.record(
         actor,
         {
@@ -397,6 +429,20 @@ export class GatewayCommandsService {
           status: GatewayCommandStatus.CANCELLED,
         },
       });
+      await tx.gatewayAlarmLevelApplication.updateMany({
+        where: { desiredCommandId: commandId },
+        data: {
+          desiredStatus: GatewayCommandStatus.CANCELLED,
+          failureReason: "Command was cancelled before successful acknowledgement.",
+        },
+      });
+      await tx.gatewayFaultFilterDesiredState.updateMany({
+        where: { desiredCommandId: commandId },
+        data: {
+          desiredStatus: GatewayCommandStatus.CANCELLED,
+          failureReason: "Command was cancelled before successful acknowledgement.",
+        },
+      });
       await this.auditLog.record(
         actor,
         {
@@ -435,6 +481,20 @@ export class GatewayCommandsService {
           data: {
             failureReason: "Command expired before successful acknowledgement.",
             status: GatewayCommandStatus.EXPIRED,
+          },
+        });
+        await tx.gatewayAlarmLevelApplication.updateMany({
+          where: { desiredCommandId: command.id },
+          data: {
+            desiredStatus: GatewayCommandStatus.EXPIRED,
+            failureReason: "Command expired before successful acknowledgement.",
+          },
+        });
+        await tx.gatewayFaultFilterDesiredState.updateMany({
+          where: { desiredCommandId: command.id },
+          data: {
+            desiredStatus: GatewayCommandStatus.EXPIRED,
+            failureReason: "Command expired before successful acknowledgement.",
           },
         });
         return updated;
@@ -628,6 +688,10 @@ export class GatewayCommandsService {
     let appliedAssignmentCount = 0;
     if (command.commandType === "REGISTER_NODES") {
       appliedAssignmentCount = await this.applyProvisioningRequest(command.id, responsePayload, tx);
+    } else if (command.commandType === "SET_ALARM_LEVELS") {
+      await this.applyAlarmLevelCommand(command.id, responsePayload, tx);
+    } else if (command.commandType === "SET_FAULT_FILTER") {
+      await this.applyFaultFilterCommand(command.id, responsePayload, tx);
     }
     const acknowledged = await this.getCommandOrThrow(command.id, tx);
     await this.auditLog.record(
@@ -681,6 +745,14 @@ export class GatewayCommandsService {
     await tx.nodeGatewayProvisioningItem.updateMany({
       where: { request: { commandId: command.id }, assignmentId: null },
       data: { failureReason: reason },
+    });
+    await tx.gatewayAlarmLevelApplication.updateMany({
+      where: { desiredCommandId: command.id },
+      data: { desiredStatus: GatewayCommandStatus.FAILED, failureReason: reason },
+    });
+    await tx.gatewayFaultFilterDesiredState.updateMany({
+      where: { desiredCommandId: command.id },
+      data: { desiredStatus: GatewayCommandStatus.FAILED, failureReason: reason },
     });
     const failed = await this.getCommandOrThrow(command.id, tx);
     await this.auditLog.record(
@@ -834,6 +906,113 @@ export class GatewayCommandsService {
       tx,
     );
     return appliedAssignments.length;
+  }
+
+  private async applyAlarmLevelCommand(
+    commandId: string,
+    responsePayload: Prisma.InputJsonValue,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const application = await tx.gatewayAlarmLevelApplication.findFirst({
+      where: { desiredCommandId: commandId },
+    });
+    if (!application || application.appliedCommandId === commandId) {
+      return;
+    }
+    const now = new Date();
+    const updated = await tx.gatewayAlarmLevelApplication.update({
+      where: { id: application.id },
+      data: {
+        appliedAt: now,
+        appliedCommandId: commandId,
+        appliedConfigurationId: application.configurationId,
+        appliedConfigurationVersion: application.configurationVersion,
+        appliedEnabled: application.desiredEnabled,
+        appliedRequestId: commandId,
+        desiredStatus: GatewayCommandStatus.ACKNOWLEDGED,
+        failureReason: null,
+        lastSuccessfulPayload: responsePayload,
+      },
+    });
+    await this.auditLog.record(
+      this.systemActor(),
+      {
+        action: "alarm-levels.apply",
+        entityId: updated.id,
+        entityType: "GatewayAlarmLevelApplication",
+        newValue: updated,
+        oldValue: application,
+      },
+      tx,
+    );
+  }
+
+  private async applyFaultFilterCommand(
+    commandId: string,
+    responsePayload: Prisma.InputJsonValue,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const desiredStates = await tx.gatewayFaultFilterDesiredState.findMany({
+      where: { desiredCommandId: commandId },
+    });
+    if (!desiredStates.length) {
+      return;
+    }
+    const now = new Date();
+    const appliedStateIds: string[] = [];
+    for (const desired of desiredStates) {
+      await tx.gatewayFaultFilterDesiredState.update({
+        where: { id: desired.id },
+        data: {
+          desiredStatus: GatewayCommandStatus.ACKNOWLEDGED,
+          failureReason: null,
+        },
+      });
+      const applied = await tx.gatewayFaultFilterAppliedState.upsert({
+        create: {
+          applied: desired.enabled,
+          appliedAt: now,
+          appliedCommandId: commandId,
+          appliedRequestId: commandId,
+          gatewayId: desired.gatewayId,
+          lastSuccessfulPayload: responsePayload,
+          nodeId: desired.nodeId,
+          nodeTypeId: desired.nodeTypeId,
+          status: GatewayCommandStatus.ACKNOWLEDGED,
+        },
+        update: {
+          applied: desired.enabled,
+          appliedAt: now,
+          appliedCommandId: commandId,
+          appliedRequestId: commandId,
+          failureReason: null,
+          lastSuccessfulPayload: responsePayload,
+          status: GatewayCommandStatus.ACKNOWLEDGED,
+        },
+        where: {
+          gatewayId_nodeTypeId_nodeId: {
+            gatewayId: desired.gatewayId,
+            nodeId: desired.nodeId,
+            nodeTypeId: desired.nodeTypeId,
+          },
+        },
+      });
+      appliedStateIds.push(applied.id);
+    }
+    await this.auditLog.record(
+      this.systemActor(),
+      {
+        action: "fault-filter.apply",
+        entityId: commandId,
+        entityType: "GatewayCommand",
+        newValue: {
+          appliedStateIds,
+          commandId,
+          desiredStateCount: desiredStates.length,
+        },
+      },
+      tx,
+    );
   }
 
   private async createCommand(

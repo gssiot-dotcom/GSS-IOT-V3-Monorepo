@@ -23,16 +23,19 @@ These decisions should be resolved before or during the named phase. Codex must 
 
 ## Phase 9 alarm levels/classification
 
-1. Exact threshold meaning for angle/gangform:
-   - cumulative absolute angle?
-   - max(abs(X), abs(Y))?
-   - calibrated delta from baseline?
-2. Mapping of legacy green/yellow/red to safe/caution/warning/danger.
-3. Are thresholds building+nodeType only, or can gateways/nodes override?
-4. Does door node have only safe/danger, or caution/warning states too?
-5. Is angle calibration required in V3 before classification?
-6. What should happen when no alarm config exists: unconfigured, safe, or default seed thresholds?
-7. Fault-filtered readings: store history but skip counters, or ignore entirely? Recommended: store with evidence and skip alarm counting.
+Resolved in Phase 9 by `DEC-2026-029`:
+
+- Angle/gangform metric is `max(abs(angleX), abs(angleY))`.
+- Legacy `green/yellow/red` maps to `cautionThreshold/warningThreshold/dangerThreshold`.
+- Threshold scope is building + node type only; no Phase 9 per-gateway overrides.
+- Door remains safe/danger from `doorChk` and does not use caution/warning thresholds.
+- Calibration is deferred; Phase 9 uses raw absolute MQTT angle values.
+- Missing angle/gangform configuration is explicit `UNCONFIGURED`.
+- ACK-applied fault-filtered readings are stored with evidence and excluded by future occurrence counting.
+
+Remaining Phase 9 closure item:
+
+1. Live hardware verification for cmd 4 and cmd 5 using one explicitly selected available gateway, including duplicate ACK idempotency.
 
 ## Phase 10 company management
 

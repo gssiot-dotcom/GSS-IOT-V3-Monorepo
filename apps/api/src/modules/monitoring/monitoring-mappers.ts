@@ -11,6 +11,7 @@ const statusFromPrisma = {
   DANGER: "danger",
   OFFLINE: "offline",
   SAFE: "safe",
+  UNCONFIGURED: "unconfigured",
   WARNING: "warning",
 } satisfies Record<SensorReadingStatus, MonitoringStatus>;
 
@@ -19,6 +20,7 @@ const statusToPrisma = {
   danger: SensorReadingStatus.DANGER,
   offline: SensorReadingStatus.OFFLINE,
   safe: SensorReadingStatus.SAFE,
+  unconfigured: SensorReadingStatus.UNCONFIGURED,
   warning: SensorReadingStatus.WARNING,
 } satisfies Record<MonitoringStatus, SensorReadingStatus>;
 
@@ -57,6 +59,8 @@ export function mapLatestState(state: {
   };
   nodeTypeId: string;
   status: SensorReadingStatus;
+  classificationEvidence: unknown;
+  faultFiltered: boolean;
   updatedAt: Date;
   values: unknown;
 }): MonitoringNodeStateRecord {
@@ -73,6 +77,8 @@ export function mapLatestState(state: {
     nodeType: state.nodeType,
     nodeTypeId: state.nodeTypeId,
     status: toContractStatus(state.status),
+    classificationEvidence: state.classificationEvidence as never,
+    faultFiltered: state.faultFiltered,
     updatedAt: state.updatedAt.toISOString(),
     values: toSensorValues(state.values),
   };
@@ -96,6 +102,8 @@ export function mapSensorReading(reading: {
   nodeTypeId: string;
   receivedAt: Date;
   status: SensorReadingStatus;
+  classificationEvidence: unknown;
+  faultFiltered: boolean;
   values: unknown;
 }): SensorReadingRecord {
   return {
@@ -110,6 +118,8 @@ export function mapSensorReading(reading: {
     nodeTypeId: reading.nodeTypeId,
     receivedAt: reading.receivedAt.toISOString(),
     status: toContractStatus(reading.status),
+    classificationEvidence: reading.classificationEvidence as never,
+    faultFiltered: reading.faultFiltered,
     values: toSensorValues(reading.values),
   };
 }

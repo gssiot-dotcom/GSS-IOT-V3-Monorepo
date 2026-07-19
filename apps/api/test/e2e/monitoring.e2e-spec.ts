@@ -25,6 +25,7 @@ describe("Phase 6 monitoring and realtime e2e", () => {
   let doorNodeId: string;
   let angleNodeId: string;
   let gangformNodeId: string;
+  let angleNodeTypeId: string;
   let scopedToken: string;
   let viewOnlyToken: string;
   let noScopeToken: string;
@@ -45,6 +46,11 @@ describe("Phase 6 monitoring and realtime e2e", () => {
 
     await prisma.latestNodeState.deleteMany();
     await prisma.sensorReading.deleteMany();
+    await prisma.gatewayFaultFilterAppliedState.deleteMany();
+    await prisma.gatewayFaultFilterDesiredState.deleteMany();
+    await prisma.gatewayAlarmLevelApplication.deleteMany();
+    await prisma.buildingAlarmLevelConfigurationHistory.deleteMany();
+    await prisma.buildingAlarmLevelConfiguration.deleteMany();
     await prisma.nodeGatewayProvisioningItem.deleteMany();
     await prisma.nodeGatewayProvisioningRequest.deleteMany();
     await prisma.gatewayCommand.deleteMany();
@@ -116,7 +122,6 @@ describe("Phase 6 monitoring and realtime e2e", () => {
         },
       }),
     ]);
-
     await prisma.gssAdminUser.create({
       data: {
         email: "p6-gss@example.com",
@@ -176,6 +181,7 @@ describe("Phase 6 monitoring and realtime e2e", () => {
         },
       }),
     ]);
+    angleNodeTypeId = angleType.id;
     const [gateway, otherGateway, foreignGateway] = await Promise.all([
       prisma.gateway.create({ data: { gatewayType: "NODES_GATEWAY", serialNumber: "GW-P6-0001" } }),
       prisma.gateway.create({ data: { gatewayType: "NODES_GATEWAY", serialNumber: "GW-P6-0002" } }),
@@ -353,6 +359,109 @@ describe("Phase 6 monitoring and realtime e2e", () => {
       buildingId: allowedBuildingId,
       status: "DANGER",
     });
+    expect(
+      await prisma.latestNodeState.findUnique({ where: { nodeId: angleNodeId } }),
+    ).toMatchObject({
+      status: "UNCONFIGURED",
+    });
+  });
+
+  it("classifies angle readings from backend thresholds and stores evidence", async () => {
+    const base = process.env.MQTT_TOPIC_BASE ?? "GSSIOT/test";
+    await prisma.buildingAlarmLevelConfiguration.create({
+      data: {
+        buildingId: allowedBuildingId,
+        cautionThreshold: 1,
+        companyId: (
+          await prisma.constructionBuilding.findUniqueOrThrow({ where: { id: allowedBuildingId } })
+        ).companyId,
+        dangerThreshold: 4,
+        enabled: true,
+        nodeTypeId: angleNodeTypeId,
+        updatedByType: "SYSTEM",
+        version: 1,
+        warningThreshold: 2,
+      },
+    });
+
+    monitoring.simulateSensorMessage(`${base}/GATE_ANG/GW-P6-0001`, {
+      angle_x: -2,
+      angle_y: 0.2,
+      doorNum: "A-P6-001",
+      msgId: "angle-phase-9-warning",
+      status: "safe",
+    });
+    await waitForCount("sensorReading", 4);
+    const warning = await prisma.latestNodeState.findUniqueOrThrow({
+      where: { nodeId: angleNodeId },
+    });
+    expect(warning.status).toBe("WARNING");
+    expect(warning.classificationEvidence).toMatchObject({
+      absoluteAngleX: 2,
+      absoluteAngleY: 0.2,
+      classification: "warning",
+      configurationState: "CONFIGURED",
+      metric: 2,
+      rawAngleX: -2,
+      rawAngleY: 0.2,
+    });
+
+    monitoring.simulateSensorMessage(`${base}/GATE_ANG/GW-P6-0001`, {
+      angle_x: 0.5,
+      angle_y: 0.2,
+      doorNum: "A-P6-001",
+      msgId: "angle-phase-9-payload-status-ignored",
+      status: "danger",
+    });
+    await waitForCount("sensorReading", 5);
+    expect(
+      await prisma.latestNodeState.findUnique({ where: { nodeId: angleNodeId } }),
+    ).toMatchObject({
+      status: "SAFE",
+    });
+  });
+
+  it("retains ACK-applied fault-filtered readings with evidence", async () => {
+    const base = process.env.MQTT_TOPIC_BASE ?? "GSSIOT/test";
+    const assignment = await prisma.nodeGatewayAssignment.findFirstOrThrow({
+      where: { nodeId: angleNodeId, status: "ACTIVE" },
+    });
+    await prisma.gatewayFaultFilterAppliedState.upsert({
+      create: {
+        applied: true,
+        gatewayId: assignment.gatewayId,
+        nodeId: angleNodeId,
+        nodeTypeId: angleNodeTypeId,
+        status: "ACKNOWLEDGED",
+      },
+      update: { applied: true, status: "ACKNOWLEDGED" },
+      where: {
+        gatewayId_nodeTypeId_nodeId: {
+          gatewayId: assignment.gatewayId,
+          nodeId: angleNodeId,
+          nodeTypeId: angleNodeTypeId,
+        },
+      },
+    });
+    const before = await prisma.sensorReading.count();
+    monitoring.simulateSensorMessage(`${base}/GATE_ANG/GW-P6-0001`, {
+      angle_x: 4.5,
+      angle_y: 0,
+      doorNum: "A-P6-001",
+      msgId: "angle-phase-9-filtered",
+    });
+    await waitForCount("sensorReading", before + 1);
+    const latest = await prisma.latestNodeState.findUniqueOrThrow({
+      where: { nodeId: angleNodeId },
+    });
+    expect(latest.faultFiltered).toBe(true);
+    expect(latest.classificationEvidence).toMatchObject({
+      faultFiltered: true,
+      faultFilterState: "APPLIED",
+    });
+    expect(
+      await prisma.sensorReading.count({ where: { nodeId: angleNodeId, faultFiltered: true } }),
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it("deduplicates readings with the same gateway message id", async () => {

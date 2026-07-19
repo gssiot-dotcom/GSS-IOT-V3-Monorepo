@@ -95,6 +95,7 @@ export function AdminCompanyDetailPage(): ReactElement {
   const canLoadAreas = hasPermission(session, "areas.view");
   const canLoadBuildings = hasPermission(session, "buildings.view");
   const canLoadUsers = hasPermission(session, "company-users.view");
+  const canLoadRoles = hasPermission(session, "company-roles.view");
   const canLoadDevices =
     hasPermission(session, "gateways.view") && hasPermission(session, "nodes.view");
 
@@ -134,7 +135,7 @@ export function AdminCompanyDetailPage(): ReactElement {
         canLoadUsers
           ? apiRequest<CompanyUserRecord[]>(session, `/admin/companies/${companyId}/users`)
           : Promise.resolve([]),
-        canLoadUsers
+        canLoadRoles
           ? apiRequest<CompanyRoleRecord[]>(session, `/admin/companies/${companyId}/roles`)
           : Promise.resolve([]),
         canLoadDevices
@@ -167,6 +168,7 @@ export function AdminCompanyDetailPage(): ReactElement {
     canLoadAreas,
     canLoadBuildings,
     canLoadDevices,
+    canLoadRoles,
     canLoadUsers,
     companyId,
     handleApiError,

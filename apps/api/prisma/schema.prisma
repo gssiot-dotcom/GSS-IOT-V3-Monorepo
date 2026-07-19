@@ -76,6 +76,7 @@ enum SensorReadingStatus {
   WARNING
   DANGER
   OFFLINE
+  UNCONFIGURED
 }
 
 enum AuditActorType {
@@ -147,25 +148,26 @@ model GssAdminUserPermission {
 }
 
 model Company {
-  id                String                    @id @default(uuid()) @db.Uuid
-  name              String
-  code              String?                   @unique
-  address           String?
-  phone             String?
-  email             String?
-  logoKey           String?
-  status            CompanyStatus             @default(ACTIVE)
-  areas             ConstructionArea[]
-  buildings         ConstructionBuilding[]
-  deviceAssignments CompanyDeviceAssignment[]
-  provisioningRequests NodeGatewayProvisioningRequest[]
-  latestNodeStates  LatestNodeState[]
-  roles             CompanyRole[]
-  sensorReadings    SensorReading[]
-  users             CompanyUser[]
-  positions         CompanyPosition[]
-  createdAt         DateTime                  @default(now())
-  updatedAt         DateTime                  @updatedAt
+  id                       String                            @id @default(uuid()) @db.Uuid
+  name                     String
+  code                     String?                           @unique
+  address                  String?
+  phone                    String?
+  email                    String?
+  logoKey                  String?
+  status                   CompanyStatus                     @default(ACTIVE)
+  areas                    ConstructionArea[]
+  buildings                ConstructionBuilding[]
+  deviceAssignments        CompanyDeviceAssignment[]
+  provisioningRequests     NodeGatewayProvisioningRequest[]
+  alarmLevelConfigurations BuildingAlarmLevelConfiguration[]
+  latestNodeStates         LatestNodeState[]
+  roles                    CompanyRole[]
+  sensorReadings           SensorReading[]
+  users                    CompanyUser[]
+  positions                CompanyPosition[]
+  createdAt                DateTime                          @default(now())
+  updatedAt                DateTime                          @updatedAt
 }
 
 model ConstructionArea {
@@ -188,78 +190,89 @@ model ConstructionArea {
 }
 
 model ConstructionBuilding {
-  id                  String                          @id @default(uuid()) @db.Uuid
-  companyId           String                          @db.Uuid
-  areaId              String                          @db.Uuid
-  company             Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  area                ConstructionArea                @relation(fields: [areaId], references: [id], onDelete: Restrict)
-  title               String
-  number              String?
-  address             String?
-  buildingType        String?
-  startDate           DateTime?
-  status              CompanyStatus                   @default(ACTIVE)
-  userAccess          CompanyUserBuildingAccess[]
-  planImages          BuildingPlanImage[]
-  positionAssignments CompanyUserPositionAssignment[]
-  gatewayAssignments  GatewayBuildingAssignment[]
-  provisioningRequests NodeGatewayProvisioningRequest[]
-  latestNodeStates    LatestNodeState[]
-  sensorReadings      SensorReading[]
-  createdAt           DateTime                        @default(now())
-  updatedAt           DateTime                        @updatedAt
+  id                       String                            @id @default(uuid()) @db.Uuid
+  companyId                String                            @db.Uuid
+  areaId                   String                            @db.Uuid
+  company                  Company                           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  area                     ConstructionArea                  @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  title                    String
+  number                   String?
+  address                  String?
+  buildingType             String?
+  startDate                DateTime?
+  status                   CompanyStatus                     @default(ACTIVE)
+  userAccess               CompanyUserBuildingAccess[]
+  planImages               BuildingPlanImage[]
+  positionAssignments      CompanyUserPositionAssignment[]
+  gatewayAssignments       GatewayBuildingAssignment[]
+  provisioningRequests     NodeGatewayProvisioningRequest[]
+  alarmLevelConfigurations BuildingAlarmLevelConfiguration[]
+  alarmLevelApplications   GatewayAlarmLevelApplication[]
+  latestNodeStates         LatestNodeState[]
+  sensorReadings           SensorReading[]
+  createdAt                DateTime                          @default(now())
+  updatedAt                DateTime                          @updatedAt
 
   @@unique([areaId, title])
 }
 
 model NodeType {
-  id             String            @id @default(uuid()) @db.Uuid
-  key            String            @unique
-  displayName    String
-  numericCode    Int               @unique
-  imageAssetKey  String
-  latestStates   LatestNodeState[]
-  nodes          Node[]
-  provisioningRequests NodeGatewayProvisioningRequest[]
-  sensorReadings SensorReading[]
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  id                       String                            @id @default(uuid()) @db.Uuid
+  key                      String                            @unique
+  displayName              String
+  numericCode              Int                               @unique
+  imageAssetKey            String
+  latestStates             LatestNodeState[]
+  nodes                    Node[]
+  provisioningRequests     NodeGatewayProvisioningRequest[]
+  alarmLevelConfigurations BuildingAlarmLevelConfiguration[]
+  alarmLevelApplications   GatewayAlarmLevelApplication[]
+  faultFilterDesiredStates GatewayFaultFilterDesiredState[]
+  faultFilterAppliedStates GatewayFaultFilterAppliedState[]
+  sensorReadings           SensorReading[]
+  createdAt                DateTime                          @default(now())
+  updatedAt                DateTime                          @updatedAt
 }
 
 model Gateway {
-  id                  String                      @id @default(uuid()) @db.Uuid
-  serialNumber        String                      @unique
-  gatewayType         GatewayType
-  status              DeviceLifecycleStatus       @default(ACTIVE)
-  installedLocation   String?
-  lastSeenAt          DateTime?
-  companyAssignments  CompanyDeviceAssignment[]
-  buildingAssignments GatewayBuildingAssignment[]
-  nodeAssignments     NodeGatewayAssignment[]
-  commands            GatewayCommand[]
-  provisioningRequests NodeGatewayProvisioningRequest[]
-  latestNodeStates    LatestNodeState[]
-  sensorReadings      SensorReading[]
-  createdAt           DateTime                    @default(now())
-  updatedAt           DateTime                    @updatedAt
+  id                       String                           @id @default(uuid()) @db.Uuid
+  serialNumber             String                           @unique
+  gatewayType              GatewayType
+  status                   DeviceLifecycleStatus            @default(ACTIVE)
+  installedLocation        String?
+  lastSeenAt               DateTime?
+  companyAssignments       CompanyDeviceAssignment[]
+  buildingAssignments      GatewayBuildingAssignment[]
+  nodeAssignments          NodeGatewayAssignment[]
+  commands                 GatewayCommand[]
+  provisioningRequests     NodeGatewayProvisioningRequest[]
+  alarmLevelApplications   GatewayAlarmLevelApplication[]
+  faultFilterDesiredStates GatewayFaultFilterDesiredState[]
+  faultFilterAppliedStates GatewayFaultFilterAppliedState[]
+  latestNodeStates         LatestNodeState[]
+  sensorReadings           SensorReading[]
+  createdAt                DateTime                         @default(now())
+  updatedAt                DateTime                         @updatedAt
 }
 
 model Node {
-  id                 String                    @id @default(uuid()) @db.Uuid
-  nodeTypeId         String                    @db.Uuid
-  nodeType           NodeType                  @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
-  number             String                    @unique
-  status             DeviceLifecycleStatus     @default(ACTIVE)
-  installedLocation  String?
-  batteryLevel       Int?
-  lastSeenAt         DateTime?
-  companyAssignments CompanyDeviceAssignment[]
-  gatewayAssignments NodeGatewayAssignment[]
-  provisioningItems   NodeGatewayProvisioningItem[]
-  latestState        LatestNodeState?
-  sensorReadings     SensorReading[]
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
+  id                       String                           @id @default(uuid()) @db.Uuid
+  nodeTypeId               String                           @db.Uuid
+  nodeType                 NodeType                         @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  number                   String                           @unique
+  status                   DeviceLifecycleStatus            @default(ACTIVE)
+  installedLocation        String?
+  batteryLevel             Int?
+  lastSeenAt               DateTime?
+  companyAssignments       CompanyDeviceAssignment[]
+  gatewayAssignments       NodeGatewayAssignment[]
+  provisioningItems        NodeGatewayProvisioningItem[]
+  faultFilterDesiredStates GatewayFaultFilterDesiredState[]
+  faultFilterAppliedStates GatewayFaultFilterAppliedState[]
+  latestState              LatestNodeState?
+  sensorReadings           SensorReading[]
+  createdAt                DateTime                         @default(now())
+  updatedAt                DateTime                         @updatedAt
 }
 
 model CompanyDeviceAssignment {
@@ -296,16 +309,16 @@ model GatewayBuildingAssignment {
 }
 
 model NodeGatewayAssignment {
-  id           String           @id @default(uuid()) @db.Uuid
-  nodeId       String           @db.Uuid
-  gatewayId    String           @db.Uuid
-  status       AssignmentStatus @default(ACTIVE)
-  assignedAt   DateTime         @default(now())
-  unassignedAt DateTime?
-  activeKey    String           @default("active")
-  sourceCommandId String?       @db.Uuid
-  node         Node             @relation(fields: [nodeId], references: [id], onDelete: Restrict)
-  gateway      Gateway          @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  id               String                       @id @default(uuid()) @db.Uuid
+  nodeId           String                       @db.Uuid
+  gatewayId        String                       @db.Uuid
+  status           AssignmentStatus             @default(ACTIVE)
+  assignedAt       DateTime                     @default(now())
+  unassignedAt     DateTime?
+  activeKey        String                       @default("active")
+  sourceCommandId  String?                      @db.Uuid
+  node             Node                         @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  gateway          Gateway                      @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
   provisioningItem NodeGatewayProvisioningItem?
 
   @@unique([nodeId, activeKey])
@@ -314,31 +327,35 @@ model NodeGatewayAssignment {
 }
 
 model GatewayCommand {
-  id              String               @id @default(uuid()) @db.Uuid
-  gatewayId       String               @db.Uuid
-  gateway         Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
-  commandType     GatewayCommandType
-  commandNumber   Int
-  status          GatewayCommandStatus @default(PENDING)
-  topic           String
-  payload         Json
-  responsePayload Json?
-  requesterType   AuditActorType
-  requesterId     String?              @db.Uuid
-  correlationKey  String
-  activeKey       String               @default("active")
-  attemptCount    Int                  @default(0)
-  maxAttempts     Int                  @default(3)
-  lastAttemptAt   DateTime?
-  sentAt          DateTime?
-  acknowledgedAt  DateTime?
-  failedAt        DateTime?
-  expiresAt       DateTime
-  cancelledAt     DateTime?
-  failureReason   String?
-  provisioningRequest NodeGatewayProvisioningRequest?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  id                            String                           @id @default(uuid()) @db.Uuid
+  gatewayId                     String                           @db.Uuid
+  gateway                       Gateway                          @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  commandType                   GatewayCommandType
+  commandNumber                 Int
+  status                        GatewayCommandStatus             @default(PENDING)
+  topic                         String
+  payload                       Json
+  responsePayload               Json?
+  requesterType                 AuditActorType
+  requesterId                   String?                          @db.Uuid
+  correlationKey                String
+  activeKey                     String                           @default("active")
+  attemptCount                  Int                              @default(0)
+  maxAttempts                   Int                              @default(3)
+  lastAttemptAt                 DateTime?
+  sentAt                        DateTime?
+  acknowledgedAt                DateTime?
+  failedAt                      DateTime?
+  expiresAt                     DateTime
+  cancelledAt                   DateTime?
+  failureReason                 String?
+  provisioningRequest           NodeGatewayProvisioningRequest?
+  alarmLevelDesiredApplications GatewayAlarmLevelApplication[]   @relation("AlarmLevelDesiredCommand")
+  alarmLevelAppliedApplications GatewayAlarmLevelApplication[]   @relation("AlarmLevelAppliedCommand")
+  faultFilterDesiredStates      GatewayFaultFilterDesiredState[] @relation("FaultFilterDesiredCommand")
+  faultFilterAppliedStates      GatewayFaultFilterAppliedState[] @relation("FaultFilterAppliedCommand")
+  createdAt                     DateTime                         @default(now())
+  updatedAt                     DateTime                         @updatedAt
 
   @@unique([gatewayId, commandNumber, activeKey])
   @@unique([correlationKey, activeKey])
@@ -347,27 +364,152 @@ model GatewayCommand {
   @@index([createdAt])
 }
 
+model BuildingAlarmLevelConfiguration {
+  id                  String                                   @id @default(uuid()) @db.Uuid
+  companyId           String                                   @db.Uuid
+  buildingId          String                                   @db.Uuid
+  nodeTypeId          String                                   @db.Uuid
+  enabled             Boolean                                  @default(true)
+  cautionThreshold    Float?
+  warningThreshold    Float?
+  dangerThreshold     Float?
+  version             Int                                      @default(1)
+  updatedByType       AuditActorType
+  updatedById         String?                                  @db.Uuid
+  createdAt           DateTime                                 @default(now())
+  updatedAt           DateTime                                 @updatedAt
+  company             Company                                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  building            ConstructionBuilding                     @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  nodeType            NodeType                                 @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  history             BuildingAlarmLevelConfigurationHistory[]
+  gatewayApplications GatewayAlarmLevelApplication[]
+
+  @@unique([buildingId, nodeTypeId])
+  @@index([companyId])
+  @@index([nodeTypeId])
+}
+
+model BuildingAlarmLevelConfigurationHistory {
+  id               String                          @id @default(uuid()) @db.Uuid
+  configurationId  String                          @db.Uuid
+  version          Int
+  enabled          Boolean
+  cautionThreshold Float?
+  warningThreshold Float?
+  dangerThreshold  Float?
+  updatedByType    AuditActorType
+  updatedById      String?                         @db.Uuid
+  createdAt        DateTime                        @default(now())
+  configuration    BuildingAlarmLevelConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+
+  @@unique([configurationId, version])
+  @@index([createdAt])
+}
+
+model GatewayAlarmLevelApplication {
+  id                          String                          @id @default(uuid()) @db.Uuid
+  buildingId                  String                          @db.Uuid
+  gatewayId                   String                          @db.Uuid
+  nodeTypeId                  String                          @db.Uuid
+  configurationId             String                          @db.Uuid
+  configurationVersion        Int
+  desiredEnabled              Boolean                         @default(true)
+  desiredCommandId            String?                         @db.Uuid
+  desiredStatus               GatewayCommandStatus            @default(PENDING)
+  appliedConfigurationId      String?                         @db.Uuid
+  appliedConfigurationVersion Int?
+  appliedEnabled              Boolean?
+  appliedCommandId            String?                         @db.Uuid
+  appliedRequestId            String?                         @db.Uuid
+  lastSuccessfulPayload       Json?
+  appliedAt                   DateTime?
+  failureReason               String?
+  updatedByType               AuditActorType
+  updatedById                 String?                         @db.Uuid
+  createdAt                   DateTime                        @default(now())
+  updatedAt                   DateTime                        @updatedAt
+  building                    ConstructionBuilding            @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  gateway                     Gateway                         @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  nodeType                    NodeType                        @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  configuration               BuildingAlarmLevelConfiguration @relation(fields: [configurationId], references: [id], onDelete: Restrict)
+  desiredCommand              GatewayCommand?                 @relation("AlarmLevelDesiredCommand", fields: [desiredCommandId], references: [id], onDelete: SetNull)
+  appliedCommand              GatewayCommand?                 @relation("AlarmLevelAppliedCommand", fields: [appliedCommandId], references: [id], onDelete: SetNull)
+
+  @@unique([buildingId, gatewayId, nodeTypeId])
+  @@index([desiredCommandId])
+  @@index([appliedCommandId])
+  @@index([gatewayId, desiredStatus])
+  @@index([configurationId])
+}
+
+model GatewayFaultFilterDesiredState {
+  id               String               @id @default(uuid()) @db.Uuid
+  gatewayId        String               @db.Uuid
+  nodeTypeId       String               @db.Uuid
+  nodeId           String               @db.Uuid
+  enabled          Boolean              @default(true)
+  desiredCommandId String?              @db.Uuid
+  desiredStatus    GatewayCommandStatus @default(PENDING)
+  failureReason    String?
+  updatedByType    AuditActorType
+  updatedById      String?              @db.Uuid
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  gateway          Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  nodeType         NodeType             @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  node             Node                 @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  desiredCommand   GatewayCommand?      @relation("FaultFilterDesiredCommand", fields: [desiredCommandId], references: [id], onDelete: SetNull)
+
+  @@unique([gatewayId, nodeTypeId, nodeId])
+  @@index([desiredCommandId])
+  @@index([gatewayId, nodeTypeId, desiredStatus])
+}
+
+model GatewayFaultFilterAppliedState {
+  id                    String               @id @default(uuid()) @db.Uuid
+  gatewayId             String               @db.Uuid
+  nodeTypeId            String               @db.Uuid
+  nodeId                String               @db.Uuid
+  applied               Boolean              @default(false)
+  appliedCommandId      String?              @db.Uuid
+  appliedRequestId      String?              @db.Uuid
+  lastSuccessfulPayload Json?
+  appliedAt             DateTime?
+  status                GatewayCommandStatus @default(PENDING)
+  failureReason         String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  gateway               Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  nodeType              NodeType             @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  node                  Node                 @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  appliedCommand        GatewayCommand?      @relation("FaultFilterAppliedCommand", fields: [appliedCommandId], references: [id], onDelete: SetNull)
+
+  @@unique([gatewayId, nodeTypeId, nodeId])
+  @@index([appliedCommandId])
+  @@index([gatewayId, nodeTypeId, applied])
+}
+
 model NodeGatewayProvisioningRequest {
-  id              String               @id @default(uuid()) @db.Uuid
-  commandId       String               @unique @db.Uuid
-  companyId       String               @db.Uuid
-  buildingId      String               @db.Uuid
-  gatewayId       String               @db.Uuid
-  nodeTypeId      String               @db.Uuid
-  status          GatewayCommandStatus @default(PENDING)
+  id              String                        @id @default(uuid()) @db.Uuid
+  commandId       String                        @unique @db.Uuid
+  companyId       String                        @db.Uuid
+  buildingId      String                        @db.Uuid
+  gatewayId       String                        @db.Uuid
+  nodeTypeId      String                        @db.Uuid
+  status          GatewayCommandStatus          @default(PENDING)
   responsePayload Json?
   failureReason   String?
   requestedByType AuditActorType
-  requestedById   String?              @db.Uuid
+  requestedById   String?                       @db.Uuid
   appliedAt       DateTime?
   failedAt        DateTime?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  command         GatewayCommand       @relation(fields: [commandId], references: [id], onDelete: Restrict)
-  company         Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  building        ConstructionBuilding @relation(fields: [buildingId], references: [id], onDelete: Restrict)
-  gateway         Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
-  nodeType        NodeType             @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+  command         GatewayCommand                @relation(fields: [commandId], references: [id], onDelete: Restrict)
+  company         Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  building        ConstructionBuilding          @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  gateway         Gateway                       @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  nodeType        NodeType                      @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
   items           NodeGatewayProvisioningItem[]
 
   @@index([companyId, status])
@@ -377,44 +519,46 @@ model NodeGatewayProvisioningRequest {
 }
 
 model NodeGatewayProvisioningItem {
-  id           String                          @id @default(uuid()) @db.Uuid
-  requestId    String                          @db.Uuid
-  nodeId       String                          @db.Uuid
-  assignmentId String?                         @unique @db.Uuid
-  appliedAt    DateTime?
+  id            String                         @id @default(uuid()) @db.Uuid
+  requestId     String                         @db.Uuid
+  nodeId        String                         @db.Uuid
+  assignmentId  String?                        @unique @db.Uuid
+  appliedAt     DateTime?
   failureReason String?
-  request      NodeGatewayProvisioningRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  node         Node                            @relation(fields: [nodeId], references: [id], onDelete: Restrict)
-  assignment   NodeGatewayAssignment?          @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  request       NodeGatewayProvisioningRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  node          Node                           @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  assignment    NodeGatewayAssignment?         @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
 
   @@unique([requestId, nodeId])
   @@index([nodeId])
 }
 
 model SensorReading {
-  id                  String               @id @default(uuid()) @db.Uuid
-  companyId           String               @db.Uuid
-  areaId              String               @db.Uuid
-  buildingId          String               @db.Uuid
-  gatewayId           String               @db.Uuid
-  nodeId              String               @db.Uuid
-  nodeTypeId          String               @db.Uuid
-  status              SensorReadingStatus
-  values              Json
-  measuredAt          DateTime?
-  receivedAt          DateTime             @default(now())
-  deduplicationKey    String               @unique
-  deduplicationSource String
-  sourceTopic         String?
-  gatewayMessageId    String?
-  gatewaySequence     String?
-  valueHash           String
-  company             Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  area                ConstructionArea     @relation(fields: [areaId], references: [id], onDelete: Restrict)
-  building            ConstructionBuilding @relation(fields: [buildingId], references: [id], onDelete: Restrict)
-  gateway             Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
-  node                Node                 @relation(fields: [nodeId], references: [id], onDelete: Restrict)
-  nodeType            NodeType             @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  id                     String               @id @default(uuid()) @db.Uuid
+  companyId              String               @db.Uuid
+  areaId                 String               @db.Uuid
+  buildingId             String               @db.Uuid
+  gatewayId              String               @db.Uuid
+  nodeId                 String               @db.Uuid
+  nodeTypeId             String               @db.Uuid
+  status                 SensorReadingStatus
+  values                 Json
+  classificationEvidence Json?
+  faultFiltered          Boolean              @default(false)
+  measuredAt             DateTime?
+  receivedAt             DateTime             @default(now())
+  deduplicationKey       String               @unique
+  deduplicationSource    String
+  sourceTopic            String?
+  gatewayMessageId       String?
+  gatewaySequence        String?
+  valueHash              String
+  company                Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  area                   ConstructionArea     @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  building               ConstructionBuilding @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  gateway                Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  node                   Node                 @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  nodeType               NodeType             @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
 
   @@index([buildingId, nodeTypeId, receivedAt])
   @@index([gatewayId, receivedAt])
@@ -423,24 +567,26 @@ model SensorReading {
 }
 
 model LatestNodeState {
-  id         String               @id @default(uuid()) @db.Uuid
-  companyId  String               @db.Uuid
-  areaId     String               @db.Uuid
-  buildingId String               @db.Uuid
-  gatewayId  String               @db.Uuid
-  nodeId     String               @unique @db.Uuid
-  nodeTypeId String               @db.Uuid
-  status     SensorReadingStatus
-  values     Json
-  lastSeenAt DateTime
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
-  company    Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  area       ConstructionArea     @relation(fields: [areaId], references: [id], onDelete: Restrict)
-  building   ConstructionBuilding @relation(fields: [buildingId], references: [id], onDelete: Restrict)
-  gateway    Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
-  node       Node                 @relation(fields: [nodeId], references: [id], onDelete: Restrict)
-  nodeType   NodeType             @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  id                     String               @id @default(uuid()) @db.Uuid
+  companyId              String               @db.Uuid
+  areaId                 String               @db.Uuid
+  buildingId             String               @db.Uuid
+  gatewayId              String               @db.Uuid
+  nodeId                 String               @unique @db.Uuid
+  nodeTypeId             String               @db.Uuid
+  status                 SensorReadingStatus
+  values                 Json
+  classificationEvidence Json?
+  faultFiltered          Boolean              @default(false)
+  lastSeenAt             DateTime
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  company                Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  area                   ConstructionArea     @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  building               ConstructionBuilding @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  gateway                Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  node                   Node                 @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  nodeType               NodeType             @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
 
   @@index([buildingId, nodeTypeId, updatedAt])
   @@index([gatewayId])

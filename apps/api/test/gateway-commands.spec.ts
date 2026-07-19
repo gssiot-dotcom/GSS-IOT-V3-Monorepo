@@ -65,6 +65,13 @@ describe("Gateway command Phase 5 helpers", () => {
       }).payload,
     ).toEqual({ cmd: 5, nodeType: 0, nodes: [100, 101], numNodes: 2 });
     expect(
+      adapters.buildSetFaultFilter({
+        gatewaySerial: "GW-001",
+        nodeNumbers: [],
+        nodeTypeNumericCode: 0,
+      }).payload,
+    ).toEqual({ cmd: 5, nodeType: 0, nodes: [], numNodes: 0 });
+    expect(
       adapters.buildSetAlarmLevels({
         alarmEnabled: true,
         alarmLevel1: 1,
@@ -75,17 +82,26 @@ describe("Gateway command Phase 5 helpers", () => {
         nodeTypeNumericCode: 1,
       }).payload,
     ).toMatchObject({ alarmLevel1: 1, alarmLevel2: 2, alarmLevel3: 3, cmd: 4, nodeType: 1 });
+    expect(
+      adapters.buildSetAlarmLevels({
+        alarmEnabled: false,
+        enabled: false,
+        gatewaySerial: "GW-001",
+        nodeTypeNumericCode: 1,
+      }).payload,
+    ).toEqual({ alarmEnabled: false, cmd: 4, enabled: false, nodeType: 1 });
+    expect(
+      adapters.buildSetAlarmLevels({
+        alarmEnabled: false,
+        enabled: true,
+        gatewaySerial: "GW-001",
+        nodeTypeNumericCode: 0,
+      }).payload,
+    ).toEqual({ alarmEnabled: false, cmd: 4, enabled: true, nodeType: 0 });
   });
 
   it("rejects invalid adapter input", () => {
     const adapters = new GatewayCommandAdapterRegistry(new MqttTopicService());
-    expect(() =>
-      adapters.buildSetFaultFilter({
-        gatewaySerial: "GW-001",
-        nodeNumbers: [],
-        nodeTypeNumericCode: 0,
-      }),
-    ).toThrow(BadRequestException);
     expect(() =>
       adapters.buildRegisterNodes({
         gatewaySerial: "GW-001",

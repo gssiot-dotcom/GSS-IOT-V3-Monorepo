@@ -1,7 +1,7 @@
 import type { AuthContext, AuthSession } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
@@ -28,6 +28,7 @@ const adminSession: AuthSession = {
       "buildings.create",
       "company-users.view",
       "company-users.create",
+      "company-roles.view",
       "devices.view",
       "gateways.view",
       "nodes.view",
@@ -150,6 +151,14 @@ function mockFetch(handler?: (url: URL, init: RequestInit) => Response | undefin
           name: "Platform Manager",
           permissions: [],
         },
+        {
+          companyId: "company-1",
+          id: "role-2",
+          isCompanyOwnerRole: false,
+          key: "site_manager",
+          name: "Site Manager",
+          permissions: [],
+        },
       ]);
     }
     if (url.href === `${apiBaseUrl}/admin/devices/gateways`) {
@@ -214,6 +223,25 @@ describe("auth routing", () => {
 
     expect(await screen.findByText("Acme Safety")).toBeTruthy();
     expect(screen.getByText("Platform managers")).toBeTruthy();
+  });
+
+  it("renders company-owned roles in the GSS Admin company-user create form", async () => {
+    storeSession("gss-admin", "admin-token");
+    const fetchMock = mockFetch();
+    renderApp("/admin/companies/company-1/users");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create user" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create user" });
+    expect(await within(dialog).findByText("Role")).toBeTruthy();
+    const inputs = within(dialog).getAllByRole("textbox");
+    fireEvent.click(inputs[inputs.length - 1]);
+
+    expect(await screen.findByText("Site Manager")).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        return String(input) === `${apiBaseUrl}/admin/companies/company-1/roles`;
+      }),
+    ).toBe(true);
   });
 
   it("clears an expired stored session and redirects to login", async () => {

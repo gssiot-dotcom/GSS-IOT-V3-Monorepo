@@ -13,6 +13,7 @@ import { RequireBuildingScope } from "../../src/common/decorators/require-scope.
 import { AppModule } from "../../src/app.module";
 import { configureApiApp } from "../../src/bootstrap";
 import { AuthModule } from "../../src/modules/auth/auth.module";
+import { DEFAULT_COMPANY_ROLE_KEYS } from "../../src/modules/company-management/default-company-roles";
 import { PrismaService } from "../../src/prisma/prisma.service";
 
 @Controller("rbac-probe")
@@ -57,6 +58,11 @@ describe("RBAC e2e", () => {
 
     await prisma.latestNodeState.deleteMany();
     await prisma.sensorReading.deleteMany();
+    await prisma.gatewayFaultFilterAppliedState.deleteMany();
+    await prisma.gatewayFaultFilterDesiredState.deleteMany();
+    await prisma.gatewayAlarmLevelApplication.deleteMany();
+    await prisma.buildingAlarmLevelConfigurationHistory.deleteMany();
+    await prisma.buildingAlarmLevelConfiguration.deleteMany();
     await prisma.nodeGatewayProvisioningItem.deleteMany();
     await prisma.nodeGatewayProvisioningRequest.deleteMany();
     await prisma.gatewayCommand.deleteMany();
@@ -309,6 +315,8 @@ describe("RBAC e2e", () => {
   it("enforces Phase 3 company boundaries, position scope, and last-manager protection", async () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const phaseThreeKeys = [
+      "welcome.view",
+      "dashboard.view",
       "companies.create",
       "areas.view",
       "areas.create",
@@ -343,17 +351,19 @@ describe("RBAC e2e", () => {
       where: { key: { in: phaseThreeKeys.filter((key) => key !== "companies.create") } },
       select: { id: true },
     });
-    const template = await prisma.companyRole.create({
-      data: {
-        isCompanyOwnerRole: true,
-        isSystem: true,
-        key: "platform_manager",
-        name: "Platform Manager",
-        permissions: {
-          createMany: { data: companyPermissions.map(({ id }) => ({ permissionId: id })) },
+    for (const roleKey of DEFAULT_COMPANY_ROLE_KEYS) {
+      await prisma.companyRole.create({
+        data: {
+          isCompanyOwnerRole: roleKey === "platform_manager",
+          isSystem: true,
+          key: roleKey,
+          name: defaultRoleName(roleKey),
+          permissions: {
+            createMany: { data: companyPermissions.map(({ id }) => ({ permissionId: id })) },
+          },
         },
-      },
-    });
+      });
+    }
     const gssToken = await login("/auth/gss/login", "super@example.com");
     const firstCompany = await request(server)
       .post("/admin/companies")
@@ -368,6 +378,63 @@ describe("RBAC e2e", () => {
       })
       .expect(201);
     expect(firstCompany.body.platformManager.roleId).toBeDefined();
+    const firstCompanyRoles = await request(server)
+      .get(`/admin/companies/${firstCompany.body.company.id}/roles`)
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200);
+    expect(firstCompanyRoles.body.map((role: { key: string }) => role.key).sort()).toEqual(
+      [...DEFAULT_COMPANY_ROLE_KEYS].sort(),
+    );
+    expect(
+      firstCompanyRoles.body.every((role: { companyId: string; isSystem: boolean }) => {
+        return role.companyId === firstCompany.body.company.id && role.isSystem;
+      }),
+    ).toBe(true);
+    expect(
+      firstCompanyRoles.body.find((role: { key: string }) => role.key === "platform_manager")
+        .isCompanyOwnerRole,
+    ).toBe(true);
+
+    const legacyCompany = await prisma.company.create({ data: { name: "Legacy Company" } });
+    await prisma.companyRole.create({
+      data: {
+        companyId: legacyCompany.id,
+        key: "viewer",
+        name: "Legacy Viewer",
+      },
+    });
+    const backfilledRoles = await request(server)
+      .get(`/admin/companies/${legacyCompany.id}/roles`)
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200);
+    expect(backfilledRoles.body.map((role: { key: string }) => role.key).sort()).toEqual(
+      [...DEFAULT_COMPANY_ROLE_KEYS].sort(),
+    );
+    expect(
+      await prisma.companyRole.count({
+        where: { companyId: legacyCompany.id, key: { in: [...DEFAULT_COMPANY_ROLE_KEYS] } },
+      }),
+    ).toBe(DEFAULT_COMPANY_ROLE_KEYS.length);
+    await request(server)
+      .get(`/admin/companies/${legacyCompany.id}/roles`)
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200);
+    expect(
+      await prisma.companyRole.count({
+        where: { companyId: legacyCompany.id, key: { in: [...DEFAULT_COMPANY_ROLE_KEYS] } },
+      }),
+    ).toBe(DEFAULT_COMPANY_ROLE_KEYS.length);
+    const systemViewer = await prisma.companyRole.findFirstOrThrow({
+      where: { companyId: legacyCompany.id, key: "viewer" },
+      select: { id: true, isSystem: true, name: true },
+    });
+    expect(systemViewer).toMatchObject({ isSystem: true, name: "Viewer" });
+    await request(server)
+      .patch(`/admin/companies/${legacyCompany.id}/roles/${systemViewer.id}/permissions`)
+      .set("Authorization", `Bearer ${gssToken}`)
+      .send({ permissionIds: companyPermissions.map(({ id }) => id) })
+      .expect(403);
+
     const managerToken = await login("/auth/company/login", "phase3-manager@example.com");
     const companyArea = await request(server)
       .post("/company/areas")
@@ -431,6 +498,16 @@ describe("RBAC e2e", () => {
     expect(
       await prisma.auditLog.count({ where: { entityType: "Company" } }),
     ).toBeGreaterThanOrEqual(2);
-    expect(template.id).toBeDefined();
   });
 });
+
+function defaultRoleName(roleKey: (typeof DEFAULT_COMPANY_ROLE_KEYS)[number]) {
+  const names = {
+    building_manager: "Building Manager",
+    no_permission: "No Permission",
+    platform_manager: "Platform Manager",
+    site_manager: "Site Manager",
+    viewer: "Viewer",
+  } satisfies Record<(typeof DEFAULT_COMPANY_ROLE_KEYS)[number], string>;
+  return names[roleKey];
+}

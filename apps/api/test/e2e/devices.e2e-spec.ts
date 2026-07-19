@@ -31,6 +31,11 @@ describe("Phase 4 device inventory e2e", () => {
 
     await prisma.latestNodeState.deleteMany();
     await prisma.sensorReading.deleteMany();
+    await prisma.gatewayFaultFilterAppliedState.deleteMany();
+    await prisma.gatewayFaultFilterDesiredState.deleteMany();
+    await prisma.gatewayAlarmLevelApplication.deleteMany();
+    await prisma.buildingAlarmLevelConfigurationHistory.deleteMany();
+    await prisma.buildingAlarmLevelConfiguration.deleteMany();
     await prisma.nodeGatewayProvisioningItem.deleteMany();
     await prisma.nodeGatewayProvisioningRequest.deleteMany();
     await prisma.gatewayCommand.deleteMany();

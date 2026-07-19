@@ -2,6 +2,8 @@ import { hash } from "bcrypt";
 import { PermissionScopeType, PrismaClient } from "@prisma/client";
 import { loadApiEnv } from "@gss-iot/config";
 
+import { ensureDefaultCompanyRoles } from "../src/modules/company-management/default-company-roles";
+
 const prisma = new PrismaClient();
 
 const permissionCatalog = [
@@ -315,7 +317,7 @@ async function main(): Promise<void> {
     .filter(([, scopeType]) => scopeType !== PermissionScopeType.GSS)
     .map(([key]) => key);
   await upsertCompanyTemplate("platform_manager", "Platform Manager", true, companyPermissionKeys);
-  await upsertCompanyTemplate("area_manager", "Area Manager", false, [
+  await upsertCompanyTemplate("site_manager", "Site Manager", false, [
     ...companyReadOnly,
     "dashboard.view",
     "areas.create",
@@ -342,6 +344,16 @@ async function main(): Promise<void> {
   ]);
   await upsertCompanyTemplate("viewer", "Viewer", false, companyReadOnly);
   await upsertCompanyTemplate("no_permission", "No Permission", false, ["welcome.view"]);
+
+  const companies = await prisma.company.findMany({ select: { id: true } });
+  for (const company of companies) {
+    const defaultRoles = await ensureDefaultCompanyRoles(company.id, prisma);
+    if (defaultRoles.missingTemplateKeys.length > 0) {
+      throw new Error(
+        `Default company role templates are unavailable: ${defaultRoles.missingTemplateKeys.join(", ")}.`,
+      );
+    }
+  }
 }
 
 main()

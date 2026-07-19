@@ -16,6 +16,7 @@ describe("gssTheme", () => {
       "danger",
       "offline",
       "safe",
+      "unconfigured",
       "warning",
     ]);
   });

@@ -41,7 +41,8 @@ export type GatewayCommandStatus =
 export type GatewayCommandType =
   "REGISTER_NODES" | "WAKE_SECURITY" | "SET_ALARM_LEVELS" | "SET_FAULT_FILTER";
 export type CanonicalNodeType = "door_node" | "angle_node" | "gangform_node";
-export type MonitoringStatus = "safe" | "caution" | "warning" | "danger" | "offline";
+export type MonitoringStatus =
+  "safe" | "caution" | "warning" | "danger" | "offline" | "unconfigured";
 
 export interface DoorSensorValues {
   batteryLevel: number | null;
@@ -54,6 +55,26 @@ export interface AngleSensorValues {
 }
 
 export type SensorValues = DoorSensorValues | AngleSensorValues;
+
+export type AlarmConfigurationState = "CONFIGURED" | "DISABLED" | "UNCONFIGURED";
+
+export interface ClassificationEvidence {
+  absoluteAngleX?: number;
+  absoluteAngleY?: number;
+  classification: MonitoringStatus;
+  configurationState: AlarmConfigurationState;
+  dangerThreshold?: number | null;
+  faultFilterState?: "APPLIED" | "NOT_APPLIED";
+  faultFiltered?: boolean;
+  metric?: number;
+  rawAngleX?: number;
+  rawAngleY?: number;
+  rawPayloadStatus?: unknown;
+  matchedConfigurationId?: string | null;
+  matchedConfigurationVersion?: number | null;
+  cautionThreshold?: number | null;
+  warningThreshold?: number | null;
+}
 
 export interface CompanyRecord {
   id: string;
@@ -191,6 +212,8 @@ export interface MonitoringNodeStateRecord {
   nodeType: NodeTypeRecord;
   nodeTypeId: string;
   status: MonitoringStatus;
+  classificationEvidence: ClassificationEvidence | null;
+  faultFiltered: boolean;
   updatedAt: string;
   values: SensorValues;
 }
@@ -218,7 +241,76 @@ export interface SensorReadingRecord {
   nodeTypeId: string;
   receivedAt: string;
   status: MonitoringStatus;
+  classificationEvidence: ClassificationEvidence | null;
+  faultFiltered: boolean;
   values: SensorValues;
+}
+
+export interface AlarmLevelThresholds {
+  cautionThreshold: number | null;
+  dangerThreshold: number | null;
+  warningThreshold: number | null;
+}
+
+export interface BuildingAlarmLevelConfigurationRecord extends AlarmLevelThresholds {
+  id: string;
+  buildingId: string;
+  nodeType: NodeTypeRecord;
+  nodeTypeId: string;
+  enabled: boolean;
+  version: number;
+  updatedAt: string;
+}
+
+export interface GatewayAlarmLevelApplicationRecord {
+  id: string;
+  gateway: { id: string; serialNumber: string };
+  gatewayId: string;
+  nodeTypeId: string;
+  desiredCommandId: string | null;
+  desiredEnabled: boolean;
+  desiredStatus: GatewayCommandStatus;
+  appliedCommandId: string | null;
+  appliedRequestId: string | null;
+  appliedAt: string | null;
+  appliedConfigurationVersion: number | null;
+  appliedEnabled: boolean | null;
+  failureReason: string | null;
+}
+
+export interface BuildingAlarmLevelsResponse {
+  building: BuildingRecord;
+  configurations: BuildingAlarmLevelConfigurationRecord[];
+  gatewayApplications: GatewayAlarmLevelApplicationRecord[];
+  nodeTypes: NodeTypeRecord[];
+}
+
+export interface FaultFilterNodeRecord {
+  gateway: { id: string; serialNumber: string };
+  gatewayId: string;
+  node: { id: string; number: string };
+  nodeId: string;
+  nodeTypeId: string;
+  desiredEnabled: boolean;
+  desiredCommandId: string | null;
+  desiredStatus: GatewayCommandStatus | null;
+  applied: boolean;
+  appliedCommandId: string | null;
+  appliedAt: string | null;
+  failureReason: string | null;
+}
+
+export interface FaultFilterGatewayGroup {
+  gateway: { id: string; serialNumber: string };
+  nodeTypes: Array<{
+    nodeType: NodeTypeRecord;
+    nodes: FaultFilterNodeRecord[];
+  }>;
+}
+
+export interface BuildingFaultFiltersResponse {
+  building: BuildingRecord;
+  gateways: FaultFilterGatewayGroup[];
 }
 
 export interface PaginatedSensorHistory {

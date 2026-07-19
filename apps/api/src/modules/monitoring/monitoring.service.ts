@@ -4,6 +4,7 @@ import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } fro
 import type { OnModuleInit } from "@nestjs/common";
 import { AssignmentStatus, DeviceLifecycleStatus, Prisma } from "@prisma/client";
 import type { CanonicalNodeType } from "@gss-iot/contracts";
+import type { ClassificationEvidence, MonitoringStatus } from "@gss-iot/contracts";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
 import { AUTH_CONTEXT } from "../../common/auth.types";
@@ -33,6 +34,8 @@ const latestStateSelect = {
   gateway: { select: { id: true, serialNumber: true } },
   gatewayId: true,
   lastSeenAt: true,
+  classificationEvidence: true,
+  faultFiltered: true,
   node: { select: { id: true, installedLocation: true, number: true } },
   nodeId: true,
   nodeType: { select: nodeTypeSelect },
@@ -53,6 +56,8 @@ const readingSelect = {
   nodeType: { select: nodeTypeSelect },
   nodeTypeId: true,
   receivedAt: true,
+  classificationEvidence: true,
+  faultFiltered: true,
   status: true,
   values: true,
 } satisfies Prisma.SensorReadingSelect;
@@ -130,7 +135,8 @@ export class MonitoringService implements OnModuleInit {
       valueHash,
       metadata,
     );
-    const prismaStatus = toPrismaStatus(parsed.status);
+    const classification = await this.classifyReading(parsed, context);
+    const prismaStatus = toPrismaStatus(classification.status);
 
     try {
       const state = await this.prisma.$transaction(async (tx) => {
@@ -145,6 +151,8 @@ export class MonitoringService implements OnModuleInit {
             receivedAt,
             sourceTopic,
             status: prismaStatus,
+            classificationEvidence: classification.evidence as unknown as Prisma.InputJsonValue,
+            faultFiltered: classification.faultFiltered,
             valueHash,
             values: parsed.values as unknown as Prisma.InputJsonValue,
           },
@@ -172,6 +180,8 @@ export class MonitoringService implements OnModuleInit {
             ...context,
             lastSeenAt: receivedAt,
             status: prismaStatus,
+            classificationEvidence: classification.evidence as unknown as Prisma.InputJsonValue,
+            faultFiltered: classification.faultFiltered,
             values: parsed.values as unknown as Prisma.InputJsonValue,
           },
           select: latestStateSelect,
@@ -183,6 +193,8 @@ export class MonitoringService implements OnModuleInit {
             lastSeenAt: receivedAt,
             nodeTypeId: context.nodeTypeId,
             status: prismaStatus,
+            classificationEvidence: classification.evidence as unknown as Prisma.InputJsonValue,
+            faultFiltered: classification.faultFiltered,
             values: parsed.values as unknown as Prisma.InputJsonValue,
           },
           where: { nodeId: context.nodeId },
@@ -252,6 +264,8 @@ export class MonitoringService implements OnModuleInit {
         nodeType: node.nodeType,
         nodeTypeId: node.nodeTypeId,
         status: "OFFLINE",
+        classificationEvidence: null,
+        faultFiltered: false,
         updatedAt: node.updatedAt,
         values: this.emptyValues(canonicalNodeType),
       });
@@ -363,6 +377,140 @@ export class MonitoringService implements OnModuleInit {
       gatewayId: gateway.id,
       nodeId: node.id,
       nodeTypeId: node.nodeTypeId,
+    };
+  }
+
+  private async classifyReading(
+    parsed: ParsedSensorMessage,
+    context: AssignmentContext,
+  ): Promise<{
+    evidence: ClassificationEvidence;
+    faultFiltered: boolean;
+    status: MonitoringStatus;
+  }> {
+    const appliedFilter = await this.prisma.gatewayFaultFilterAppliedState.findUnique({
+      where: {
+        gatewayId_nodeTypeId_nodeId: {
+          gatewayId: context.gatewayId,
+          nodeId: context.nodeId,
+          nodeTypeId: context.nodeTypeId,
+        },
+      },
+    });
+    const faultFiltered = Boolean(appliedFilter?.applied);
+    const faultFilterState = faultFiltered ? "APPLIED" : "NOT_APPLIED";
+    const rawPayloadStatus =
+      parsed.payload.status ?? parsed.payload.result ?? parsed.payload.state ?? null;
+
+    if (parsed.nodeType === "door_node") {
+      const status = parsed.status === "danger" ? "danger" : "safe";
+      return {
+        evidence: {
+          classification: status,
+          configurationState: "CONFIGURED",
+          faultFiltered,
+          faultFilterState,
+          rawPayloadStatus,
+        },
+        faultFiltered,
+        status,
+      };
+    }
+
+    const config = await this.prisma.buildingAlarmLevelConfiguration.findUnique({
+      where: {
+        buildingId_nodeTypeId: {
+          buildingId: context.buildingId,
+          nodeTypeId: context.nodeTypeId,
+        },
+      },
+    });
+    const angleX = "angleX" in parsed.values ? parsed.values.angleX : 0;
+    const angleY = "angleY" in parsed.values ? parsed.values.angleY : 0;
+    const absoluteAngleX = Math.abs(angleX);
+    const absoluteAngleY = Math.abs(angleY);
+    const metric = Math.max(absoluteAngleX, absoluteAngleY);
+
+    if (!config) {
+      return {
+        evidence: {
+          absoluteAngleX,
+          absoluteAngleY,
+          classification: "unconfigured",
+          configurationState: "UNCONFIGURED",
+          faultFiltered,
+          faultFilterState,
+          matchedConfigurationId: null,
+          matchedConfigurationVersion: null,
+          metric,
+          rawAngleX: angleX,
+          rawAngleY: angleY,
+          rawPayloadStatus,
+        },
+        faultFiltered,
+        status: "unconfigured",
+      };
+    }
+
+    const evidenceBase = {
+      absoluteAngleX,
+      absoluteAngleY,
+      cautionThreshold: config.cautionThreshold,
+      dangerThreshold: config.dangerThreshold,
+      faultFiltered,
+      faultFilterState,
+      matchedConfigurationId: config.id,
+      matchedConfigurationVersion: config.version,
+      metric,
+      rawAngleX: angleX,
+      rawAngleY: angleY,
+      rawPayloadStatus,
+      warningThreshold: config.warningThreshold,
+    } satisfies Omit<ClassificationEvidence, "classification" | "configurationState">;
+
+    if (!config.enabled) {
+      return {
+        evidence: {
+          ...evidenceBase,
+          classification: "safe",
+          configurationState: "DISABLED",
+        },
+        faultFiltered,
+        status: "safe",
+      };
+    }
+
+    const caution = config.cautionThreshold;
+    const warning = config.warningThreshold;
+    const danger = config.dangerThreshold;
+    if (typeof caution !== "number" || typeof warning !== "number" || typeof danger !== "number") {
+      return {
+        evidence: {
+          ...evidenceBase,
+          classification: "unconfigured",
+          configurationState: "UNCONFIGURED",
+        },
+        faultFiltered,
+        status: "unconfigured",
+      };
+    }
+
+    const status =
+      metric >= danger
+        ? "danger"
+        : metric >= warning
+          ? "warning"
+          : metric >= caution
+            ? "caution"
+            : "safe";
+    return {
+      evidence: {
+        ...evidenceBase,
+        classification: status,
+        configurationState: "CONFIGURED",
+      },
+      faultFiltered,
+      status,
     };
   }
 

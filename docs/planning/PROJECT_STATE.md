@@ -2,11 +2,11 @@
 
 ## Current phase
 
-`PHASE_8_COMPLETE`
+`PHASE_9_IMPLEMENTED_AUTOMATED_VERIFIED_LIVE_PENDING`
 
 ## Last completed milestone
 
-Phase 8 device provisioning and MQTT-backed node assignment are complete as of 2026-07-18. The repository creates active node-to-gateway assignments only after strict successful `cmd=2` gateway acknowledgement, records provisioning intent relationally, rejects invalid selector combinations, publishes legacy-compatible numeric node arrays, owns deterministic MQTT `requestId` correlation from `GatewayCommand.id`, and provides an Admin UI flow without manual UUID entry. Live ESP32 verification completed with explicitly selected gateway `0300`, command `160b3e5c-139d-479b-8535-a82f25f95b02`, and nodes `100`, `101` and `102`.
+Phase 9 alarm-levels, fault filters and authoritative monitoring classification are implemented with automated verification as of 2026-07-18, but Phase 9 is not complete until live cmd 4 and cmd 5 hardware verification passes. Phase 8 device provisioning remains complete, including live ESP32 verification with selected gateway `0300`, command `160b3e5c-139d-479b-8535-a82f25f95b02`, and nodes `100`, `101` and `102`.
 
 ## Current repository status
 
@@ -15,6 +15,7 @@ Phase 8 device provisioning and MQTT-backed node assignment are complete as of 2
 - Seed: permission catalog, default GSS/company roles, canonical node types and environment-configured active GSS super admin seeded idempotently.
 - Frontend: bearer auth persists only the access token and auth context in `sessionStorage`, restores full sessions from `/auth/gss/me` or `/auth/company/me`, preserves separate GSS Admin and Company route contexts, permission-filters Admin/Company shells, uses context-aware protected NotFound pages, keeps the Phase 2 design-system demo route and renders universal UI states plus legacy image-first node-type cards.
 - Phase 3 API: guarded GSS Admin and Company endpoints manage companies, areas, buildings, storage-key image records, company users, company-owned roles, direct permissions, area/building access and scoped position assignments. Critical mutations write audit logs inside their database transactions.
+- Phase 3 maintenance: company-owned default role provisioning is idempotent for new and existing companies. The approved default keys are `platform_manager`, `site_manager`, `building_manager`, `viewer` and `no_permission`; GSS Admin role listing backfills missing default roles before returning them to the company-user create form.
 - Phase 3 UI: Admin company creation creates the initial platform manager; Company routes now render scoped area/building lists plus company-user and role management views using the shared Phase 2 shell and UI primitives.
 - Phase 4 API: guarded GSS Admin endpoints manage node types, gateway inventory, node inventory, company-device assignment, gateway-building assignment and node-gateway assignment. Company endpoints expose company, area and building scoped device snapshots. Critical create, update, assign, unassign and move operations write audit logs.
 - Phase 4 UI: Admin `/admin/devices` renders gateway/node inventory tables, create dialogs and permission-wrapped assignment actions. Company `/company/devices` renders assigned gateways and nodes through the shared shell.
@@ -30,6 +31,11 @@ Phase 8 device provisioning and MQTT-backed node assignment are complete as of 2
 - Phase 8 MQTT: Gateway response parsing accepts only documented explicit success values, including the live legacy `{ "cmd": 2, "resp": "success" }` acknowledgement shape at parser level, and preserves raw response payloads. The final stored/published payload for `cmd 2/3/4/5` includes `requestId = GatewayCommand.id`; retries reuse the same id/requestId. Live firmware responses for `cmd 2/3/4/5` now include `cmd` and echo `requestId` when supplied; legacy no-requestId fallback remains supported. Response correlation prefers exact requestId, rejects unknown/malformed/wrong-gateway/wrong-cmd request IDs without fallback, and supports strict legacy gateway-serial-plus-cmd matching only when no requestId is present and exactly one eligible command exists. Cmd 2 register-node and cmd 5 fault-filter adapters convert database string node numbers to safe JSON integers before publish, reject invalid or numerically duplicated node numbers before command persistence, and preserve requested node order. Runtime observability logs disabled mode, sanitized connection lifecycle, subscription success, publish success/failure, raw `GATE_RES` debug payloads, malformed sensor debug payloads and normalized gateway response matching without exposing MQTT credentials.
 - Phase 8 UI: Admin `/admin/devices` uses company, building, actively assigned gateway, node type and eligible node selectors for MQTT provisioning. Raw node-to-gateway UUID assignment is removed from the UI; unassign remains explicit DB history only until a hardware unregister/sync command is confirmed.
 - Phase 8 observability UI: Admin `/admin/gateway-commands` shows a protected MQTT status block backed by `GET /admin/gateway-commands/mqtt-status`, including enabled/connected state, broker host, client id, subscribed topic filters and last connected/message/publish/error timestamps. MQTT username and password are never returned by the API or rendered in the UI.
+- Phase 9 API: guarded GSS Admin and Company endpoints manage building/node-type alarm levels, per-gateway application status, gateway/node-type/node fault filters and failed configuration command retry using existing `alarm-levels.view/manage` permissions plus Company building scope.
+- Phase 9 MQTT: cmd 4 and cmd 5 are created only through the existing `GatewayCommand` outbox. Final payloads contain `requestId = GatewayCommand.id`; retries reuse the same requestId; strict ACK side effects update applied alarm-level/fault-filter state only for exact successful responses.
+- Phase 9 monitoring: angle/gangform payload status is diagnostic only. Backend classification uses `max(abs(angleX), abs(angleY))`, inclusive configured thresholds, explicit `UNCONFIGURED` for missing configuration and `faultFiltered=true` evidence for ACK-applied filtered nodes. Door remains `doorChk` safe/danger.
+- Phase 9 UI: Company monitoring node-type pages include permission-aware alarm-level and fault-filter tabs with threshold validation, enabled/disabled control, per-gateway command status, filtered node selection grouped by gateway and retry for failed commands.
+- Phase 9 maintenance: legacy per-gateway + node-type alarm enable/disable is implemented through the existing cmd 4 GatewayCommand outbox. Thresholds remain canonical at building + node type, while `GatewayAlarmLevelApplication` tracks desired/applied enabled state per gateway and node type.
 - Shared UI: `packages/ui` exports the normalized GSS Mantine theme, page header, data table/pagination footer, status badge, universal states and node-type selection card primitives.
 - Runtime configuration: API CORS is environment-driven through `CORS_ALLOWED_ORIGINS`; local development defaults support both `http://localhost:5173` and `http://127.0.0.1:5173`. Auth remains bearer-token based with no login cookies.
 - CI: template only
@@ -55,6 +61,8 @@ Phase 8 device provisioning and MQTT-backed node assignment are complete as of 2
 - RBAC: separate GSS Admin and Company contexts.
 - Device provisioning: active node-gateway assignment follows successful physical `cmd=2` acknowledgement.
 - Alarm: caution/warning/danger occurrence-count model.
+- Alarm classification: angle/gangform use `max(abs(angleX), abs(angleY))`; thresholds are building + node type; missing config is `UNCONFIGURED`; calibration is deferred.
+- Alarm hardware enablement: building-level alarm save enables the selected node type on every active building gateway; selected-gateway toggles can temporarily disable/re-enable one gateway + node type without changing thresholds or other gateways/node types.
 
 ## Open decisions
 
@@ -66,6 +74,7 @@ Phase 8 device provisioning and MQTT-backed node assignment are complete as of 2
 - Legacy data migration cutoff and coexistence window.
 - Object-storage provider and browser-to-provider transfer mechanism for `BuildingPlanImage.storageKey`. Phase 3 persists and audits image metadata only; no unapproved local or cloud provider adapter was introduced.
 - Exact hardware unregister/remove-node or full replacement command for physical node unassignment.
+- Phase 9 live hardware verification for one selected gateway: building cmd 4 fan-out, selected gateway/node-type disable and re-enable, cmd 5 numeric-node success ACK, exact requestId desired/applied state and duplicate ACK idempotency. Gateway `0300` may be selected if still intended and available, but it is not an architecture constant.
 
 ## Verification record
 
@@ -95,10 +104,12 @@ Phase 7 final commands passed: `pnpm format:check`, `pnpm lint`, `pnpm typecheck
 
 Phase 8 automated verification commands passed on 2026-07-18: `pnpm format`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, `pnpm --filter api exec prisma generate`, `pnpm --filter api exec prisma migrate deploy`, `pnpm --filter api exec prisma migrate status`, `pnpm --filter api exec prisma db seed` and `git diff --check`. `git diff --check` reported only Git line-ending warnings on Windows.
 
+Phase 9 automated verification currently includes passing `pnpm format`, `pnpm typecheck`, `pnpm test` and `pnpm test:e2e`. API E2E applied migration `20260718120000_phase_9_alarm_levels_fault_filters` to the isolated E2E schema without reset. Live hardware verification is pending and Phase 9 must not be marked complete until real cmd 4 and cmd 5 ACK evidence is recorded.
+
 API, web, contracts, config and UI unit suites, API E2E, lint, typecheck, build and browser E2E pass.
 
 Runtime CORS verification covers `http://localhost:5173`, `http://127.0.0.1:5173`, unknown-origin rejection, GSS login followed by `/auth/gss/me`, company login CORS behavior and no-cookie bearer-token responses.
 
 ## Next action
 
-Await an explicit Phase 9 prompt before beginning alarm levels, fault filters, alarm classification, alarm occurrence counting, notifications, reports, partitioning or archival work.
+Complete Phase 9 live hardware verification for one explicitly selected available gateway. Do not start Phase 10 until Phase 9 live verification and the full final command set pass.

@@ -19,6 +19,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
   let companyId: string;
   let foreignCompanyId: string;
   let gatewayId: string;
+  let secondGatewayId: string;
   let buildingId: string;
   let otherBuildingId: string;
   let nodeId: string;
@@ -39,6 +40,11 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     await prisma.latestNodeState.deleteMany();
     await prisma.sensorReading.deleteMany();
+    await prisma.gatewayFaultFilterAppliedState.deleteMany();
+    await prisma.gatewayFaultFilterDesiredState.deleteMany();
+    await prisma.gatewayAlarmLevelApplication.deleteMany();
+    await prisma.buildingAlarmLevelConfigurationHistory.deleteMany();
+    await prisma.buildingAlarmLevelConfiguration.deleteMany();
     await prisma.nodeGatewayProvisioningItem.deleteMany();
     await prisma.nodeGatewayProvisioningRequest.deleteMany();
     await prisma.gatewayCommand.deleteMany();
@@ -64,7 +70,12 @@ describe("Phase 5 gateway command outbox e2e", () => {
     await prisma.gssRole.deleteMany();
     await prisma.permission.deleteMany();
 
-    const permissionKeys = ["mqtt-commands.view", "mqtt-commands.manage"];
+    const permissionKeys = [
+      "mqtt-commands.view",
+      "mqtt-commands.manage",
+      "alarm-levels.view",
+      "alarm-levels.manage",
+    ];
     await prisma.permission.createMany({
       data: permissionKeys.map((key) => {
         const [module, action] = key.split(".") as [string, string];
@@ -175,7 +186,11 @@ describe("Phase 5 gateway command outbox e2e", () => {
     const gateway = await prisma.gateway.create({
       data: { gatewayType: "NODES_GATEWAY", serialNumber: "GW-P5-001" },
     });
+    const secondGateway = await prisma.gateway.create({
+      data: { gatewayType: "NODES_GATEWAY", serialNumber: "GW-P5-002" },
+    });
     gatewayId = gateway.id;
+    secondGatewayId = secondGateway.id;
     commandTopic = `${process.env.MQTT_TOPIC_BASE}/GATE_SUB/GRM22JU22PGW-P5-001`;
     const node = await prisma.node.create({
       data: { nodeTypeId, number: "100" },
@@ -183,8 +198,14 @@ describe("Phase 5 gateway command outbox e2e", () => {
     nodeId = node.id;
     await Promise.all([
       prisma.companyDeviceAssignment.create({ data: { companyId: company.id, gatewayId } }),
+      prisma.companyDeviceAssignment.create({
+        data: { companyId: company.id, gatewayId: secondGatewayId },
+      }),
       prisma.companyDeviceAssignment.create({ data: { companyId: company.id, nodeId } }),
       prisma.gatewayBuildingAssignment.create({ data: { buildingId: building.id, gatewayId } }),
+      prisma.gatewayBuildingAssignment.create({
+        data: { buildingId: building.id, gatewayId: secondGatewayId },
+      }),
     ]);
   });
 
@@ -350,6 +371,294 @@ describe("Phase 5 gateway command outbox e2e", () => {
       requestId: faultFilter.body.id,
     });
     await waitForStatus(faultFilter.body.id, "ACKNOWLEDGED");
+  });
+
+  it("applies Phase 9 alarm levels and fault filters only after exact successful ACK", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("p5-manager@example.com");
+    const activeNodeAssignment = await prisma.nodeGatewayAssignment.findFirst({
+      where: { gatewayId, nodeId, status: "ACTIVE" },
+    });
+    if (!activeNodeAssignment) {
+      await prisma.nodeGatewayAssignment.create({ data: { gatewayId, nodeId } });
+    }
+
+    await request(server)
+      .patch(`/admin/buildings/${buildingId}/alarm-levels/node-types/${angleNodeTypeId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ cautionThreshold: 0, dangerThreshold: 4, enabled: true, warningThreshold: 2 })
+      .expect(400);
+
+    const alarmResponse = await request(server)
+      .patch(`/admin/buildings/${buildingId}/alarm-levels/node-types/${angleNodeTypeId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ cautionThreshold: 1, dangerThreshold: 4, enabled: true, warningThreshold: 2 })
+      .expect(200);
+    const application = alarmResponse.body.gatewayApplications.find(
+      (item: { gatewayId: string }) => item.gatewayId === gatewayId,
+    );
+    expect(
+      alarmResponse.body.gatewayApplications.filter(
+        (item: { nodeTypeId: string }) => item.nodeTypeId === angleNodeTypeId,
+      ),
+    ).toHaveLength(2);
+    expect(application.desiredEnabled).toBe(true);
+    expect(application.desiredCommandId).toBeTruthy();
+    const alarmCommand = await prisma.gatewayCommand.findUniqueOrThrow({
+      where: { id: application.desiredCommandId },
+    });
+    expect(alarmCommand.payload).toMatchObject({
+      alarmLevel1: 1,
+      alarmLevel2: 2,
+      alarmLevel3: 4,
+      cmd: 4,
+      requestId: alarmCommand.id,
+    });
+    await waitForStatus(alarmCommand.id, "ACKNOWLEDGED");
+    expect(
+      await prisma.gatewayAlarmLevelApplication.findFirst({
+        where: { desiredCommandId: alarmCommand.id },
+      }),
+    ).toMatchObject({
+      appliedCommandId: alarmCommand.id,
+      appliedEnabled: true,
+      appliedRequestId: alarmCommand.id,
+      desiredStatus: "ACKNOWLEDGED",
+    });
+
+    const disabledResponse = await request(server)
+      .patch(`/admin/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ enabled: false, nodeType: "angle_node" })
+      .expect(200);
+    const disabledApplication = disabledResponse.body.gatewayApplications.find(
+      (item: { gatewayId: string; nodeTypeId: string }) =>
+        item.gatewayId === gatewayId && item.nodeTypeId === angleNodeTypeId,
+    );
+    const untouchedApplication = disabledResponse.body.gatewayApplications.find(
+      (item: { gatewayId: string; nodeTypeId: string }) =>
+        item.gatewayId === secondGatewayId && item.nodeTypeId === angleNodeTypeId,
+    );
+    expect(disabledApplication).toMatchObject({
+      appliedEnabled: true,
+      desiredEnabled: false,
+    });
+    expect(untouchedApplication).toMatchObject({ desiredEnabled: true });
+    const disableCommand = await prisma.gatewayCommand.findUniqueOrThrow({
+      where: { id: disabledApplication.desiredCommandId },
+    });
+    expect(disableCommand.payload).toEqual({
+      alarmEnabled: false,
+      cmd: 4,
+      enabled: false,
+      nodeType: 1,
+      requestId: disableCommand.id,
+    });
+    expect(
+      await prisma.buildingAlarmLevelConfiguration.findUniqueOrThrow({
+        where: { buildingId_nodeTypeId: { buildingId, nodeTypeId: angleNodeTypeId } },
+      }),
+    ).toMatchObject({
+      cautionThreshold: 1,
+      dangerThreshold: 4,
+      warningThreshold: 2,
+    });
+    await waitForStatus(disableCommand.id, "ACKNOWLEDGED");
+    expect(
+      await prisma.gatewayAlarmLevelApplication.findFirst({
+        where: { desiredCommandId: disableCommand.id },
+      }),
+    ).toMatchObject({
+      appliedCommandId: disableCommand.id,
+      appliedEnabled: false,
+      desiredEnabled: false,
+      desiredStatus: "ACKNOWLEDGED",
+    });
+
+    const reenabledResponse = await request(server)
+      .patch(`/admin/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ enabled: true, nodeType: "angle_node" })
+      .expect(200);
+    const reenabledApplication = reenabledResponse.body.gatewayApplications.find(
+      (item: { gatewayId: string; nodeTypeId: string }) =>
+        item.gatewayId === gatewayId && item.nodeTypeId === angleNodeTypeId,
+    );
+    const reenableCommand = await prisma.gatewayCommand.findUniqueOrThrow({
+      where: { id: reenabledApplication.desiredCommandId },
+    });
+    expect(reenableCommand.payload).toMatchObject({
+      alarmEnabled: true,
+      alarmLevel1: 1,
+      alarmLevel2: 2,
+      alarmLevel3: 4,
+      cmd: 4,
+      enabled: true,
+      nodeType: 1,
+      requestId: reenableCommand.id,
+    });
+    await waitForStatus(reenableCommand.id, "ACKNOWLEDGED");
+    expect(
+      await prisma.gatewayAlarmLevelApplication.findFirst({
+        where: { desiredCommandId: reenableCommand.id },
+      }),
+    ).toMatchObject({ appliedEnabled: true, desiredEnabled: true });
+
+    const doorSaveResponse = await request(server)
+      .patch(`/admin/buildings/${buildingId}/alarm-levels/node-types/${nodeTypeId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ enabled: true })
+      .expect(200);
+    const doorSaveApplication = doorSaveResponse.body.gatewayApplications.find(
+      (item: { gatewayId: string; nodeTypeId: string }) =>
+        item.gatewayId === gatewayId && item.nodeTypeId === nodeTypeId,
+    );
+    await waitForStatus(doorSaveApplication.desiredCommandId, "ACKNOWLEDGED");
+    const doorDisableResponse = await request(server)
+      .patch(`/admin/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ enabled: false, nodeType: "door_node" })
+      .expect(200);
+    const doorApplication = doorDisableResponse.body.gatewayApplications.find(
+      (item: { gatewayId: string; nodeTypeId: string }) =>
+        item.gatewayId === gatewayId && item.nodeTypeId === nodeTypeId,
+    );
+    const doorDisableCommand = await prisma.gatewayCommand.findUniqueOrThrow({
+      where: { id: doorApplication.desiredCommandId },
+    });
+    expect(doorDisableCommand.payload).toEqual({
+      alarmEnabled: false,
+      cmd: 4,
+      enabled: true,
+      nodeType: 0,
+      requestId: doorDisableCommand.id,
+    });
+    await waitForStatus(doorDisableCommand.id, "ACKNOWLEDGED");
+
+    await request(server)
+      .patch(`/admin/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ enabled: false, nodeType: "not_a_node" })
+      .expect(400);
+
+    const filterResponse = await request(server)
+      .patch(`/admin/buildings/${buildingId}/alarm-levels/fault-filters`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayId, nodeIds: [nodeId], nodeTypeId })
+      .expect(200);
+    const desired = filterResponse.body.gateways
+      .flatMap(
+        (group: { nodeTypes: Array<{ nodes: Array<{ desiredCommandId: string | null }> }> }) =>
+          group.nodeTypes.flatMap(
+            (nodeType: { nodes: Array<{ desiredCommandId: string | null }> }) => nodeType.nodes,
+          ),
+      )
+      .find((item: { desiredCommandId: string | null }) => item.desiredCommandId);
+    expect(desired.desiredCommandId).toBeTruthy();
+    const filterCommand = await prisma.gatewayCommand.findUniqueOrThrow({
+      where: { id: desired.desiredCommandId },
+    });
+    expect(filterCommand.payload).toEqual({
+      cmd: 5,
+      nodeType: 0,
+      numNodes: 1,
+      nodes: [100],
+      requestId: filterCommand.id,
+    });
+    await waitForStatus(filterCommand.id, "ACKNOWLEDGED");
+    expect(
+      await prisma.gatewayFaultFilterAppliedState.findUnique({
+        where: {
+          gatewayId_nodeTypeId_nodeId: {
+            gatewayId,
+            nodeId,
+            nodeTypeId,
+          },
+        },
+      }),
+    ).toMatchObject({
+      applied: true,
+      appliedCommandId: filterCommand.id,
+      appliedRequestId: filterCommand.id,
+      status: "ACKNOWLEDGED",
+    });
+
+    const auditBefore = await prisma.auditLog.count({
+      where: { action: "fault-filter.apply", entityId: filterCommand.id },
+    });
+    await responseHandler.handleRawResponse(
+      `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22PGW-P5-001`,
+      JSON.stringify({
+        cmd: 5,
+        nodeType: 0,
+        nodes: [100],
+        numNodes: 1,
+        requestId: filterCommand.id,
+        resp: "success",
+      }),
+    );
+    expect(
+      await prisma.auditLog.count({
+        where: { action: "fault-filter.apply", entityId: filterCommand.id },
+      }),
+    ).toBe(auditBefore);
+  });
+
+  it("returns partial per-gateway alarm-level fan-out status", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("p5-manager@example.com");
+    const blockedGateway = await prisma.gateway.create({
+      data: { gatewayType: "NODES_GATEWAY", serialNumber: "GW-P5-PARTIAL" },
+    });
+    await Promise.all([
+      prisma.companyDeviceAssignment.create({
+        data: { companyId, gatewayId: blockedGateway.id },
+      }),
+      prisma.gatewayBuildingAssignment.create({
+        data: { buildingId, gatewayId: blockedGateway.id },
+      }),
+    ]);
+    const blocker = await prisma.gatewayCommand.create({
+      data: {
+        commandNumber: 4,
+        commandType: "SET_ALARM_LEVELS",
+        correlationKey: "GW-P5-PARTIAL:4",
+        expiresAt: new Date(Date.now() + 60_000),
+        gatewayId: blockedGateway.id,
+        payload: { alarmEnabled: true, cmd: 4, enabled: true, nodeType: 1 },
+        requesterType: "GSS_ADMIN",
+        sentAt: new Date(),
+        status: "SENT",
+        topic: `${process.env.MQTT_TOPIC_BASE}/GATE_SUB/GRM22JU22PGW-P5-PARTIAL`,
+      },
+    });
+
+    const response = await request(server)
+      .patch(`/admin/buildings/${buildingId}/alarm-levels/node-types/${angleNodeTypeId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ cautionThreshold: 1.5, dangerThreshold: 5, enabled: true, warningThreshold: 3 })
+      .expect(200);
+    const blockedApplication = response.body.gatewayApplications.find(
+      (item: { gatewayId: string; nodeTypeId: string }) =>
+        item.gatewayId === blockedGateway.id && item.nodeTypeId === angleNodeTypeId,
+    );
+    const appliedApplication = response.body.gatewayApplications.find(
+      (item: { gatewayId: string; nodeTypeId: string }) =>
+        item.gatewayId === gatewayId && item.nodeTypeId === angleNodeTypeId,
+    );
+    expect(blockedApplication).toMatchObject({
+      desiredCommandId: null,
+      desiredEnabled: true,
+      desiredStatus: "FAILED",
+    });
+    expect(blockedApplication.failureReason).toBeTruthy();
+    expect(appliedApplication.desiredCommandId).toBeTruthy();
+    expect(appliedApplication.desiredStatus).not.toBe("FAILED");
+
+    await prisma.gatewayCommand.update({
+      data: { activeKey: blocker.id, cancelledAt: new Date(), status: "CANCELLED" },
+      where: { id: blocker.id },
+    });
   });
 
   it("enforces view, manage, direct deny, inactive, and validation failures", async () => {
