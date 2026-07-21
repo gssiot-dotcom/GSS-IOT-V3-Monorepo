@@ -9,6 +9,8 @@ import type { ClassificationEvidence, MonitoringStatus } from "@gss-iot/contract
 import type { AuthTokenPayload } from "../../common/auth.types";
 import { AUTH_CONTEXT } from "../../common/auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
+import { AlarmDomainEventsService } from "../alarms/alarm-domain-events.service";
+import { AlarmOccurrenceEvaluatorService } from "../alarms/alarm-occurrence-evaluator.service";
 import type { MqttSensorMessageMetadata } from "../mqtt/mqtt-client.service";
 import { MqttClientService } from "../mqtt/mqtt-client.service";
 import { MqttPayloadParserService } from "../mqtt/mqtt-payload-parser.service";
@@ -66,7 +68,11 @@ type AssignmentContext = {
   areaId: string;
   buildingId: string;
   companyId: string;
+  gatewayBuildingAssignmentId: string;
+  gatewayCompanyAssignmentId: string;
   gatewayId: string;
+  nodeCompanyAssignmentId: string;
+  nodeGatewayAssignmentId: string;
   nodeId: string;
   nodeTypeId: string;
 };
@@ -83,6 +89,10 @@ export class MonitoringService implements OnModuleInit {
     @Inject(MqttClientService) private readonly mqtt: MqttClientService,
     @Inject(PermissionResolverService)
     private readonly permissions: PermissionResolverService,
+    @Inject(AlarmOccurrenceEvaluatorService)
+    private readonly alarmEvaluator: AlarmOccurrenceEvaluatorService,
+    @Inject(AlarmDomainEventsService)
+    private readonly alarmEvents: AlarmDomainEventsService,
     @Inject(MonitoringRealtimeService) private readonly realtime: MonitoringRealtimeService,
   ) {}
 
@@ -138,78 +148,125 @@ export class MonitoringService implements OnModuleInit {
     const classification = await this.classifyReading(parsed, context);
     const prismaStatus = toPrismaStatus(classification.status);
 
-    try {
-      const state = await this.prisma.$transaction(async (tx) => {
-        await tx.sensorReading.create({
-          data: {
-            ...context,
-            deduplicationKey: dedupe.key,
-            deduplicationSource: dedupe.source,
-            gatewayMessageId: parsed.gatewayMessageId ?? metadata.packetMessageId?.toString(),
-            gatewaySequence: parsed.gatewaySequence,
-            measuredAt: parsed.measuredAt,
-            receivedAt,
-            sourceTopic,
-            status: prismaStatus,
-            classificationEvidence: classification.evidence as unknown as Prisma.InputJsonValue,
-            faultFiltered: classification.faultFiltered,
-            valueHash,
-            values: parsed.values as unknown as Prisma.InputJsonValue,
-          },
-        });
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const result = await this.prisma.$transaction(
+          async (tx) => {
+            const reading = await tx.sensorReading.create({
+              data: {
+                areaId: context.areaId,
+                buildingId: context.buildingId,
+                companyId: context.companyId,
+                deduplicationKey: dedupe.key,
+                deduplicationSource: dedupe.source,
+                gatewayId: context.gatewayId,
+                gatewayMessageId: parsed.gatewayMessageId ?? metadata.packetMessageId?.toString(),
+                gatewaySequence: parsed.gatewaySequence,
+                measuredAt: parsed.measuredAt,
+                nodeId: context.nodeId,
+                nodeTypeId: context.nodeTypeId,
+                receivedAt,
+                sourceTopic,
+                status: prismaStatus,
+                classificationEvidence: classification.evidence as unknown as Prisma.InputJsonValue,
+                faultFiltered: classification.faultFiltered,
+                valueHash,
+                values: parsed.values as unknown as Prisma.InputJsonValue,
+              },
+              select: { id: true },
+            });
 
-        await Promise.all([
-          tx.gateway.update({
-            data: { lastSeenAt: receivedAt },
-            where: { id: context.gatewayId },
-          }),
-          tx.node.update({
-            data: {
-              batteryLevel:
-                parsed.nodeType === "door_node" && "batteryLevel" in parsed.values
-                  ? parsed.values.batteryLevel
-                  : undefined,
-              lastSeenAt: receivedAt,
-            },
-            where: { id: context.nodeId },
-          }),
-        ]);
+            await Promise.all([
+              tx.gateway.update({
+                data: { lastSeenAt: receivedAt },
+                where: { id: context.gatewayId },
+              }),
+              tx.node.update({
+                data: {
+                  batteryLevel:
+                    parsed.nodeType === "door_node" && "batteryLevel" in parsed.values
+                      ? parsed.values.batteryLevel
+                      : undefined,
+                  lastSeenAt: receivedAt,
+                },
+                where: { id: context.nodeId },
+              }),
+            ]);
 
-        return tx.latestNodeState.upsert({
-          create: {
-            ...context,
-            lastSeenAt: receivedAt,
-            status: prismaStatus,
-            classificationEvidence: classification.evidence as unknown as Prisma.InputJsonValue,
-            faultFiltered: classification.faultFiltered,
-            values: parsed.values as unknown as Prisma.InputJsonValue,
-          },
-          select: latestStateSelect,
-          update: {
-            areaId: context.areaId,
-            buildingId: context.buildingId,
-            companyId: context.companyId,
-            gatewayId: context.gatewayId,
-            lastSeenAt: receivedAt,
-            nodeTypeId: context.nodeTypeId,
-            status: prismaStatus,
-            classificationEvidence: classification.evidence as unknown as Prisma.InputJsonValue,
-            faultFiltered: classification.faultFiltered,
-            values: parsed.values as unknown as Prisma.InputJsonValue,
-          },
-          where: { nodeId: context.nodeId },
-        });
-      });
+            const state = await tx.latestNodeState.upsert({
+              create: {
+                areaId: context.areaId,
+                buildingId: context.buildingId,
+                companyId: context.companyId,
+                gatewayId: context.gatewayId,
+                lastSeenAt: receivedAt,
+                nodeId: context.nodeId,
+                nodeTypeId: context.nodeTypeId,
+                status: prismaStatus,
+                classificationEvidence: classification.evidence as unknown as Prisma.InputJsonValue,
+                faultFiltered: classification.faultFiltered,
+                values: parsed.values as unknown as Prisma.InputJsonValue,
+              },
+              select: latestStateSelect,
+              update: {
+                areaId: context.areaId,
+                buildingId: context.buildingId,
+                companyId: context.companyId,
+                gatewayId: context.gatewayId,
+                lastSeenAt: receivedAt,
+                nodeTypeId: context.nodeTypeId,
+                status: prismaStatus,
+                classificationEvidence: classification.evidence as unknown as Prisma.InputJsonValue,
+                faultFiltered: classification.faultFiltered,
+                values: parsed.values as unknown as Prisma.InputJsonValue,
+              },
+              where: { nodeId: context.nodeId },
+            });
 
-      const mapped = mapLatestState(state);
-      this.realtime.emitNodeState(mapped);
-      return { deduplicated: false, ignored: false, state: mapped };
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        return { deduplicated: true, ignored: false };
+            const alarmEvents = await this.alarmEvaluator.evaluate(tx, {
+              areaId: context.areaId,
+              assignmentProvenance: {
+                gatewayBuildingAssignmentId: context.gatewayBuildingAssignmentId,
+                gatewayCompanyAssignmentId: context.gatewayCompanyAssignmentId,
+                nodeCompanyAssignmentId: context.nodeCompanyAssignmentId,
+                nodeGatewayAssignmentId: context.nodeGatewayAssignmentId,
+              },
+              buildingId: context.buildingId,
+              classificationEvidence: classification.evidence,
+              companyId: context.companyId,
+              faultFiltered: classification.faultFiltered,
+              gatewayId: context.gatewayId,
+              nodeId: context.nodeId,
+              nodeTypeId: context.nodeTypeId,
+              readingId: reading.id,
+              receivedAt,
+              status: prismaStatus,
+              values: parsed.values,
+            });
+
+            return { alarmEvents, state };
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+
+        const mapped = mapLatestState(result.state);
+        this.realtime.emitNodeState(mapped);
+        result.alarmEvents.forEach((event) => this.alarmEvents.emitPolicyTriggered(event));
+        return { deduplicated: false, ignored: false, state: mapped };
+      } catch (error) {
+        if (this.isSensorDedupeError(error)) {
+          return { deduplicated: true, ignored: false };
+        }
+        if (this.isTransactionConflict(error) && attempt < 3) {
+          this.logger.warn(
+            `Retrying sensor alarm transaction after serialization conflict attempt=${attempt}.`,
+          );
+          continue;
+        }
+        throw error;
       }
-      throw error;
     }
+    throw new Error("Sensor alarm transaction retry loop exited unexpectedly.");
   }
 
   async listBuildingOverview(auth: AuthTokenPayload, buildingId: string) {
@@ -340,6 +397,7 @@ export class MonitoringService implements OnModuleInit {
     }
     const [gatewayCompany, gatewayBuilding, node] = await Promise.all([
       this.prisma.companyDeviceAssignment.findFirst({
+        select: { companyId: true, id: true },
         where: { gatewayId: gateway.id, status: AssignmentStatus.ACTIVE },
       }),
       this.prisma.gatewayBuildingAssignment.findFirst({
@@ -349,6 +407,7 @@ export class MonitoringService implements OnModuleInit {
       this.prisma.node.findFirst({
         include: {
           companyAssignments: { where: { status: AssignmentStatus.ACTIVE } },
+          gatewayAssignments: { where: { gatewayId: gateway.id, status: AssignmentStatus.ACTIVE } },
           nodeType: true,
         },
         where: {
@@ -374,7 +433,11 @@ export class MonitoringService implements OnModuleInit {
       areaId: gatewayBuilding.building.areaId,
       buildingId: gatewayBuilding.buildingId,
       companyId: gatewayCompany.companyId,
+      gatewayBuildingAssignmentId: gatewayBuilding.id,
+      gatewayCompanyAssignmentId: gatewayCompany.id,
       gatewayId: gateway.id,
+      nodeCompanyAssignmentId: nodeCompany.id,
+      nodeGatewayAssignmentId: node.gatewayAssignments[0]!.id,
       nodeId: node.id,
       nodeTypeId: node.nodeTypeId,
     };
@@ -550,6 +613,18 @@ export class MonitoringService implements OnModuleInit {
       key: `received:${context.gatewayId}:${context.nodeId}:${receivedAt.toISOString()}:${valueHash}:${randomUUID()}`,
       source: "received_at_unique_no_reliable_legacy_id",
     };
+  }
+
+  private isSensorDedupeError(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      return false;
+    }
+    const target = Array.isArray(error.meta?.target) ? error.meta.target.join(",") : "";
+    return target.includes("deduplicationKey");
+  }
+
+  private isTransactionConflict(error: unknown): boolean {
+    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
   }
 
   private hashValues(values: unknown): string {

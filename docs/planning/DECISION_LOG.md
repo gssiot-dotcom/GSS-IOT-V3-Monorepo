@@ -386,3 +386,99 @@ Files affected:
 **Consequences:** Custom and site-manager users with explicit permissions and assigned scope can open area/building detail pages and users/roles read pages without being platform managers. Missing permissions, missing scope, sibling resources and cross-company resources remain forbidden. Phase 10 still requires manual browser acceptance before completion; Phase 9 MQTT/GatewayCommand/alarm behavior is unchanged.
 
 **Files affected:** `apps/api/src/modules/company-management/company-management-company.controller.ts`, `apps/api/src/modules/company-management/company-management.service.ts`, `apps/web/src/features/organizations/CompanyResourceDetailPages.tsx`, `apps/web/src/features/company-management/CompanyUsersPage.tsx`, `apps/web/src/features/company-management/CompanyRolesPage.tsx`, `apps/api/test/e2e/rbac.e2e-spec.ts`, `apps/web/src/test/company-management.spec.tsx`, `docs/architecture/PHASE_10_COMPANY_PORTAL_SCOPE_AND_MANAGEMENT.md`, `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`.
+
+## DEC-2026-034
+
+**Status:** accepted
+
+**Context:** Phase 11 implements the durable occurrence-count engine after Phase 9 classification and Phase 10 CompanyPosition/scope management. The older alarm blueprint included notification creation in the same flow, but the approved Phase 11 boundary stops before Phase 12 delivery.
+
+**Decision:** Phase 11 creates `AlarmRule`, `AlarmRecipientPolicy`, `AlarmCounterState`, `AlarmEvent` and immutable `AlarmPolicyTrigger` records only. It emits an internal post-commit `alarm.policy-triggered` event as a wake-up signal. Recipient resolution to final users, `AlarmNotification`, `AlarmDeliveryLog`, notification badges, external providers and acknowledge/resolve operations UI are Phase 12.
+
+**Consequences:** `AlarmPolicyTrigger` is the bridge from occurrence counting to later delivery. Phase 11 does not overload `AlarmNotification` with a pre-delivery trigger meaning.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260719120000_phase_11_alarm_occurrence_engine/migration.sql`, `apps/api/src/modules/alarms/`, `apps/api/src/modules/monitoring/monitoring.service.ts`, `docs/architecture/PHASE_11_ALARM_OCCURRENCE_COUNT_ENGINE.md`.
+
+## DEC-2026-035
+
+**Status:** accepted
+
+**Context:** Gateway payload timestamps and measured timestamps can arrive out of order, while occurrence counts must survive restarts and avoid duplicate cycle triggers.
+
+**Decision:** `SensorReading.receivedAt` is the authoritative clock for count eligibility and `nextCountAt`. Phase 11 evaluates reading/latest/counter/event/trigger work in a PostgreSQL serializable Prisma transaction with a bounded three-attempt retry. The idempotency keys are `SensorReading.deduplicationKey`, unique `(policyId, nodeId)` counter state and unique `(policyId, nodeId, triggerCycleNo)` policy trigger.
+
+**Consequences:** Out-of-order `measuredAt` does not move counters backward or create duplicate triggers. Redis and timers are not occurrence-count sources of truth.
+
+**Files affected:** `apps/api/src/modules/monitoring/monitoring.service.ts`, `apps/api/src/modules/alarms/alarm-occurrence-evaluator.service.ts`, `docs/architecture/PHASE_11_ALARM_OCCURRENCE_COUNT_ENGINE.md`.
+
+## DEC-2026-036
+
+**Status:** accepted
+
+**Context:** Phase 9 stores desired/applied alarm enable state and ACK-applied fault-filter evidence. Phase 11 must preserve the hardware command boundary while honoring operator intent.
+
+**Decision:** Phase 11 uses `GatewayAlarmLevelApplication.desiredEnabled` as backend occurrence-evaluation intent. `appliedEnabled` remains hardware acknowledgement state and is not modified by the evaluator. Fault-filtered readings remain stored and update latest state, but reset pending counters and resolve open events with reason `FAULT_FILTERED`.
+
+**Consequences:** Disabling desired alarm state or applying a fault filter cannot leave stale pre-filter/pre-disable counts that later trigger. Phase 11 does not publish MQTT commands.
+
+**Files affected:** `apps/api/src/modules/alarms/alarm-occurrence-evaluator.service.ts`, `docs/architecture/PHASE_11_ALARM_OCCURRENCE_COUNT_ENGINE.md`.
+
+## DEC-2026-037
+
+**Status:** accepted
+
+**Context:** Phase 11 needs deterministic rule, episode and assignment semantics without expanding to ambiguous overlapping scopes.
+
+**Decision:** The release-supported rule scope is building + node type + severity. The active event episode key is `nodeId + ruleId + severity + activeKey`. Evaluation evidence stores active gateway-company, gateway-building, node-company and node-gateway assignment row IDs. Policy count/interval/target/channel changes increment `evaluationVersion` and reset current state; rule display-name-only changes do not reset counters.
+
+**Consequences:** Old-scope counts are not moved across reassignment, and a continuous unsafe episode reuses one open `AlarmEvent` while each policy cycle creates its own immutable trigger.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/src/modules/alarms/`, `apps/api/src/modules/monitoring/monitoring.service.ts`, `docs/architecture/PHASE_11_ALARM_OCCURRENCE_COUNT_ENGINE.md`.
+
+## DEC-2026-038
+
+**Status:** accepted
+
+**Context:** Phase 12 needs notification delivery to survive process restarts. The Phase 11 in-memory `alarm.policy-triggered` event is only a wake-up signal and cannot be the source of truth.
+
+**Decision:** Add dispatch state directly to `AlarmPolicyTrigger`: `dispatchStatus`, `dispatchAttemptCount`, `dispatchClaimedAt`, `dispatchCompletedAt` and `dispatchFailureReason`. Startup reconciliation scans pending trigger rows. `AlarmNotification` is idempotent by unique `(policyTriggerId, recipientUserId, channel)`.
+
+**Consequences:** Delivery can resume after restart without Redis/BullMQ for this release. A future queue can claim the same durable trigger/notification rows without changing occurrence counting.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260720120000_phase_12_notifications_alarm_operations/migration.sql`, `apps/api/prisma/migrations/20260720120100_phase_12_notification_tables/migration.sql`, `apps/api/src/modules/alarms/`, `docs/architecture/PHASE_12_NOTIFICATIONS_AND_ALARM_OPERATIONS.md`.
+
+## DEC-2026-039
+
+**Status:** accepted
+
+**Context:** Provider vendors, credentials and SLA rules remain open decisions, but Phase 12 must implement in-app notifications and auditable delivery behavior now.
+
+**Decision:** Configure in-app as the only production-enabled provider. SMS, Telegram, email and web-push policies are allowed in the model but dispatch as `SKIPPED` with `PROVIDER_UNCONFIGURED` unless a deterministic test-provider metadata flag is used for automated retry/failure coverage. No real provider calls or secrets are introduced.
+
+**Consequences:** The UI can show provider availability and delivery logs are auditable without inventing vendor policy. Real external providers remain future approved work.
+
+**Files affected:** `apps/api/src/modules/alarms/alarm-notification-dispatch.service.ts`, `docs/architecture/PHASE_12_NOTIFICATIONS_AND_ALARM_OPERATIONS.md`, `docs/quality/PHASE_12_MANUAL_ACCEPTANCE_CHECKLIST.md`.
+
+## DEC-2026-040
+
+**Status:** accepted
+
+**Context:** Open decisions asked whether acknowledged alarms keep counting and whether manual resolve can close an unsafe alarm. The Phase 12 prompt requested conservative behavior.
+
+**Decision:** `ACKNOWLEDGED` remains an active unsafe episode and keeps `activeKey = active`; later policy cycles reuse the event and can produce new notifications. Manual resolve rejects with 409 while latest state is unsafe, fault filtering is not active, desired alarm state is enabled and active assignment rows still exist. Safe/fault-filtered/desired-disabled transitions auto-resolve both `OPEN` and `ACKNOWLEDGED` active events.
+
+**Consequences:** Acknowledgement means the user has seen the alarm; it does not suppress occurrence counting. Manual resolve cannot hide a still-unsafe active node by default.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/src/modules/alarms/alarm-occurrence-evaluator.service.ts`, `apps/api/src/modules/alarms/alarms.service.ts`, `docs/architecture/PHASE_11_ALARM_OCCURRENCE_COUNT_ENGINE.md`, `docs/architecture/PHASE_12_NOTIFICATIONS_AND_ALARM_OPERATIONS.md`.
+
+## DEC-2026-041
+
+**Status:** accepted
+
+**Context:** Phase 12 manual pre-check on `/company/alarm-rules` found the create-rule modal crashed when typing the Name field. The fix also needed to avoid accidentally changing alarm rule identity or occurrence-count semantics.
+
+**Decision:** `AlarmRule.name` is a human-readable display label only. Canonical rule identity remains the database id, and release-supported evaluation scope remains building + node type + severity. The shared Admin/Company create-rule modal owns an isolated local rule draft, reads input values synchronously before React state updaters, trims and validates the display label, contains validation/API failures inside the modal and resets cleanly on close/reopen. Required rule selectors do not allow deselection into `null`.
+
+**Consequences:** Typing a display name does not submit, navigate, mutate cache, reset selectors, reset counters or change Phase 11 occurrence semantics. A failed create request leaves the page and modal usable, and the same behavior is covered for Company and Admin alarm-rule pages.
+
+**Files affected:** `apps/web/src/features/alarms/AlarmOperationsPages.tsx`, `apps/web/src/test/alarm-rules.spec.tsx`, `apps/api/src/modules/alarms/dto/alarms.dto.ts`, `apps/api/src/modules/alarms/alarms.service.ts`, `docs/architecture/PHASE_12_NOTIFICATIONS_AND_ALARM_OPERATIONS.md`, `docs/quality/PHASE_12_MANUAL_ACCEPTANCE_CHECKLIST.md`.

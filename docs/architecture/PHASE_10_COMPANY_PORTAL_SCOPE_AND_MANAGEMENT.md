@@ -99,4 +99,20 @@ Phase 10 automated coverage adds:
 - missing permission, missing scope, sibling scope and cross-company scope denial for detail reads;
 - last-platform-manager self-lockout protection after the read-path fix.
 
-Manual browser acceptance is still required before Phase 10 can be called complete.
+## Manual acceptance
+
+Manual browser acceptance passed on 2026-07-19. The verified results are:
+
+- custom scoped user can open assigned Area detail;
+- custom scoped user can open inherited Building detail;
+- `site_manager` can open assigned Area and Building details;
+- the previous optional `/company/users` 403 full-page failure is fixed;
+- monitoring and scoped resource filtering still work;
+- Company Users renders for a non-platform-manager with `company-users.view`;
+- Company Roles renders for a non-platform-manager with `company-roles.view`;
+- area/building detail does not request `/company/users` when `company-users.view` is absent;
+- `no_permission` users retain only authenticated base access and protected APIs/pages remain forbidden;
+- inactive-user existing sessions are rejected;
+- last active platform-manager lockout protection remains enforced.
+
+With automated verification and manual browser acceptance recorded, Phase 10 status is `PHASE_10_COMPLETE`. Phase 9 remains `PHASE_9_IMPLEMENTED_AUTOMATED_VERIFIED_LIVE_PENDING`; Phase 10 closeout did not change MQTT, GatewayCommand or alarm-level behavior.

@@ -151,3 +151,20 @@ Load test with expected node count and message rate:
 
 - counter row count remains bounded by active node-policy combinations;
 - sensor history insert throughput and partition/index strategy stay within target.
+
+## Phase 11 automated coverage note
+
+As of Phase 11, `apps/api/test/e2e/alarms.e2e-spec.ts` covers:
+
+- count 3 / interval 180 timeline, including exact boundary, ineligible readings, trigger at count 3, 12:09 history-only behavior and 12:11 new cycle count 1;
+- immediate count 1 / interval 0 with duplicate MQTT message protection;
+- all unique readings remaining in `SensorReading`;
+- `LatestNodeState` updates through the existing monitoring path;
+- safe reset, ACK-applied fault-filter reset and desired-disabled reset;
+- creation of one `AlarmEvent` and one immutable `AlarmPolicyTrigger` when the cycle reaches threshold;
+- absence of Phase 11 `GatewayCommand` side effects;
+- guarded GSS/Admin and Company rule API access.
+
+Phase 12 automated coverage now adds recipient-specific in-app notification rows, delivery logs, unread/read inbox behavior, acknowledgement, conservative unsafe manual resolve rejection, safe-state auto-resolve while acknowledged and deterministic provider retry/terminal failure without duplicate notification rows.
+
+Remaining expanded coverage after Phase 12 includes same-position/different-building negative manual acceptance, inactive/ended assignment manual acceptance, large-volume load testing, real external provider drills after vendor approval and live hardware/manual sensor-flow acceptance.

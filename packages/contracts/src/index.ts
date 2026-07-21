@@ -57,6 +57,11 @@ export interface AngleSensorValues {
 export type SensorValues = DoorSensorValues | AngleSensorValues;
 
 export type AlarmConfigurationState = "CONFIGURED" | "DISABLED" | "UNCONFIGURED";
+export type AlarmSeverity = "CAUTION" | "WARNING" | "DANGER";
+export type AlarmEventStatus = "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
+export type AlarmChannel = "IN_APP" | "SMS" | "TELEGRAM" | "EMAIL" | "WEB_PUSH";
+export type AlarmNotificationStatus =
+  "PENDING" | "PROCESSING" | "SENT" | "FAILED" | "SKIPPED" | "CANCELLED";
 
 export interface ClassificationEvidence {
   absoluteAngleX?: number;
@@ -397,6 +402,70 @@ export interface MonitoringNodeStateEvent {
   buildingId: string;
   nodeType: CanonicalNodeType;
   state: MonitoringNodeStateRecord;
+}
+
+export interface AlarmPolicyRecord {
+  id: string;
+  ruleId: string;
+  targetType: "POSITION" | "SPECIFIC_USER";
+  positionId: string | null;
+  specificUserId: string | null;
+  requiredOccurrenceCount: number;
+  countIntervalSeconds: number;
+  channel: AlarmChannel;
+  isActive: boolean;
+}
+
+export interface AlarmRuleRecord {
+  id: string;
+  buildingId: string;
+  nodeTypeId: string;
+  severity: AlarmSeverity;
+  name: string | null;
+  isActive: boolean;
+  building?: { id: string; title: string };
+  nodeType?: NodeTypeRecord;
+  recipientPolicies?: AlarmPolicyRecord[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlarmEventRecord {
+  id: string;
+  buildingId: string;
+  nodeId: string;
+  nodeTypeId: string;
+  severity: AlarmSeverity;
+  status: AlarmEventStatus;
+  openedAt: string;
+  lastTriggeredAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  resolutionReason: string | null;
+  building?: { id: string; title: string };
+  node?: { id: string; number: string };
+  nodeType?: NodeTypeRecord;
+  rule?: { id: string; name: string | null; severity: AlarmSeverity };
+}
+
+export interface AlarmNotificationRecord {
+  id: string;
+  alarmEventId: string;
+  policyTriggerId: string;
+  policyId: string;
+  recipientUserId: string;
+  channel: AlarmChannel;
+  status: AlarmNotificationStatus;
+  title: string;
+  body: string;
+  attemptCount: number;
+  maxAttempts: number;
+  sentAt: string | null;
+  readAt: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  createdAt: string;
+  alarmEvent?: AlarmEventRecord;
 }
 
 export interface GatewayCommandRecord {

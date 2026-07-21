@@ -44,6 +44,13 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     prisma = app.get(PrismaService);
     monitoring = app.get(MonitoringService);
 
+    await prisma.alarmDeliveryLog.deleteMany();
+    await prisma.alarmNotification.deleteMany();
+    await prisma.alarmPolicyTrigger.deleteMany();
+    await prisma.alarmCounterState.deleteMany();
+    await prisma.alarmEvent.deleteMany();
+    await prisma.alarmRecipientPolicy.deleteMany();
+    await prisma.alarmRule.deleteMany();
     await prisma.latestNodeState.deleteMany();
     await prisma.sensorReading.deleteMany();
     await prisma.gatewayFaultFilterAppliedState.deleteMany();

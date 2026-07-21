@@ -211,36 +211,44 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 ### Ishlar
 
 - AlarmRule va AlarmRecipientPolicy.
-- CompanyPosition + scope recipient resolver.
+- CompanyPosition yoki specific-user recipient intent configuration. Final recipient-user resolution Phase 12.
 - AlarmCounterState transaction logic.
 - `requiredOccurrenceCount` (`회수`) va `countIntervalSeconds` (`지속시간`).
 - Safe/severity transition reset.
-- AlarmEvent evidence model without notification delivery side effects leaking into counting.
+- AlarmEvent evidence model and immutable AlarmPolicyTrigger foundation without notification delivery side effects leaking into counting.
+- Internal post-commit `alarm.policy-triggered` domain event.
 
 ### Exit criteria
 
 - `회수=3`, `지속시간=3분` timeline testlari o‘tadi.
 - Interval ichidagi readings historyga yoziladi, counter oshmaydi.
 - Triggerdan keyingi eligible reading yangi cycle boshlaydi.
-- Duplicate MQTT reading counter yoki notificationni takrorlamaydi.
+- Duplicate MQTT reading counter yoki policy triggerni takrorlamaydi.
+- No `AlarmNotification`, `AlarmDeliveryLog`, provider call, realtime badge or acknowledge/resolve UI is introduced before Phase 12.
+- `PHASE_11_COMPLETE` is the correct status after automated verification and combined manual sensor-flow acceptance are recorded.
 
 ## Phase 12 — Notifications and alarm operations UI
 
 ### Ishlar
 
 - AlarmNotification, AlarmDeliveryLog and provider retry.
-- In-app va selected external provider adapter.
+- In-app provider, unconfigured external-provider skip behavior and deterministic test provider.
 - Alarm list/detail/ack/resolve UI.
+- Notification inbox, unread badge and authorized notification realtime rooms.
+- Rule/policy configuration UI without raw UUID entry.
 
 ### Exit criteria
 
 - Recipients resolve from CompanyPosition + scope.
 - Alarm operations remain permission and scope guarded.
+- Manual end-to-end acceptance was recorded on 2026-07-21 through the prepared Phase 11/12 checklist.
+- `PHASE_12_COMPLETE` is the correct status after automated verification, manual end-to-end acceptance and any required manual-blocker maintenance fixes are recorded.
 
 ## Phase 13 — Reports, dashboards and legacy parity
 
 ### Ishlar
 
+- Carryover: surface backend conflict/validation responses in the Company Alarm UI when Resolve is rejected because the node is still unsafe; show a localized toast or inline error, leave alarm status unchanged and reset loading state correctly.
 - ReportJob va ReportExport queue.
 - Company, device, monitoring, sensor, alarm, MQTT va audit reports.
 - View/export permission separation.

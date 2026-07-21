@@ -17,6 +17,7 @@ import type { Server, Socket } from "socket.io";
 
 import { AUTH_CONTEXT, type AuthTokenPayload } from "../../common/auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
+import { AlarmRealtimeService } from "../alarms/alarm-realtime.service";
 import { roomName } from "./monitoring-mappers";
 import { MonitoringRealtimeService } from "./monitoring-realtime.service";
 import { MonitoringService } from "./monitoring.service";
@@ -41,12 +42,14 @@ export class MonitoringGateway implements OnGatewayInit {
   constructor(
     @Inject(JwtService) private readonly jwt: JwtService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AlarmRealtimeService) private readonly alarmRealtime: AlarmRealtimeService,
     @Inject(MonitoringService) private readonly monitoring: MonitoringService,
     @Inject(MonitoringRealtimeService) private readonly realtime: MonitoringRealtimeService,
   ) {}
 
   afterInit(): void {
     this.realtime.attachServer(this.server);
+    this.alarmRealtime.attachServer(this.server);
   }
 
   @SubscribeMessage("monitoring:join")
@@ -91,6 +94,20 @@ export class MonitoringGateway implements OnGatewayInit {
       return { ok: true, room };
     } catch {
       return { error: "Unauthorized monitoring room.", ok: false };
+    }
+  }
+
+  @SubscribeMessage("notifications:join")
+  async joinNotificationsRoom(
+    @ConnectedSocket() client: Socket,
+  ): Promise<{ ok: boolean; room?: string; error?: string }> {
+    try {
+      return await this.alarmRealtime.joinNotificationRoom(
+        client,
+        await this.authenticateSocket(client),
+      );
+    } catch {
+      return { error: "Unauthorized notification room.", ok: false };
     }
   }
 

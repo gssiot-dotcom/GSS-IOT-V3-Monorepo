@@ -143,8 +143,47 @@
 - [x] Keep building-plan workflow at provider-neutral storage-key metadata boundary until production storage is decided.
 - [x] Add API E2E and web unit coverage for Phase 10 role/user/scope/position/no-permission/inactive-token behavior.
 - [x] Fix Phase 10 maintenance defect where normal read flows required platform-manager identity and optional frontend panel requests could replace authorized detail/users/roles pages with full-page errors.
-- [ ] Complete manual browser acceptance checklist before marking Phase 10 complete.
+- [x] Complete manual browser acceptance checklist before marking Phase 10 complete.
+- [x] Mark Phase 10 complete after manual verification of custom scoped area/building detail, `site_manager` area/building detail, optional `/company/users` partial failure handling, Company Users with `company-users.view`, Company Roles with `company-roles.view`, no-users request without `company-users.view`, `no_permission`, inactive existing-session rejection, last active platform-manager lockout, monitoring and scoped resource filtering.
+
+## Phase 11
+
+- [x] Add additive Prisma models and forward migration for `AlarmRule`, `AlarmRecipientPolicy`, `AlarmCounterState`, `AlarmEvent` and immutable `AlarmPolicyTrigger`.
+- [x] Enforce count/interval/target check constraints, one active rule per building + node type + severity, one counter state per policy + node and one trigger per policy + node + cycle.
+- [x] Integrate occurrence evaluation into the existing MQTT monitoring path after unique `SensorReading` persistence, latest-state upsert and Phase 9 authoritative classification.
+- [x] Use `SensorReading.receivedAt` as the count clock and preserve measured/payload timestamps as evidence only.
+- [x] Use `GatewayAlarmLevelApplication.desiredEnabled` as backend evaluation intent without modifying `appliedEnabled` or publishing MQTT commands.
+- [x] Exclude fault-filtered readings from counts while preserving SensorReading/latest-state evidence and resetting stale cycles.
+- [x] Implement safe reset, severity-transition reset, desired-disabled reset and policy/version reset behavior.
+- [x] Store active assignment provenance for gateway-company, gateway-building, node-company and node-gateway rows.
+- [x] Create/reuse one active `AlarmEvent` per node + rule + severity episode and create one immutable `AlarmPolicyTrigger` per policy cycle.
+- [x] Emit internal post-commit `alarm.policy-triggered` events without Phase 12 recipient notifications or provider delivery.
+- [x] Add guarded GSS Admin and Company rule/policy/counter/event/trigger APIs using `alarm-rules.view`, `alarm-rules.manage` and `alarms.view`.
+- [x] Add targeted Phase 11 E2E coverage for immediate/count-interval timelines, duplicate MQTT dedupe, reset behavior and API permission/scope access.
+- [x] Run the full final Phase 11 verification command set.
+- [x] Perform controlled manual sensor-flow acceptance with development MQTT/scripted readings and API/DB inspection.
+- [x] Mark Phase 11 complete after manual verification of independent policy counters, multiple eligible triggers, one shared continuous-episode `AlarmEvent`, unsafe resolve rejection preserving status and safe-state resolution.
+
+## Phase 12
+
+- [x] Add forward Prisma migrations for `AlarmNotification`, `AlarmDeliveryLog`, alarm acknowledgement fields and durable `AlarmPolicyTrigger` dispatch state.
+- [x] Resolve recipients from CompanyPosition/scope or specific CompanyUser without treating CompanyRole as a recipient category.
+- [x] Create idempotent notification rows per policy trigger + recipient + channel.
+- [x] Implement in-app delivery, sanitized delivery logs, provider status and deterministic test-provider retry failure.
+- [x] Skip unconfigured external providers clearly without real vendor calls or secrets.
+- [x] Add alarm list/detail, rule/policy configuration, notification inbox and unread bell UI for Admin and Company routes.
+- [x] Add acknowledge and conservative manual resolve workflows with audit logs.
+- [x] Add authorized Socket.IO notification rooms derived server-side.
+- [x] Add targeted automated coverage for delivery, unread/read, ack/resolve and provider retry.
+- [x] Prepare combined Phase 11/12 manual end-to-end acceptance checklist.
+- [x] Fix the manual `/company/alarm-rules` create-rule Name crash, keep rule display name local until Save, contain modal validation/API errors and cover the shared Company/Admin rule form with focused web regression tests.
+- [x] Perform combined manual sensor-to-notification-to-operations acceptance before marking Phase 12 complete.
+- [x] Mark Phase 12 complete after manual verification of CompanyPosition + scope recipient resolution, scoped Site Manager notifications, independent Platform Manager policy notifications, shared alarm acknowledgement visibility, alarm detail Triggers/Notifications tabs, unsafe resolve rejection, automatic safe resolution and post-safe manual resolve.
+
+## Phase 13 carryover
+
+- [ ] Company Alarm UI must surface backend conflict/validation responses when Resolve is rejected because the node is still unsafe as a localized toast or inline error; the failed mutation must leave alarm status unchanged and reset loading state correctly.
 
 ## Deferred
 
-Occurrence counting, AlarmEvent, recipient resolution, notifications, reports, partitioning, archival, migration, deployment and external delivery providers remain deferred to Phase 11 or later according to the approved 2nd-step execution order.
+Reports, exports, partitioning, archival, migration, deployment, live cmd 4/cmd 5 hardware verification and real external delivery vendors remain deferred according to the approved 2nd-step execution order and open provider decisions.

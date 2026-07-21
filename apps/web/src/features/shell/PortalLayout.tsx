@@ -6,6 +6,7 @@ import {
   Burger,
   Button,
   Group,
+  Indicator,
   NavLink,
   Stack,
   Text,
@@ -15,16 +16,21 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { IconBell, IconLogout } from "@tabler/icons-react";
 import type { AuthContext } from "@gss-iot/contracts";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
 
+import { readWebEnv } from "../../app/env";
 import { t } from "../../app/i18n";
+import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { filterSidebarItems } from "../../shared/rbac/filter-sidebar-items";
+import { hasPermission } from "../../shared/rbac/has-permission";
 import { adminNavItems, companyNavItems, routeTitles } from "./navigation";
 
 export function PortalLayout({ children, context }: { children: ReactNode; context: AuthContext }) {
   const [opened, { toggle }] = useDisclosure();
+  const [unreadCount, setUnreadCount] = useState(0);
   const { logout, session } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -34,6 +40,39 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
     routeTitles.get(location.pathname) ??
     allItems.find((item) => location.pathname.startsWith(`${item.path}/`))?.titleKey;
   const shellTitle = context === "gss-admin" ? t("shell.admin") : t("shell.company");
+  const canViewNotifications = Boolean(session && hasPermission(session, "notifications.view"));
+
+  useEffect(() => {
+    if (!session || !canViewNotifications) {
+      setUnreadCount(0);
+      return;
+    }
+    const basePath = context === "gss-admin" ? "/admin" : "/company";
+    let cancelled = false;
+    void apiRequest<{ unreadCount: number }>(session, `${basePath}/notifications/unread-count`)
+      .then((response) => {
+        if (!cancelled) setUnreadCount(response.unreadCount);
+      })
+      .catch(() => {
+        if (!cancelled) setUnreadCount(0);
+      });
+    const socket = io(readWebEnv().apiBaseUrl, {
+      auth: { token: session.accessToken },
+      transports: ["websocket"],
+    });
+    socket.on("connect", () => {
+      socket.emit("notifications:join");
+    });
+    socket.on("notifications:update", (event: { unreadCount?: number }) => {
+      if (typeof event.unreadCount === "number") {
+        setUnreadCount(event.unreadCount);
+      }
+    });
+    return () => {
+      cancelled = true;
+      socket.close();
+    };
+  }, [canViewNotifications, context, session]);
 
   return (
     <AppShell
@@ -57,9 +96,19 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
               {t("shell.reconnecting")}
             </Badge>
             <Tooltip label={t("app.notifications")}>
-              <ActionIcon aria-label={t("app.notifications")}>
-                <IconBell size={18} />
-              </ActionIcon>
+              <Indicator disabled={!unreadCount} inline label={unreadCount} size={16}>
+                <ActionIcon
+                  aria-label={t("app.notifications")}
+                  disabled={!canViewNotifications}
+                  onClick={() =>
+                    navigate(
+                      context === "gss-admin" ? "/admin/notifications" : "/company/notifications",
+                    )
+                  }
+                >
+                  <IconBell size={18} />
+                </ActionIcon>
+              </Indicator>
             </Tooltip>
             <Group gap="xs" visibleFrom="sm">
               <Avatar color="gss" size="sm">

@@ -1,4 +1,6 @@
 import {
+  IconAdjustments,
+  IconBell,
   IconBellRinging,
   IconBuilding,
   IconBuildingCommunity,
@@ -68,6 +70,18 @@ export const adminNavItems: ShellNavItem[] = [
     titleKey: "nav.adminAlarms",
   },
   {
+    icon: IconAdjustments,
+    path: "/admin/alarm-rules",
+    permission: "alarm-rules.view",
+    titleKey: "nav.adminAlarmRules",
+  },
+  {
+    icon: IconBell,
+    path: "/admin/notifications",
+    permission: "notifications.view",
+    titleKey: "nav.adminNotifications",
+  },
+  {
     icon: IconReportAnalytics,
     path: "/admin/reports",
     permission: "reports.view",
@@ -135,6 +149,18 @@ export const companyNavItems: ShellNavItem[] = [
     path: "/company/alarms",
     permission: "alarms.view",
     titleKey: "nav.companyAlarms",
+  },
+  {
+    icon: IconAdjustments,
+    path: "/company/alarm-rules",
+    permission: "alarm-rules.view",
+    titleKey: "nav.companyAlarmRules",
+  },
+  {
+    icon: IconBell,
+    path: "/company/notifications",
+    permission: "notifications.view",
+    titleKey: "nav.companyNotifications",
   },
   {
     icon: IconReportAnalytics,

@@ -2,6 +2,16 @@ import type { AuthContext } from "@gss-iot/contracts";
 import type { ReactElement, ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
+import {
+  AdminAlarmDetailPage,
+  AdminAlarmRulesPage,
+  AdminAlarmsPage,
+  AdminNotificationsPage,
+  CompanyAlarmDetailPage,
+  CompanyAlarmRulesPage,
+  CompanyAlarmsPage,
+  CompanyNotificationsPage,
+} from "../features/alarms/AlarmOperationsPages";
 import { LoginPage } from "../features/auth/LoginPage";
 import { CompanyRolesPage } from "../features/company-management/CompanyRolesPage";
 import { CompanyUsersPage } from "../features/company-management/CompanyUsersPage";
@@ -69,6 +79,12 @@ export function AppRouter(): ReactElement {
                       <AdminDevicesPage />
                     ) : item.path === "/admin/gateway-commands" ? (
                       <GatewayCommandsPage />
+                    ) : item.path === "/admin/alarms" ? (
+                      <AdminAlarmsPage />
+                    ) : item.path === "/admin/alarm-rules" ? (
+                      <AdminAlarmRulesPage />
+                    ) : item.path === "/admin/notifications" ? (
+                      <AdminNotificationsPage />
                     ) : (
                       <PlaceholderPage titleKey={item.titleKey} />
                     )}
@@ -78,6 +94,14 @@ export function AppRouter(): ReactElement {
                 path={item.path}
               />
             ))}
+            <Route
+              element={
+                <ProtectedPage context="gss-admin" permission="alarms.view">
+                  <AdminAlarmDetailPage />
+                </ProtectedPage>
+              }
+              path="/admin/alarms/:alarmId"
+            />
             <Route
               element={
                 <ProtectedPage context="gss-admin" permission="companies.view">
@@ -124,6 +148,12 @@ export function AppRouter(): ReactElement {
                   <ProtectedPage context="company-user" permission={item.permission}>
                     {item.path === "/company/monitoring" ? (
                       <CompanyMonitoringIndexPage />
+                    ) : item.path === "/company/alarms" ? (
+                      <CompanyAlarmsPage />
+                    ) : item.path === "/company/alarm-rules" ? (
+                      <CompanyAlarmRulesPage />
+                    ) : item.path === "/company/notifications" ? (
+                      <CompanyNotificationsPage />
                     ) : item.path === "/company/devices" ? (
                       <CompanyDevicesPage />
                     ) : item.path === "/company/areas" ? (
@@ -143,6 +173,14 @@ export function AppRouter(): ReactElement {
                 path={item.path}
               />
             ))}
+            <Route
+              element={
+                <ProtectedPage context="company-user" permission="alarms.view">
+                  <CompanyAlarmDetailPage />
+                </ProtectedPage>
+              }
+              path="/company/alarms/:alarmId"
+            />
             <Route
               element={
                 <ProtectedPage context="company-user" permission="areas.view">

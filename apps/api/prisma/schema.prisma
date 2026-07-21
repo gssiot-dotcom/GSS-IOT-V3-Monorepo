@@ -79,6 +79,71 @@ enum SensorReadingStatus {
   UNCONFIGURED
 }
 
+enum AlarmSeverity {
+  CAUTION
+  WARNING
+  DANGER
+}
+
+enum AlarmTargetType {
+  POSITION
+  SPECIFIC_USER
+}
+
+enum AlarmChannel {
+  IN_APP
+  SMS
+  TELEGRAM
+  EMAIL
+  WEB_PUSH
+}
+
+enum AlarmCounterStatus {
+  ACTIVE
+  INACTIVE
+  RESET
+}
+
+enum AlarmEventStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum AlarmResolutionReason {
+  SAFE
+  SEVERITY_TRANSITION
+  FAULT_FILTERED
+  ALARM_DESIRED_DISABLED
+  POLICY_DISABLED
+  CONFIGURATION_CHANGED
+  REASSIGNMENT
+  RULE_DISABLED
+  MANUAL_RESOLVE
+}
+
+enum AlarmTriggerDispatchStatus {
+  PENDING
+  PROCESSING
+  DISPATCHED
+  FAILED
+}
+
+enum AlarmNotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  SKIPPED
+  CANCELLED
+}
+
+enum AlarmDeliveryAttemptStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
 enum AuditActorType {
   GSS_ADMIN
   COMPANY_USER
@@ -160,6 +225,8 @@ model Company {
   buildings                ConstructionBuilding[]
   deviceAssignments        CompanyDeviceAssignment[]
   provisioningRequests     NodeGatewayProvisioningRequest[]
+  alarmRules               AlarmRule[]
+  alarmEvents              AlarmEvent[]
   alarmLevelConfigurations BuildingAlarmLevelConfiguration[]
   latestNodeStates         LatestNodeState[]
   roles                    CompanyRole[]
@@ -181,6 +248,8 @@ model ConstructionArea {
   buildings           ConstructionBuilding[]
   latestNodeStates    LatestNodeState[]
   sensorReadings      SensorReading[]
+  alarmRules          AlarmRule[]
+  alarmEvents         AlarmEvent[]
   userAccess          CompanyUserAreaAccess[]
   positionAssignments CompanyUserPositionAssignment[]
   createdAt           DateTime                        @default(now())
@@ -206,6 +275,8 @@ model ConstructionBuilding {
   positionAssignments      CompanyUserPositionAssignment[]
   gatewayAssignments       GatewayBuildingAssignment[]
   provisioningRequests     NodeGatewayProvisioningRequest[]
+  alarmRules               AlarmRule[]
+  alarmEvents              AlarmEvent[]
   alarmLevelConfigurations BuildingAlarmLevelConfiguration[]
   alarmLevelApplications   GatewayAlarmLevelApplication[]
   latestNodeStates         LatestNodeState[]
@@ -230,6 +301,9 @@ model NodeType {
   faultFilterDesiredStates GatewayFaultFilterDesiredState[]
   faultFilterAppliedStates GatewayFaultFilterAppliedState[]
   sensorReadings           SensorReading[]
+  alarmRules               AlarmRule[]
+  alarmCounterStates       AlarmCounterState[]
+  alarmEvents              AlarmEvent[]
   createdAt                DateTime                          @default(now())
   updatedAt                DateTime                          @updatedAt
 }
@@ -246,6 +320,7 @@ model Gateway {
   nodeAssignments          NodeGatewayAssignment[]
   commands                 GatewayCommand[]
   provisioningRequests     NodeGatewayProvisioningRequest[]
+  alarmEvents              AlarmEvent[]
   alarmLevelApplications   GatewayAlarmLevelApplication[]
   faultFilterDesiredStates GatewayFaultFilterDesiredState[]
   faultFilterAppliedStates GatewayFaultFilterAppliedState[]
@@ -271,6 +346,9 @@ model Node {
   faultFilterAppliedStates GatewayFaultFilterAppliedState[]
   latestState              LatestNodeState?
   sensorReadings           SensorReading[]
+  alarmCounterStates       AlarmCounterState[]
+  alarmEvents              AlarmEvent[]
+  alarmPolicyTriggers      AlarmPolicyTrigger[]
   createdAt                DateTime                         @default(now())
   updatedAt                DateTime                         @updatedAt
 }
@@ -559,6 +637,11 @@ model SensorReading {
   gateway                Gateway              @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
   node                   Node                 @relation(fields: [nodeId], references: [id], onDelete: Restrict)
   nodeType               NodeType             @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  triggerReadings        AlarmPolicyTrigger[] @relation("AlarmTriggerReading")
+  firstCounterStates     AlarmCounterState[]  @relation("AlarmCounterFirstReading")
+  lastCounterStates      AlarmCounterState[]  @relation("AlarmCounterLastReading")
+  firstPolicyTriggers    AlarmPolicyTrigger[] @relation("AlarmTriggerFirstReading")
+  lastPolicyTriggers     AlarmPolicyTrigger[] @relation("AlarmTriggerLastReading")
 
   @@index([buildingId, nodeTypeId, receivedAt])
   @@index([gatewayId, receivedAt])
@@ -610,24 +693,26 @@ model CompanyRole {
 }
 
 model CompanyUser {
-  id                  String                          @id @default(uuid()) @db.Uuid
-  companyId           String                          @db.Uuid
-  roleId              String                          @db.Uuid
-  company             Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  role                CompanyRole                     @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  name                String
-  email               String                          @unique
-  passwordHash        String
-  phone               String?
-  isActive            Boolean                         @default(true)
-  tokenVersion        Int                             @default(0)
-  lastLoginAt         DateTime?
-  permissions         CompanyUserPermission[]
-  areaAccess          CompanyUserAreaAccess[]
-  buildingAccess      CompanyUserBuildingAccess[]
-  positionAssignments CompanyUserPositionAssignment[]
-  createdAt           DateTime                        @default(now())
-  updatedAt           DateTime                        @updatedAt
+  id                     String                          @id @default(uuid()) @db.Uuid
+  companyId              String                          @db.Uuid
+  roleId                 String                          @db.Uuid
+  company                Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  role                   CompanyRole                     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  name                   String
+  email                  String                          @unique
+  passwordHash           String
+  phone                  String?
+  isActive               Boolean                         @default(true)
+  tokenVersion           Int                             @default(0)
+  lastLoginAt            DateTime?
+  permissions            CompanyUserPermission[]
+  areaAccess             CompanyUserAreaAccess[]
+  buildingAccess         CompanyUserBuildingAccess[]
+  positionAssignments    CompanyUserPositionAssignment[]
+  alarmRecipientPolicies AlarmRecipientPolicy[]          @relation("AlarmPolicySpecificUser")
+  alarmNotifications     AlarmNotification[]
+  createdAt              DateTime                        @default(now())
+  updatedAt              DateTime                        @updatedAt
 }
 
 model BuildingPlanImage {
@@ -645,17 +730,260 @@ model BuildingPlanImage {
 }
 
 model CompanyPosition {
-  id          String                          @id @default(uuid()) @db.Uuid
-  companyId   String                          @db.Uuid
-  company     Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  key         String
-  name        String
-  isActive    Boolean                         @default(true)
-  assignments CompanyUserPositionAssignment[]
-  createdAt   DateTime                        @default(now())
-  updatedAt   DateTime                        @updatedAt
+  id                     String                          @id @default(uuid()) @db.Uuid
+  companyId              String                          @db.Uuid
+  company                Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  key                    String
+  name                   String
+  isActive               Boolean                         @default(true)
+  assignments            CompanyUserPositionAssignment[]
+  alarmRecipientPolicies AlarmRecipientPolicy[]
+  createdAt              DateTime                        @default(now())
+  updatedAt              DateTime                        @updatedAt
 
   @@unique([companyId, key])
+}
+
+model AlarmRule {
+  id                String                 @id @default(uuid()) @db.Uuid
+  companyId         String                 @db.Uuid
+  areaId            String                 @db.Uuid
+  buildingId        String                 @db.Uuid
+  nodeTypeId        String                 @db.Uuid
+  severity          AlarmSeverity
+  name              String?
+  isActive          Boolean                @default(true)
+  activeKey         String                 @default("active")
+  evaluationVersion Int                    @default(1)
+  createdByType     AuditActorType
+  createdById       String?                @db.Uuid
+  updatedByType     AuditActorType
+  updatedById       String?                @db.Uuid
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  disabledAt        DateTime?
+  company           Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  area              ConstructionArea       @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  building          ConstructionBuilding   @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  nodeType          NodeType               @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  recipientPolicies AlarmRecipientPolicy[]
+  counterStates     AlarmCounterState[]
+  events            AlarmEvent[]
+  policyTriggers    AlarmPolicyTrigger[]
+
+  @@unique([buildingId, nodeTypeId, severity, activeKey])
+  @@index([companyId, isActive])
+  @@index([areaId])
+  @@index([nodeTypeId, severity])
+}
+
+model AlarmRecipientPolicy {
+  id                      String               @id @default(uuid()) @db.Uuid
+  ruleId                  String               @db.Uuid
+  targetType              AlarmTargetType
+  positionId              String?              @db.Uuid
+  specificUserId          String?              @db.Uuid
+  targetKey               String
+  requiredOccurrenceCount Int
+  countIntervalSeconds    Int
+  channel                 AlarmChannel         @default(IN_APP)
+  channelKey              String               @default("in_app")
+  channelMetadata         Json?
+  isActive                Boolean              @default(true)
+  activeKey               String               @default("active")
+  evaluationVersion       Int                  @default(1)
+  createdByType           AuditActorType
+  createdById             String?              @db.Uuid
+  updatedByType           AuditActorType
+  updatedById             String?              @db.Uuid
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  disabledAt              DateTime?
+  rule                    AlarmRule            @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  position                CompanyPosition?     @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  specificUser            CompanyUser?         @relation("AlarmPolicySpecificUser", fields: [specificUserId], references: [id], onDelete: Restrict)
+  counterStates           AlarmCounterState[]
+  policyTriggers          AlarmPolicyTrigger[]
+  alarmNotifications      AlarmNotification[]
+
+  @@unique([ruleId, targetKey, channelKey, activeKey])
+  @@index([positionId])
+  @@index([specificUserId])
+  @@index([ruleId, isActive])
+}
+
+model AlarmCounterState {
+  id                    String               @id @default(uuid()) @db.Uuid
+  policyId              String               @db.Uuid
+  ruleId                String               @db.Uuid
+  nodeId                String               @db.Uuid
+  nodeTypeId            String               @db.Uuid
+  severity              AlarmSeverity
+  currentCount          Int                  @default(0)
+  cycleNo               Int                  @default(1)
+  cycleStartedAt        DateTime?
+  firstCountedReadingId String?              @db.Uuid
+  lastCountedReadingId  String?              @db.Uuid
+  lastCountedAt         DateTime?
+  nextCountAt           DateTime?
+  latestValue           Json?
+  evidence              Json?
+  assignmentProvenance  Json?
+  evaluationVersion     Int
+  status                AlarmCounterStatus   @default(ACTIVE)
+  version               Int                  @default(0)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  policy                AlarmRecipientPolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  rule                  AlarmRule            @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  node                  Node                 @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  nodeType              NodeType             @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  firstCountedReading   SensorReading?       @relation("AlarmCounterFirstReading", fields: [firstCountedReadingId], references: [id], onDelete: SetNull)
+  lastCountedReading    SensorReading?       @relation("AlarmCounterLastReading", fields: [lastCountedReadingId], references: [id], onDelete: SetNull)
+
+  @@unique([policyId, nodeId])
+  @@index([nodeId, severity, status])
+  @@index([ruleId])
+}
+
+model AlarmEvent {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  companyId            String                 @db.Uuid
+  areaId               String                 @db.Uuid
+  buildingId           String                 @db.Uuid
+  gatewayId            String                 @db.Uuid
+  nodeId               String                 @db.Uuid
+  nodeTypeId           String                 @db.Uuid
+  ruleId               String                 @db.Uuid
+  severity             AlarmSeverity
+  status               AlarmEventStatus       @default(OPEN)
+  activeKey            String                 @default("active")
+  openedAt             DateTime
+  lastTriggeredAt      DateTime
+  acknowledgedAt       DateTime?
+  acknowledgedByType   AuditActorType?
+  acknowledgedById     String?                @db.Uuid
+  acknowledgeNote      String?
+  resolvedAt           DateTime?
+  resolvedByType       AuditActorType?
+  resolvedById         String?                @db.Uuid
+  resolveNote          String?
+  resolutionReason     AlarmResolutionReason?
+  evidence             Json?
+  assignmentProvenance Json?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  company              Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  area                 ConstructionArea       @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  building             ConstructionBuilding   @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  gateway              Gateway                @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  node                 Node                   @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  nodeType             NodeType               @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  rule                 AlarmRule              @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  policyTriggers       AlarmPolicyTrigger[]
+  notifications        AlarmNotification[]
+
+  @@unique([nodeId, ruleId, severity, activeKey])
+  @@index([companyId, status])
+  @@index([buildingId, status])
+  @@index([openedAt])
+}
+
+model AlarmPolicyTrigger {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  policyId               String                     @db.Uuid
+  ruleId                 String                     @db.Uuid
+  alarmEventId           String                     @db.Uuid
+  nodeId                 String                     @db.Uuid
+  triggerReadingId       String                     @db.Uuid
+  triggerCycleNo         Int
+  triggerOccurrenceCount Int
+  countIntervalSeconds   Int
+  evaluationVersion      Int
+  firstCountedReadingId  String?                    @db.Uuid
+  lastCountedReadingId   String?                    @db.Uuid
+  triggeredAt            DateTime
+  evidence               Json?
+  assignmentProvenance   Json?
+  dispatchStatus         AlarmTriggerDispatchStatus @default(PENDING)
+  dispatchAttemptCount   Int                        @default(0)
+  dispatchClaimedAt      DateTime?
+  dispatchCompletedAt    DateTime?
+  dispatchFailureReason  String?
+  createdAt              DateTime                   @default(now())
+  policy                 AlarmRecipientPolicy       @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  rule                   AlarmRule                  @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  alarmEvent             AlarmEvent                 @relation(fields: [alarmEventId], references: [id], onDelete: Restrict)
+  node                   Node                       @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  triggerReading         SensorReading              @relation("AlarmTriggerReading", fields: [triggerReadingId], references: [id], onDelete: Restrict)
+  firstCountedReading    SensorReading?             @relation("AlarmTriggerFirstReading", fields: [firstCountedReadingId], references: [id], onDelete: SetNull)
+  lastCountedReading     SensorReading?             @relation("AlarmTriggerLastReading", fields: [lastCountedReadingId], references: [id], onDelete: SetNull)
+  notifications          AlarmNotification[]
+
+  @@unique([policyId, nodeId, triggerCycleNo])
+  @@index([alarmEventId])
+  @@index([ruleId])
+  @@index([dispatchStatus, triggeredAt])
+  @@index([triggeredAt])
+}
+
+model AlarmNotification {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  alarmEventId        String                  @db.Uuid
+  policyTriggerId     String                  @db.Uuid
+  policyId            String                  @db.Uuid
+  recipientUserId     String                  @db.Uuid
+  channel             AlarmChannel
+  status              AlarmNotificationStatus @default(PENDING)
+  title               String
+  body                String
+  templateSnapshot    Json?
+  severitySnapshot    Json?
+  scopeSnapshot       Json?
+  triggerSnapshot     Json?
+  destinationMetadata Json?
+  attemptCount        Int                     @default(0)
+  maxAttempts         Int                     @default(3)
+  nextAttemptAt       DateTime?
+  lastAttemptAt       DateTime?
+  sentAt              DateTime?
+  readAt              DateTime?
+  failureCode         String?
+  failureMessage      String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  alarmEvent          AlarmEvent              @relation(fields: [alarmEventId], references: [id], onDelete: Restrict)
+  policyTrigger       AlarmPolicyTrigger      @relation(fields: [policyTriggerId], references: [id], onDelete: Restrict)
+  policy              AlarmRecipientPolicy    @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  recipientUser       CompanyUser             @relation(fields: [recipientUserId], references: [id], onDelete: Restrict)
+  deliveryLogs        AlarmDeliveryLog[]
+
+  @@unique([policyTriggerId, recipientUserId, channel])
+  @@index([alarmEventId])
+  @@index([recipientUserId, status, readAt])
+  @@index([status, nextAttemptAt])
+}
+
+model AlarmDeliveryLog {
+  id                        String                     @id @default(uuid()) @db.Uuid
+  notificationId            String                     @db.Uuid
+  attemptNumber             Int
+  providerKey               String
+  channel                   AlarmChannel
+  status                    AlarmDeliveryAttemptStatus
+  startedAt                 DateTime
+  completedAt               DateTime?
+  providerMessageId         String?
+  sanitizedRequestMetadata  Json?
+  sanitizedResponseMetadata Json?
+  errorCode                 String?
+  errorMessage              String?
+  retryable                 Boolean                    @default(false)
+  timestamp                 DateTime                   @default(now())
+  notification              AlarmNotification          @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId, attemptNumber])
+  @@index([status, timestamp])
 }
 
 model CompanyUserPositionAssignment {

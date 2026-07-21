@@ -2,11 +2,11 @@
 
 ## Current phase
 
-`PHASE_10_IMPLEMENTED_AUTOMATED_VERIFIED_MANUAL_UI_PENDING`
+`PHASE_12_COMPLETE`
 
 ## Last completed milestone
 
-Phase 10 Company Portal scope and management completion is implemented with automated verification as of 2026-07-19, but it is not complete until manual browser acceptance is performed. Phase 9 alarm-levels, fault filters and authoritative monitoring classification remain implemented with automated verification, but Phase 9 is still `PHASE_9_IMPLEMENTED_AUTOMATED_VERIFIED_LIVE_PENDING` until live cmd 4 and cmd 5 hardware verification passes. Phase 8 device provisioning remains complete, including live ESP32 verification with selected gateway `0300`, command `160b3e5c-139d-479b-8535-a82f25f95b02`, and nodes `100`, `101` and `102`.
+Phase 12 notifications and alarm operations UI is `PHASE_12_COMPLETE` as of 2026-07-21 after automated verification, the Phase 12 maintenance fix and manual end-to-end sensor-to-notification-to-operations acceptance. Phase 11 alarm occurrence-count engine is also `PHASE_11_COMPLETE` as of 2026-07-21 because the combined manual sensor-flow acceptance verified counter, trigger and shared `AlarmEvent` behavior end to end. Phase 10 Company Portal scope and management completion remains `PHASE_10_COMPLETE` after automated verification and manual browser acceptance. Phase 9 alarm-levels, fault filters and authoritative monitoring classification remains `PHASE_9_IMPLEMENTED_AUTOMATED_VERIFIED_LIVE_PENDING` until live cmd 4 and cmd 5 hardware verification passes. Phase 8 device provisioning remains complete, including live ESP32 verification with selected gateway `0300`, command `160b3e5c-139d-479b-8535-a82f25f95b02`, and nodes `100`, `101` and `102`.
 
 ## Current repository status
 
@@ -40,6 +40,16 @@ Phase 10 Company Portal scope and management completion is implemented with auto
 - Phase 10 maintenance: Company management read endpoints now use authenticated company-user context plus effective permissions instead of hidden platform-manager identity checks. The platform-manager owner policy remains in protected management mutations and last-platform-manager lockout checks.
 - Phase 10 UI: Company `/company/roles` has a permission editor and protected custom-role deletion; `/company/users` has create/edit flows for role, active status, contact, direct allow/deny permissions, site/building scope, CompanyPosition assignments and effective-access preview.
 - Phase 10 routes: Company `/company/areas/:areaId`, `/company/buildings/:buildingId` and `/company/buildings/:buildingId/plan` render functional detail/metadata workflows using existing scoped APIs. Area/building base detail loads are independent from optional assigned-user/device panels, and optional 403 responses no longer replace the whole page. Building plan remains provider-neutral storage-key metadata until the production storage decision is resolved.
+- Phase 11 schema: additive migration `20260719120000_phase_11_alarm_occurrence_engine` adds `AlarmRule`, `AlarmRecipientPolicy`, `AlarmCounterState`, `AlarmEvent` and immutable `AlarmPolicyTrigger` with check constraints, active uniqueness, counter uniqueness and trigger idempotency.
+- Phase 11 evaluator: existing MQTT monitoring ingestion now persists unique `SensorReading`, upserts `LatestNodeState` and evaluates occurrence counters in one serializable PostgreSQL transaction with bounded retry. The evaluator uses Phase 9 classification evidence, `SensorReading.receivedAt` as the count clock, `GatewayAlarmLevelApplication.desiredEnabled` as backend intent and active assignment provenance row IDs.
+- Phase 11 APIs: guarded GSS Admin and Company endpoints manage alarm rules and recipient policies and expose read-only counter/event/trigger foundations through `alarm-rules.view/manage` and `alarms.view`; Company endpoints enforce same-company and building scope in the backend.
+- Phase 11 boundary: occurrence counting still owns SensorReading classification consumption, counters, `AlarmEvent`, `AlarmPolicyTrigger` and internal trigger events. Combined manual sensor-flow acceptance passed on 2026-07-21.
+- Phase 12 schema: migrations `20260720120000_phase_12_notifications_alarm_operations` and `20260720120100_phase_12_notification_tables` add `ACKNOWLEDGED`, `MANUAL_RESOLVE`, trigger dispatch state, `AlarmNotification` and `AlarmDeliveryLog`.
+- Phase 12 backend: `AlarmPolicyTrigger` dispatch is durable DB-backed with startup reconciliation, CompanyPosition/scope recipient resolution, in-app delivery, unconfigured external-provider skip, sanitized delivery logs, alarm acknowledge/resolve actions and notification inbox APIs.
+- Phase 12 realtime: Socket.IO `notifications:join` authenticates the token, checks `notifications.view` and derives `company-user:{id}` or `gss-admin:{id}` rooms server-side.
+- Phase 12 UI: Admin and Company `/alarms`, `/alarms/:alarmId`, `/alarm-rules` and `/notifications` pages are implemented. The shell bell calls notification APIs only for users with `notifications.view`.
+- Phase 12 maintenance: the `/company/alarm-rules` manual pre-check exposed a create-rule modal crash when typing the Name field. The shared Admin/Company rule form now uses an isolated local rule draft, reads input values synchronously before state updates, trims/validates the human-readable `AlarmRule.name`, contains API errors inside the modal, resets cleanly on reopen and prevents required selector deselection. `AlarmRule.name` remains display-only; rule identity and evaluation scope remain database id plus building, node type and severity.
+- Phase 12 manual closeout: live testing verified CompanyPosition + scope recipient resolution; Site Manager and Platform Manager policies generated independent notifications according to their own count/interval settings; multiple eligible policy triggers produced multiple notifications while one continuous unsafe node episode reused one shared `AlarmEvent`; alarm detail showed separate Triggers and Notifications tabs; Site Manager acknowledge updated the shared event and Platform Manager saw the acknowledged state; unsafe resolve was rejected without changing the event to `RESOLVED`; safe-state automatic resolution worked; manual resolve also worked after SAFE; and the counter/notification/shared-event flow passed end to end.
 - Shared UI: `packages/ui` exports the normalized GSS Mantine theme, page header, data table/pagination footer, status badge, universal states and node-type selection card primitives.
 - Runtime configuration: API CORS is environment-driven through `CORS_ALLOWED_ORIGINS`; local development defaults support both `http://localhost:5173` and `http://127.0.0.1:5173`. Auth remains bearer-token based with no login cookies.
 - CI: template only
@@ -65,20 +75,23 @@ Phase 10 Company Portal scope and management completion is implemented with auto
 - RBAC: separate GSS Admin and Company contexts.
 - Device provisioning: active node-gateway assignment follows successful physical `cmd=2` acknowledgement.
 - Alarm: caution/warning/danger occurrence-count model.
+- Alarm occurrence: Phase 11 trigger foundation uses `AlarmPolicyTrigger` as the bridge to Phase 12 delivery.
+- Alarm notification dispatch: `AlarmPolicyTrigger` dispatch fields are the durable source of truth; the internal event is only a wake-up signal.
+- Alarm lifecycle: `ACKNOWLEDGED` remains active and later unsafe policy cycles keep counting; manual resolve rejects while latest state is still unsafe under active assignment and enabled alarm intent.
 - Alarm classification: angle/gangform use `max(abs(angleX), abs(angleY))`; thresholds are building + node type; missing config is `UNCONFIGURED`; calibration is deferred.
 - Alarm hardware enablement: building-level alarm save enables the selected node type on every active building gateway; selected-gateway toggles can temporarily disable/re-enable one gateway + node type without changing thresholds or other gateways/node types.
 
 ## Open decisions
 
-- Exact SMS/Telegram/email providers for first release.
+- Exact SMS/Telegram/email/web-push providers, credentials and SLA rules for real external delivery.
 - Production hosting and storage provider.
 - Physical SensorReading purge job, PostgreSQL partition interval and archival implementation after the Phase 6 default 180-day retention target.
 - Whether company can edit position catalog or only assign seeded positions.
-- Exact rule behavior after alarm acknowledgement while unsafe readings continue.
 - Legacy data migration cutoff and coexistence window.
 - Object-storage provider and browser-to-provider transfer mechanism for `BuildingPlanImage.storageKey`. Phase 3 persists and audits image metadata only; no unapproved local or cloud provider adapter was introduced.
 - Exact hardware unregister/remove-node or full replacement command for physical node unassignment.
 - Phase 9 live hardware verification for one selected gateway: building cmd 4 fan-out, selected gateway/node-type disable and re-enable, cmd 5 numeric-node success ACK, exact requestId desired/applied state and duplicate ACK idempotency. Gateway `0300` may be selected if still intended and available, but it is not an architecture constant.
+- Phase 13 carryover: Company Alarm UI must surface backend conflict/validation responses when Resolve is rejected because the node is still unsafe.
 
 ## Verification record
 
@@ -112,10 +125,22 @@ Phase 9 automated verification currently includes passing `pnpm format`, `pnpm t
 
 Phase 10 automated verification includes passing `pnpm typecheck`, `pnpm test` and `pnpm test:e2e` on 2026-07-19 before the final full command set. API E2E now covers custom role create/update, GSS-only permission rejection, cross-company role mutation denial, direct deny effective preview, site-inherited building preview, inactive-position assignment rejection, non-platform-manager read access for users/roles/positions, scoped area/building detail access, missing permission, missing scope, sibling scope and cross-company denial, last-platform-manager self-lockout, no-permission protected API denial and inactive existing-token rejection. Web unit tests cover role permission editor mutation, no-permission sidebar filtering, building-plan metadata add flow, optional area/building detail queries, optional users 403 partial rendering and users/roles pages driven by explicit view permissions.
 
-API, web, contracts, config and UI unit suites, API E2E, lint, typecheck, build and browser E2E pass.
+Phase 10 manual browser acceptance passed on 2026-07-19. Manual results confirmed: custom scoped user can open assigned Area detail; custom scoped user can open inherited Building detail; `site_manager` can open assigned Area and Building details; the previous optional `/company/users` 403 full-page failure is fixed; monitoring and scoped resource filtering still work; Company Users renders for a non-platform-manager with `company-users.view`; Company Roles renders for a non-platform-manager with `company-roles.view`; area/building detail does not request `/company/users` when `company-users.view` is absent; `no_permission` users retain only authenticated base access and protected APIs/pages remain forbidden; inactive-user existing sessions are rejected; last active platform-manager lockout protection remains enforced.
+
+Phase 11 automated verification includes `apps/api/test/e2e/alarms.e2e-spec.ts`. It covers count 3 / interval 180 receivedAt timeline, exact boundary, ineligible history-only readings, trigger at count 3, post-trigger next-cycle behavior, duplicate MQTT dedupe for count 1 / interval 0, safe reset, fault-filter reset, desired-disabled reset, no GatewayCommand side effect and guarded Admin/Company rule API access. Full final verification command results are recorded in the task handoff.
+
+Phase 12 automated verification extends `apps/api/test/e2e/alarms.e2e-spec.ts` for in-app notification dispatch, delivery log creation, unread/read APIs, acknowledgement, unsafe manual resolve rejection, safe-state auto-resolve while acknowledged and deterministic provider retry/terminal failure without duplicate notifications. Phase 12 also passed `pnpm --filter api exec prisma validate`, `pnpm --filter api exec prisma generate`, `pnpm --filter api exec prisma migrate deploy`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test` and the focused alarm E2E during implementation.
+
+Phase 12 maintenance verification on 2026-07-21 added `apps/web/src/test/alarm-rules.spec.tsx` and passed the focused run `pnpm --filter web exec vitest run src/test/alarm-rules.spec.tsx --reporter=verbose`. It covers the Company manual rule-create path, no pre-save `/company/alarm-rules` POST while typing Name, selector stability, successful trimmed payload, modal validation/API error containment, clean reopen and the shared Admin alarm-rule form.
+
+Phase 12 maintenance final verification on 2026-07-21 passed `pnpm format`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, `git diff --check` and the focused alarm-rule test. `git diff --check` reported only Windows line-ending warnings; `pnpm build` reported only the existing Vite large-chunk warning; E2E reported only Prisma deprecation/update notices.
+
+Phase 11/12 manual acceptance passed on 2026-07-21. Manual results confirmed: Alarm recipient resolution through CompanyPosition and scope worked; a scoped Site Manager received notifications through the CompanyPosition policy; the Platform Manager policy independently generated notifications according to its own occurrence-count and interval configuration; multiple eligible policy triggers created multiple notifications while one continuous unsafe node episode used one shared `AlarmEvent`; alarm detail correctly showed separate Triggers and Notifications tabs; acknowledgement by the Site Manager updated the shared `AlarmEvent`, and the acknowledged state was also visible to the Platform Manager; resolve was correctly rejected while the node remained in `DANGER`; rejected unsafe resolve did not incorrectly change the alarm to `RESOLVED`; when the node returned to `SAFE`, automatic alarm resolution worked; manual resolve also worked after the node was `SAFE`; and the counter/notification flow plus shared `AlarmEvent` behavior were manually verified end to end.
+
+API, web, contracts, config and UI unit suites, API E2E, lint, typecheck, build and browser E2E pass through the last recorded full verification. Phase 11 final full verification is tracked separately in the task handoff.
 
 Runtime CORS verification covers `http://localhost:5173`, `http://127.0.0.1:5173`, unknown-origin rejection, GSS login followed by `/auth/gss/me`, company login CORS behavior and no-cookie bearer-token responses.
 
 ## Next action
 
-Perform manual browser acceptance for Phase 10 Company Portal workflows, then complete Phase 9 live hardware verification separately before marking Phase 9 complete. Do not start Phase 11 until Phase 10 manual acceptance is recorded and approved.
+Phase 11 and Phase 12 are complete. Do not start Phase 13 until explicitly prompted. Complete Phase 9 live hardware verification separately before marking Phase 9 complete. The first Phase 13 carryover is to surface unsafe-resolve backend conflict/validation responses in the Company Alarm UI as a localized toast or inline error while leaving alarm status unchanged and resetting loading state correctly.
