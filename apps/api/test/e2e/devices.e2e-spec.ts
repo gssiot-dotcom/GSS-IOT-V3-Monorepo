@@ -75,11 +75,13 @@ describe("Phase 4 device inventory e2e", () => {
       "devices.view",
       "gateways.assign",
       "gateways.create",
+      "gateways.delete",
       "gateways.update",
       "gateways.view",
       "gateway-node-connections.view",
       "nodes.assign",
       "nodes.create",
+      "nodes.delete",
       "nodes.update",
       "nodes.view",
     ];
@@ -101,10 +103,12 @@ describe("Phase 4 device inventory e2e", () => {
       "devices.view",
       "gateways.assign",
       "gateways.create",
+      "gateways.delete",
       "gateways.update",
       "gateways.view",
       "nodes.assign",
       "nodes.create",
+      "nodes.delete",
       "nodes.update",
       "nodes.view",
     ].map((key) => permissionByKey.get(key)!.id);
@@ -461,5 +465,212 @@ describe("Phase 4 device inventory e2e", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ gatewayType: "SECURITY_OFFICE_GATEWAY", serialNumber: "GW-P4-SUPER" })
       .expect(201);
+  });
+
+  it("deletes only pristine inventory and preserves every history reference", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("/auth/gss/login", "phase4-device@example.com");
+
+    const pristineGateway = await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-DELETE" })
+      .expect(201);
+    const pristineNode = await request(server)
+      .post("/admin/devices/nodes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ nodeTypeId: doorNodeTypeId, number: "NODE-P4-DELETE" })
+      .expect(201);
+    const inventory = await request(server)
+      .get("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(
+      inventory.body.find((item: { id: string }) => item.id === pristineGateway.body.id).deletion,
+    ).toEqual({
+      allowed: true,
+      blocker: null,
+    });
+    await request(server)
+      .delete(`/admin/devices/gateways/${pristineGateway.body.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    await request(server)
+      .delete(`/admin/devices/nodes/${pristineNode.body.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(
+      await prisma.auditLog.count({ where: { action: { in: ["gateway.delete", "node.delete"] } } }),
+    ).toBeGreaterThanOrEqual(2);
+
+    const currentlyAssignedGateway = await prisma.gateway.findUniqueOrThrow({
+      where: { serialNumber: "GW-P4-001" },
+    });
+    const currentlyAssignedNode = await prisma.node.findUniqueOrThrow({
+      where: { number: "NODE-P4-001" },
+    });
+    await request(server)
+      .delete(`/admin/devices/gateways/${currentlyAssignedGateway.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+    await request(server)
+      .delete(`/admin/devices/nodes/${currentlyAssignedNode.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+
+    const historicalGateway = await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-HISTORY" })
+      .expect(201);
+    const historicalNode = await request(server)
+      .post("/admin/devices/nodes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ nodeTypeId: doorNodeTypeId, number: "NODE-P4-HISTORY" })
+      .expect(201);
+    await request(server)
+      .post(`/admin/devices/gateways/${historicalGateway.body.id}/company-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ companyId: companyAId })
+      .expect(201);
+    await request(server)
+      .delete(`/admin/devices/gateways/${historicalGateway.body.id}/company-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    await request(server)
+      .post(`/admin/devices/nodes/${historicalNode.body.id}/company-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ companyId: companyAId })
+      .expect(201);
+    await request(server)
+      .delete(`/admin/devices/nodes/${historicalNode.body.id}/company-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    await request(server)
+      .delete(`/admin/devices/gateways/${historicalGateway.body.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("DEVICE_HISTORY_EXISTS");
+        expect(body.lifecycle).toBe("INACTIVE_OR_RETIRED");
+      });
+    await request(server)
+      .delete(`/admin/devices/nodes/${historicalNode.body.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+    expect(
+      await prisma.gateway.findUnique({ where: { id: historicalGateway.body.id } }),
+    ).not.toBeNull();
+    expect(await prisma.node.findUnique({ where: { id: historicalNode.body.id } })).not.toBeNull();
+
+    const referencedGateway = await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-REFERENCED" })
+      .expect(201);
+    const referencedNode = await request(server)
+      .post("/admin/devices/nodes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ nodeTypeId: doorNodeTypeId, number: "NODE-P4-REFERENCED" })
+      .expect(201);
+    const command = await prisma.gatewayCommand.create({
+      data: {
+        commandNumber: 1,
+        commandType: "WAKE_SECURITY",
+        correlationKey: "GW-P4-REFERENCED:1",
+        expiresAt: new Date(Date.now() + 60_000),
+        gatewayId: referencedGateway.body.id,
+        payload: { cmd: 1 },
+        requesterType: "GSS_ADMIN",
+        topic: "GSSIOT/test/GATE_SUB/GW-P4-REFERENCED",
+      },
+    });
+    const provisioning = await prisma.nodeGatewayProvisioningRequest.create({
+      data: {
+        buildingId: allowedBuildingId,
+        commandId: command.id,
+        companyId: companyAId,
+        gatewayId: referencedGateway.body.id,
+        nodeTypeId: doorNodeTypeId,
+        requestedByType: "GSS_ADMIN",
+        items: { create: { nodeId: referencedNode.body.id } },
+      },
+    });
+    expect(provisioning.id).toBeDefined();
+    await request(server)
+      .delete(`/admin/devices/gateways/${referencedGateway.body.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+    await request(server)
+      .delete(`/admin/devices/nodes/${referencedNode.body.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+    expect(await prisma.gatewayCommand.count({ where: { id: command.id } })).toBe(1);
+    expect(
+      await prisma.nodeGatewayProvisioningItem.count({ where: { nodeId: referencedNode.body.id } }),
+    ).toBe(1);
+  });
+
+  it("keeps update and delete permissions separate", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const noPermissionToken = await login("/auth/gss/login", "phase4-none@example.com");
+    await request(server)
+      .delete("/admin/devices/gateways/not-authorized")
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .expect(403);
+    await request(server)
+      .patch("/admin/devices/gateways/not-authorized")
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .send({ installedLocation: "No access" })
+      .expect(403);
+  });
+
+  it("creates validated bulk node batches atomically and audits the result", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("/auth/gss/login", "phase4-device@example.com");
+
+    const created = await request(server)
+      .post("/admin/devices/nodes/bulk")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ input: "900001-900003, 900003, 0900004", nodeTypeId: doorNodeTypeId })
+      .expect(201);
+    expect(created.body.createdCount).toBe(4);
+    expect(created.body.numbers).toEqual(["900001", "900002", "900003", "900004"]);
+    expect(await prisma.node.count({ where: { number: { in: created.body.numbers } } })).toBe(4);
+    expect(
+      await prisma.auditLog.count({ where: { action: "node.bulk_create" } }),
+    ).toBeGreaterThanOrEqual(1);
+
+    await request(server)
+      .post("/admin/devices/nodes/bulk")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ input: "900004, 900005", nodeTypeId: doorNodeTypeId })
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("NODE_NUMBER_CONFLICT");
+        expect(body.conflicts).toEqual(["900004"]);
+      });
+    expect(await prisma.node.findUnique({ where: { number: "900005" } })).toBeNull();
+
+    await request(server)
+      .post("/admin/devices/nodes/bulk")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ input: "900006, descending-900008", nodeTypeId: doorNodeTypeId })
+      .expect(400)
+      .expect(({ body }) => expect(body.code).toBe("INVALID_NODE_NUMBER_INPUT"));
+    expect(await prisma.node.findUnique({ where: { number: "900006" } })).toBeNull();
+
+    await request(server)
+      .post("/admin/devices/nodes/bulk")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ input: "900007", nodeTypeId: "00000000-0000-0000-0000-000000000000" })
+      .expect(404);
+
+    const noPermissionToken = await login("/auth/gss/login", "phase4-none@example.com");
+    await request(server)
+      .post("/admin/devices/nodes/bulk")
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .send({ input: "900008", nodeTypeId: doorNodeTypeId })
+      .expect(403);
   });
 });

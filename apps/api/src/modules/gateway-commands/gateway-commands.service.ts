@@ -7,7 +7,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { loadApiEnv } from "@gss-iot/config";
-import { AssignmentStatus, AuditActorType, GatewayCommandStatus } from "@prisma/client";
+import {
+  AssignmentStatus,
+  AuditActorType,
+  GatewayCommandStatus,
+  ProvisioningMode,
+} from "@prisma/client";
 import type { GatewayCommandType, Prisma } from "@prisma/client";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
@@ -56,6 +61,7 @@ export const gatewayCommandSelect = {
       buildingId: true,
       gatewayId: true,
       nodeTypeId: true,
+      mode: true,
       status: true,
       responsePayload: true,
       failureReason: true,
@@ -66,11 +72,15 @@ export const gatewayCommandSelect = {
         select: {
           id: true,
           nodeId: true,
+          selected: true,
           assignmentId: true,
           appliedAt: true,
           failureReason: true,
           node: { select: { number: true } },
         },
+      },
+      endedAssignments: {
+        select: { assignmentId: true, endedAt: true, id: true, nodeId: true },
       },
     },
   },
@@ -116,16 +126,71 @@ export class GatewayCommandsService {
     return this.prisma.$transaction(async (tx) => {
       const gateway = await this.getGatewayProvisioningContext(dto.gatewayId, dto.buildingId, tx);
       const nodeType = await this.getNodeTypeOrThrow(dto.nodeTypeId, tx);
-      const nodes = await this.getNodesForGatewayCommand(dto.nodeIds, gateway.companyId, tx);
-      if (nodes.some((node) => node.nodeTypeId !== nodeType.id)) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${gateway.id}:${nodeType.id}`}))`;
+      const activeRequest = await tx.nodeGatewayProvisioningRequest.findFirst({
+        select: { id: true },
+        where: {
+          gatewayId: gateway.id,
+          nodeTypeId: nodeType.id,
+          status: { in: [GatewayCommandStatus.PENDING, GatewayCommandStatus.SENT] },
+        },
+      });
+      if (activeRequest) {
+        throw new ConflictException(
+          "A nonterminal provisioning command already exists for this gateway and node type.",
+        );
+      }
+
+      const selectedNodeIds = [...new Set(dto.nodeIds)];
+      const selectedNodes = await this.getNodesForGatewayCommand(
+        selectedNodeIds,
+        gateway.companyId,
+        tx,
+      );
+      if (selectedNodes.some((node) => node.nodeTypeId !== nodeType.id)) {
         throw new BadRequestException("All nodes must use the selected node type.");
       }
-      if (nodes.some((node) => node.gatewayAssignments.length > 0)) {
-        throw new ConflictException("Selected nodes must be unassigned before provisioning.");
+      if (
+        selectedNodes.some(
+          (node) =>
+            node.gatewayAssignments[0]?.gatewayId &&
+            node.gatewayAssignments[0].gatewayId !== gateway.id,
+        )
+      ) {
+        throw new ConflictException("Selected nodes must not be assigned to another gateway.");
       }
+
+      const currentAssignments = await tx.nodeGatewayAssignment.findMany({
+        orderBy: { assignedAt: "asc" },
+        select: { nodeId: true },
+        where: {
+          gatewayId: gateway.id,
+          node: { nodeTypeId: nodeType.id },
+          status: AssignmentStatus.ACTIVE,
+        },
+      });
+      const currentNodeIds = currentAssignments.map((assignment) => assignment.nodeId);
+      const finalNodeIds =
+        dto.mode === ProvisioningMode.APPEND
+          ? [...new Set([...currentNodeIds, ...selectedNodeIds])]
+          : selectedNodeIds;
+      const finalNodes = await this.getNodesForGatewayCommand(finalNodeIds, gateway.companyId, tx);
+      if (finalNodes.some((node) => node.nodeTypeId !== nodeType.id)) {
+        throw new BadRequestException("All final nodes must use the selected node type.");
+      }
+      if (
+        finalNodes.some(
+          (node) =>
+            node.gatewayAssignments[0]?.gatewayId &&
+            node.gatewayAssignments[0].gatewayId !== gateway.id,
+        )
+      ) {
+        throw new ConflictException("Final nodes must not be assigned to another gateway.");
+      }
+      const selectedNodeSet = new Set(selectedNodeIds);
       const built = this.adapters.buildRegisterNodes({
         gatewaySerial: gateway.serialNumber,
-        nodeNumbers: nodes.map((node) => node.number),
+        nodeNumbers: finalNodes.map((node) => node.number),
         nodeTypeNumericCode: nodeType.numericCode,
       });
       const expiresAt = new Date(
@@ -157,7 +222,15 @@ export class GatewayCommandsService {
           commandId: command.id,
           companyId: gateway.companyId,
           gatewayId: gateway.id,
-          items: { createMany: { data: nodes.map((node) => ({ nodeId: node.id })) } },
+          items: {
+            createMany: {
+              data: finalNodes.map((node) => ({
+                nodeId: node.id,
+                selected: selectedNodeSet.has(node.id),
+              })),
+            },
+          },
+          mode: dto.mode,
           nodeTypeId: nodeType.id,
           requestedById: actor.sub,
           requestedByType: requesterType,
@@ -180,7 +253,12 @@ export class GatewayCommandsService {
           action: "node-gateway-provisioning.request",
           entityId: request.id,
           entityType: "NodeGatewayProvisioningRequest",
-          newValue: request,
+          newValue: {
+            mode: request.mode,
+            requestId: request.id,
+            selectedCount: selectedNodeIds.length,
+            finalCount: finalNodeIds.length,
+          },
         },
         tx,
       );
@@ -853,6 +931,36 @@ export class GatewayCommandsService {
     }
     const now = new Date();
     const appliedAssignments: Array<{ gatewayId: string; id: string; nodeId: string }> = [];
+    const createdAssignmentIds: string[] = [];
+    const retainedAssignmentIds: string[] = [];
+    const endedAssignmentIds: string[] = [];
+    const finalNodeIds = new Set(request.items.map((item) => item.nodeId));
+    if (request.mode === ProvisioningMode.REPLACE) {
+      const currentAssignments = await tx.nodeGatewayAssignment.findMany({
+        select: { gatewayId: true, id: true, nodeId: true },
+        where: {
+          gatewayId: request.gatewayId,
+          node: { nodeTypeId: request.nodeTypeId },
+          status: AssignmentStatus.ACTIVE,
+        },
+      });
+      for (const assignment of currentAssignments) {
+        if (finalNodeIds.has(assignment.nodeId)) continue;
+        await tx.nodeGatewayAssignment.update({
+          where: { id: assignment.id },
+          data: { activeKey: assignment.id, status: AssignmentStatus.ENDED, unassignedAt: now },
+        });
+        const ended = await tx.nodeGatewayProvisioningEndedAssignment.create({
+          data: {
+            assignmentId: assignment.id,
+            nodeId: assignment.nodeId,
+            requestId: request.id,
+            endedAt: now,
+          },
+        });
+        endedAssignmentIds.push(ended.id);
+      }
+    }
     for (const item of request.items) {
       let assignment = await tx.nodeGatewayAssignment.findFirst({
         where: { nodeId: item.nodeId, status: AssignmentStatus.ACTIVE },
@@ -865,6 +973,9 @@ export class GatewayCommandsService {
             sourceCommandId: commandId,
           },
         });
+        createdAssignmentIds.push(assignment.id);
+      } else {
+        retainedAssignmentIds.push(assignment.id);
       }
       await tx.nodeGatewayProvisioningItem.update({
         where: { id: item.id },
@@ -899,7 +1010,11 @@ export class GatewayCommandsService {
         newValue: {
           appliedRequestId: applied.id,
           assignmentIds: appliedAssignments.map((assignment) => assignment.id),
+          createdAssignmentIds,
+          endedAssignmentIds,
           itemCount: applied.items.length,
+          mode: request.mode,
+          retainedAssignmentIds,
         },
         oldValue: request,
       },

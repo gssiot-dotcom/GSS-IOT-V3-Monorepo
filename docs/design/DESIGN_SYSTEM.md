@@ -234,3 +234,40 @@ AuditDiffViewer
 - Images have meaningful alt text.
 - Status is not color-only.
 - Icon-only buttons have tooltip and `aria-label`.
+
+## 11. Task 03 foundation decisions
+
+The shared UI package now exports the following data-driven foundations for later dashboard and operations work:
+
+```txt
+DashboardKpiCard
+DashboardSection
+SectionHeader
+ResponsiveContentGrid
+CompactActionMenu
+RealtimeStatusBadge
+```
+
+The frozen token exports are `gssSemanticTokens`, `gssLayoutTokens` and `gssTypographyScale`, alongside the existing `gssBlue`, `gssStatusColors` and `gssTheme`. They use the normalized GSS blue/status palette, light/dark semantic values, restrained card/elevated shadows, 12px card radius, 32/38/42px control heights, a 20px section gap and the documented Inter/Noto Sans KR scale. These are shared styling foundations only; Task 03 does not change realtime/account behavior or introduce a theme-switching UX.
+
+The application shell now groups permission-filtered navigation under translated Overview, Organizations, Devices, Operations, People and Settings headings. Grouping is derived after the existing permission filter, so unauthorized items are never rendered. The mobile burger has an accessible translated label, and the shell keeps the existing notification unread API/socket and logout behavior unchanged.
+
+## Task 04 account and realtime foundation
+
+Welcome and profile surfaces use the authenticated session as their source of truth. They expose only safe identity metadata, render portal-specific copy, and reuse the same permission-filtered navigation source for quick links. Profile is view-only; credential mutation is outside this wave. The header account menu contains the profile link, role/company summary, effective permission count, active/super-admin indicators and sign-out action.
+
+The notification bell is rendered only with `notifications.view`. Its unread count remains backed by the existing endpoint and notification room, while the status badge is shown only for connecting, reconnecting or offline states. Monitoring realtime remains a separate socket concern.
+
+## Task 12 final consistency conventions
+
+The final pre-Phase-14 UI pass freezes these cross-route conventions:
+
+- `PageHeader` is the shared hierarchy boundary. Its title/subtitle block may shrink and action groups wrap below it on narrow screens; page actions remain in the existing permission-controlled components.
+- `DataTable` keeps a 640px minimum content width inside Mantine scroll containment. New tables should provide an accessible `ariaLabel` and, where useful, a concise caption. Tables with dense actions must retain the existing mobile card or detail-drawer alternative.
+- The portal shell uses a grouped permission-filtered drawer on mobile. Selecting a navigation item closes the drawer; the account menu, notification control and realtime state remain in the header.
+- Focus-visible controls use a two-pixel GSS-primary outline. Status continues to use icon/shape plus text plus color, and legacy monitoring images remain unchanged.
+- Shared surfaces, KPI cards, section headers, responsive grids, monitoring cards, drawers and state components are preferred over route-specific visual variants. Route-specific business behavior and permission checks are not moved into the design system.
+
+The only implementation correction in this pass is package-boundary output: `packages/contracts` now emits ES modules to match its declared package type and Vite consumers. It changes no API or business behavior.
+
+Intentionally deferred visual work is limited to a future design-system theme switcher, production visual-regression infrastructure, and authenticated multi-viewport browser capture for every protected route. The existing deterministic unit/API/E2E checks remain the automated evidence for protected permissions and scope behavior.

@@ -46,4 +46,8 @@ describe("web RBAC helpers", () => {
     expect(items.map((item) => item.path)).toEqual(["/company/buildings"]);
     expect(companyNavItems.every((item) => item.permission.includes("."))).toBe(true);
   });
+
+  it("keeps every shell item assigned to a translated navigation section", () => {
+    expect(companyNavItems.every((item) => item.sectionKey.startsWith("shell.section"))).toBe(true);
+  });
 });

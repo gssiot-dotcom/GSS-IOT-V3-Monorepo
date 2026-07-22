@@ -22,6 +22,33 @@ export const gssStatusColors = {
   warning: "#d18a00",
 } as const;
 
+export const gssSemanticTokens = {
+  background: { light: "#f5f8fb", dark: "#0d1524" },
+  border: { light: "#d8e0e8", dark: "#263449" },
+  danger: { light: "#dc2626", dark: "#f87171" },
+  foreground: { light: "#172033", dark: "#eef5fb" },
+  muted: { light: "#64748b", dark: "#9aaac0" },
+  surface: { light: "#ffffff", dark: "#131e30" },
+} as const;
+
+export const gssLayoutTokens = {
+  controlHeight: { compact: rem(32), default: rem(38), comfortable: rem(42) },
+  radius: { card: rem(12), control: rem(8), pill: rem(999) },
+  sectionGap: rem(20),
+  shadow: {
+    card: "0 1px 2px rgb(15 23 42 / 0.04)",
+    elevated: "0 12px 30px rgb(15 23 42 / 0.08)",
+  },
+} as const;
+
+export const gssTypographyScale = {
+  body: rem(14),
+  caption: rem(12),
+  cardTitle: rem(16),
+  pageTitle: rem(30),
+  sectionTitle: rem(20),
+} as const;
+
 export const gssTheme = createTheme({
   black: "#172033",
   colors: {
@@ -60,6 +87,16 @@ export const gssTheme = createTheme({
   cursorType: "pointer",
   defaultRadius: "md",
   fontFamily: "Inter, 'Noto Sans KR', system-ui, sans-serif",
+  other: {
+    gssLayoutTokens,
+    gssSemanticTokens,
+    gssTypographyScale,
+  },
+  primaryShade: { dark: 5, light: 6 },
+  shadows: {
+    md: gssLayoutTokens.shadow.card,
+    xl: gssLayoutTokens.shadow.elevated,
+  },
   headings: {
     fontFamily: "Inter, 'Noto Sans KR', system-ui, sans-serif",
     sizes: {

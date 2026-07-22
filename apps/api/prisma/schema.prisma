@@ -70,6 +70,11 @@ enum GatewayCommandType {
   SET_FAULT_FILTER
 }
 
+enum ProvisioningMode {
+  APPEND
+  REPLACE
+}
+
 enum SensorReadingStatus {
   SAFE
   CAUTION
@@ -366,26 +371,27 @@ model Gateway {
 }
 
 model Node {
-  id                       String                           @id @default(uuid()) @db.Uuid
-  nodeTypeId               String                           @db.Uuid
-  nodeType                 NodeType                         @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
-  number                   String                           @unique
-  status                   DeviceLifecycleStatus            @default(ACTIVE)
-  installedLocation        String?
-  batteryLevel             Int?
-  lastSeenAt               DateTime?
-  companyAssignments       CompanyDeviceAssignment[]
-  gatewayAssignments       NodeGatewayAssignment[]
-  provisioningItems        NodeGatewayProvisioningItem[]
-  faultFilterDesiredStates GatewayFaultFilterDesiredState[]
-  faultFilterAppliedStates GatewayFaultFilterAppliedState[]
-  latestState              LatestNodeState?
-  sensorReadings           SensorReading[]
-  alarmCounterStates       AlarmCounterState[]
-  alarmEvents              AlarmEvent[]
-  alarmPolicyTriggers      AlarmPolicyTrigger[]
-  createdAt                DateTime                         @default(now())
-  updatedAt                DateTime                         @updatedAt
+  id                           String                                   @id @default(uuid()) @db.Uuid
+  nodeTypeId                   String                                   @db.Uuid
+  nodeType                     NodeType                                 @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  number                       String                                   @unique
+  status                       DeviceLifecycleStatus                    @default(ACTIVE)
+  installedLocation            String?
+  batteryLevel                 Int?
+  lastSeenAt                   DateTime?
+  companyAssignments           CompanyDeviceAssignment[]
+  gatewayAssignments           NodeGatewayAssignment[]
+  provisioningItems            NodeGatewayProvisioningItem[]
+  provisioningEndedAssignments NodeGatewayProvisioningEndedAssignment[]
+  faultFilterDesiredStates     GatewayFaultFilterDesiredState[]
+  faultFilterAppliedStates     GatewayFaultFilterAppliedState[]
+  latestState                  LatestNodeState?
+  sensorReadings               SensorReading[]
+  alarmCounterStates           AlarmCounterState[]
+  alarmEvents                  AlarmEvent[]
+  alarmPolicyTriggers          AlarmPolicyTrigger[]
+  createdAt                    DateTime                                 @default(now())
+  updatedAt                    DateTime                                 @updatedAt
 }
 
 model CompanyDeviceAssignment {
@@ -422,17 +428,18 @@ model GatewayBuildingAssignment {
 }
 
 model NodeGatewayAssignment {
-  id               String                       @id @default(uuid()) @db.Uuid
-  nodeId           String                       @db.Uuid
-  gatewayId        String                       @db.Uuid
-  status           AssignmentStatus             @default(ACTIVE)
-  assignedAt       DateTime                     @default(now())
-  unassignedAt     DateTime?
-  activeKey        String                       @default("active")
-  sourceCommandId  String?                      @db.Uuid
-  node             Node                         @relation(fields: [nodeId], references: [id], onDelete: Restrict)
-  gateway          Gateway                      @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
-  provisioningItem NodeGatewayProvisioningItem?
+  id                           String                                   @id @default(uuid()) @db.Uuid
+  nodeId                       String                                   @db.Uuid
+  gatewayId                    String                                   @db.Uuid
+  status                       AssignmentStatus                         @default(ACTIVE)
+  assignedAt                   DateTime                                 @default(now())
+  unassignedAt                 DateTime?
+  activeKey                    String                                   @default("active")
+  sourceCommandId              String?                                  @db.Uuid
+  node                         Node                                     @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  gateway                      Gateway                                  @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  provisioningItems            NodeGatewayProvisioningItem[]
+  endedProvisioningAssignments NodeGatewayProvisioningEndedAssignment[]
 
   @@unique([nodeId, activeKey])
   @@index([gatewayId, status])
@@ -603,27 +610,29 @@ model GatewayFaultFilterAppliedState {
 }
 
 model NodeGatewayProvisioningRequest {
-  id              String                        @id @default(uuid()) @db.Uuid
-  commandId       String                        @unique @db.Uuid
-  companyId       String                        @db.Uuid
-  buildingId      String                        @db.Uuid
-  gatewayId       String                        @db.Uuid
-  nodeTypeId      String                        @db.Uuid
-  status          GatewayCommandStatus          @default(PENDING)
-  responsePayload Json?
-  failureReason   String?
-  requestedByType AuditActorType
-  requestedById   String?                       @db.Uuid
-  appliedAt       DateTime?
-  failedAt        DateTime?
-  createdAt       DateTime                      @default(now())
-  updatedAt       DateTime                      @updatedAt
-  command         GatewayCommand                @relation(fields: [commandId], references: [id], onDelete: Restrict)
-  company         Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  building        ConstructionBuilding          @relation(fields: [buildingId], references: [id], onDelete: Restrict)
-  gateway         Gateway                       @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
-  nodeType        NodeType                      @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
-  items           NodeGatewayProvisioningItem[]
+  id               String                                   @id @default(uuid()) @db.Uuid
+  commandId        String                                   @unique @db.Uuid
+  companyId        String                                   @db.Uuid
+  buildingId       String                                   @db.Uuid
+  gatewayId        String                                   @db.Uuid
+  nodeTypeId       String                                   @db.Uuid
+  mode             ProvisioningMode                         @default(REPLACE)
+  status           GatewayCommandStatus                     @default(PENDING)
+  responsePayload  Json?
+  failureReason    String?
+  requestedByType  AuditActorType
+  requestedById    String?                                  @db.Uuid
+  appliedAt        DateTime?
+  failedAt         DateTime?
+  createdAt        DateTime                                 @default(now())
+  updatedAt        DateTime                                 @updatedAt
+  command          GatewayCommand                           @relation(fields: [commandId], references: [id], onDelete: Restrict)
+  company          Company                                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  building         ConstructionBuilding                     @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  gateway          Gateway                                  @relation(fields: [gatewayId], references: [id], onDelete: Restrict)
+  nodeType         NodeType                                 @relation(fields: [nodeTypeId], references: [id], onDelete: Restrict)
+  items            NodeGatewayProvisioningItem[]
+  endedAssignments NodeGatewayProvisioningEndedAssignment[]
 
   @@index([companyId, status])
   @@index([buildingId, status])
@@ -635,7 +644,8 @@ model NodeGatewayProvisioningItem {
   id            String                         @id @default(uuid()) @db.Uuid
   requestId     String                         @db.Uuid
   nodeId        String                         @db.Uuid
-  assignmentId  String?                        @unique @db.Uuid
+  selected      Boolean                        @default(true)
+  assignmentId  String?                        @db.Uuid
   appliedAt     DateTime?
   failureReason String?
   request       NodeGatewayProvisioningRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
@@ -643,6 +653,20 @@ model NodeGatewayProvisioningItem {
   assignment    NodeGatewayAssignment?         @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
 
   @@unique([requestId, nodeId])
+  @@index([nodeId])
+}
+
+model NodeGatewayProvisioningEndedAssignment {
+  id           String                         @id @default(uuid()) @db.Uuid
+  requestId    String                         @db.Uuid
+  assignmentId String                         @db.Uuid
+  nodeId       String                         @db.Uuid
+  endedAt      DateTime                       @default(now())
+  request      NodeGatewayProvisioningRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  assignment   NodeGatewayAssignment          @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  node         Node                           @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+
+  @@unique([requestId, assignmentId])
   @@index([nodeId])
 }
 

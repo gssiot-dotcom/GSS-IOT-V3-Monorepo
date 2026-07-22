@@ -26,6 +26,7 @@ import { ReportWorkerService } from "./report-worker.service";
     ReportExportCleanupService,
     ReportWorkerService,
     ReportStorageService,
+    ReportScopeService,
     ReportsService,
   ],
   imports: [PrismaModule, AuditLogsModule, AuthModule, RbacModule],

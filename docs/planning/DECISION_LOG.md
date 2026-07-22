@@ -556,3 +556,240 @@ acceptance separately.
 **Files affected:** `docs/quality/PHASE_13_MANUAL_ACCEPTANCE_CHECKLIST.md`,
 `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`,
 `docs/architecture/PHASE_13_REPORTS_AND_EXPORTS.md`.
+
+## DEC-2026-047 — Pre-Phase-14 refactor execution boundary
+
+**Status:** accepted
+
+**Context:** The 3rd-step prompt defines a pre-Phase-14 UX/product completion wave after the verified Phase 13 report work. The current repository still has the source-map Welcome, dashboard, header, portal-module, device-action, bulk-node, provisioning-mode, and monitoring-card gaps, while RBAC, MQTT requestId/ACK, alarms/notifications, and reports are already complete and must not regress.
+
+**Decision:** Execute the numbered 3rd-step tasks exactly in the master-prompt order, one task at a time, with focused verification and `EXECUTION_STATE.md` updates after every task. Treat the legacy archives as read-only behavior/asset references. Preserve `PHASE_13_COMPLETE` and `PHASE_14_NOT_STARTED`; do not implement production storage/deployment, migration, retention, partitioning, archival/purge, rollback, or CI/CD hardening. Add only forward additive migrations when a task proves durable state is needed; Task 09 is the current likely candidate for durable APPEND/REPLACE provisioning mode/final-node-set data, subject to schema inspection at that task.
+
+**Consequences:** The refactor remains resumable and auditable. Existing permission/scope guards, assignment history, GatewayCommand outbox/requestId correlation, alarm occurrence/notification behavior, reports, and audit effects are protected regression surfaces. The complete plan and observable ten-requirement checklist are recorded in `docs/refactor/PRE_PHASE_14_REFACTOR_PLAN.md` and `docs/quality/PRE_PHASE_14_REFACTOR_ACCEPTANCE_CHECKLIST.md`.
+
+**Files affected:** `docs/prompts/3rd-step/EXECUTION_STATE.md`, `docs/refactor/PRE_PHASE_14_REFACTOR_PLAN.md`, `docs/quality/PRE_PHASE_14_REFACTOR_ACCEPTANCE_CHECKLIST.md`, `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/IMPLEMENTATION_PLAN.md`.
+
+## DEC-2026-048 — Deterministic web unit-file execution for the refactor wave
+
+**Status:** accepted
+
+**Context:** The existing web unit suites use shared browser globals such as `window`, session storage, and mocked `fetch`. With Vitest file parallelism enabled, unrelated auth/management/alarm tests intermittently observed another file's state and failed; the same suites passed individually and with one worker.
+
+**Decision:** Keep the established `threads` pool, but set `fileParallelism: false` in `apps/web/vitest.config.ts` so web unit files execute deterministically in one worker. This changes only test execution order/concurrency and does not alter application behavior or production runtime configuration.
+
+**Consequences:** The required `pnpm --filter web test:unit` command is stable and continues to exercise all web suites. The suite is slower than parallel execution, but avoids false failures while the tests rely on shared jsdom globals.
+
+**Files affected:** `apps/web/vitest.config.ts`, `docs/planning/DECISION_LOG.md`.
+
+## DEC-2026-049 — Safe session metadata and notification realtime states
+
+**Status:** accepted
+
+**Context:** Task 04 requires personalized Welcome/profile/header surfaces while preserving the existing authentication boundary and notification unread/socket behavior. The previous session response intentionally exposed only a minimal identity and permission list, and the shell displayed an unconditional reconnecting badge.
+
+**Decision:** Extend the authenticated session response with only active state, phone, last-login timestamp, role id/key/name/super-admin flag and (for Company users) company id/name. Password hashes, token versions, secrets and internal authorization details remain excluded. Render Welcome/profile from session metadata, keep profile view-only, and create the notification socket only when `notifications.view` is effective. Track connecting, connected, reconnecting and offline from actual Socket.IO events; hide the badge when idle or connected. Monitoring realtime remains a distinct socket.
+
+**Consequences:** Account and Welcome surfaces cannot mutate credentials or bypass backend authorization. Existing unread endpoint/room, RBAC permission filtering and monitoring socket behavior remain intact. No schema or migration change is needed because all metadata already exists on the authenticated user relations.
+
+**Files affected:** `packages/contracts/src/index.ts`, `apps/api/src/modules/auth/auth.service.ts`, `apps/api/test/e2e/rbac.e2e-spec.ts`, `apps/web/src/features/shell/WelcomeProfilePages.tsx`, `apps/web/src/features/shell/PortalLayout.tsx`, `apps/web/src/app/router.tsx`, `apps/web/src/app/i18n.ts`, `apps/web/src/test/welcome-profile.spec.tsx`, `packages/ui/src/realtime-status-badge.tsx`.
+
+## DEC-2026-050 — Bounded permission-aware dashboard summaries
+
+**Status:** accepted
+
+**Context:** Task 05 needs useful GSS operational dashboards without turning the dashboard into a scope or permission side channel. Existing report-job cards are approved behavior but are not sufficient as the only dashboard content.
+
+**Decision:** Add `/admin/dashboard/summary` and `/company/dashboard/summary` with validated `7d|30d|90d` ranges. The backend derives Company scope from the authenticated principal, runs bounded Prisma counts/group-bys, omits sections without effective permission, and uses the latest-state table for severity distribution. Telemetry chart points are capped at 10,000 selected timestamps; no raw history is loaded without a bound. Admin command metrics require `mqtt-commands.view`; Company users never receive global company totals.
+
+**Consequences:** Dashboard metrics are operationally useful while preserving backend authorization and scope enforcement. The frontend may render omitted sections as unavailable/empty and keeps recent reports as a lower-priority existing section. No schema or migration change is required.
+
+**Files affected:** `packages/contracts/src/index.ts`, `apps/api/src/modules/dashboard/`, `apps/api/src/modules/reports/reports.module.ts`, `apps/api/src/app.module.ts`, `apps/api/test/e2e/rbac.e2e-spec.ts`, `apps/web/src/features/dashboard/DashboardPages.tsx`, `apps/web/src/app/i18n.ts`, `apps/web/src/test/dashboard.spec.tsx`, `docs/architecture/DASHBOARD_ANALYTICS.md`.
+
+## DEC-2026-051 — Protected GSS roles and conservative portal settings
+
+**Status:** accepted
+
+**Context:** Task 06 requires meaningful roles and settings pages without introducing unsafe runtime controls or allowing Company scope data to be selected by the browser. Existing GSS/company role models and permission scopes already provide the required persistence and authorization boundaries.
+
+**Decision:** Add non-system GSS role CRUD with transactional permission replacement, reject Company-only permissions, reject deletion of assigned roles, and keep system/super-admin roles immutable. Expose system configuration through a redacted read-only DTO; production/deployment controls remain Phase 14. Company settings derive the company from the authenticated CompanyUser relation and allow only address, phone and email edits; company identity, code, name and status remain read-only.
+
+**Consequences:** Task 06 requires no schema migration or seed change. Backend guards remain the security boundary, all role and Company settings mutations are audited, and the frontend hides manage actions while retaining backend enforcement.
+
+**Files affected:** `apps/api/src/modules/settings/`, `apps/web/src/features/settings/SettingsPages.tsx`, `packages/contracts/src/index.ts`, `apps/api/test/e2e/rbac.e2e-spec.ts`, `apps/web/src/test/settings.spec.tsx`, `docs/architecture/ADMIN_ROLES_AND_SETTINGS.md`, `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/IMPLEMENTATION_PLAN.md`.
+
+## DEC-2026-052 — Pristine-only device deletion with server-derived blockers
+
+**Status:** accepted
+
+**Context:** Task 07 requires clear device edit/delete actions while preserving
+assignment history, MQTT command outbox records, provisioning evidence,
+monitoring history, alarms and fault-filter state. Current unassignment is a
+history-preserving operation, so an unassigned device is not necessarily safe to
+delete.
+
+**Decision:** Keep `gateways.update`, `gateways.delete`, `nodes.update` and
+`nodes.delete` as separate backend permissions. Return a server-derived
+deletion capability in Admin inventory records, but repeat all blocker checks
+inside the transactional delete operation. Any historical relation blocks hard
+delete with structured `409 DEVICE_HISTORY_EXISTS` guidance toward
+`INACTIVE_OR_RETIRED`. Only pristine devices are deleted; no cascade is used,
+and successful deletes are audited. The frontend uses compact accessible
+Mantine action icons, permission wrappers, capability-derived disabled states,
+destructive confirmations and localized success/conflict feedback.
+
+**Consequences:** Existing assignment, MQTT requestId/ACK, alarm and report
+behavior remains unchanged. No schema migration or seed change is required.
+Devices with history remain available for an approved lifecycle workflow rather
+than being erased.
+
+**Files affected:** `apps/api/src/modules/devices/`,
+`apps/api/test/e2e/devices.e2e-spec.ts`,
+`apps/web/src/features/devices/AdminDevicesPage.tsx`,
+`apps/web/src/test/devices.spec.tsx`, `packages/contracts/src/index.ts`,
+`docs/architecture/DEVICE_INVENTORY_LIFECYCLE.md`,
+`docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`,
+`docs/planning/IMPLEMENTATION_PLAN.md`.
+
+## DEC-2026-054 — Explicit APPEND/REPLACE provisioning membership
+
+**Status:** accepted
+
+**Context:** Task 09 needs repeatable gateway node membership changes without
+turning a partial UI selection into an accidental clear operation. Existing
+cmd 2 outbox, requestId correlation and assignment history must remain the
+source of truth for physical application.
+
+**Decision:** Require `APPEND` or `REPLACE` on every register-nodes request.
+Persist the mode and selected/final membership, compute APPEND as the current
+same-gateway/node-type union with selected unassigned nodes, and compute
+REPLACE as the exact selected set. Apply changes only after a strict ACK. End
+omitted active assignments during REPLACE in durable request-linked history,
+serialize nonterminal requests with a PostgreSQL advisory transaction lock, and
+reject empty selections and concurrent PENDING/SENT requests. Remove the old
+one-to-one provisioning-item assignment index so retained assignments can be
+linked from successive requests.
+
+**Consequences:** Retries retain the same command/requestId payload and
+duplicate or late ACKs remain idempotent. Existing RBAC, scope, MQTT, alarm
+and report behavior is preserved. The task adds two additive migrations and no
+seed change.
+
+**Files affected:** `apps/api/prisma/schema.prisma`,
+`apps/api/prisma/migrations/20260722120000_task_09_provisioning_modes/`,
+`apps/api/prisma/migrations/20260722121000_task_09_reusable_provisioning_assignment_links/`,
+`apps/api/src/modules/gateway-commands/`,
+`apps/api/test/e2e/gateway-commands.e2e-spec.ts`,
+`apps/web/src/features/devices/AdminDevicesPage.tsx`,
+`apps/web/src/test/devices.spec.tsx`,
+`docs/architecture/NODE_PROVISIONING_APPEND_REPLACE.md`.
+
+## DEC-2026-055 — Reusable bounded Company monitoring presentation
+
+**Status:** accepted
+
+**Context:** Task 10 needs V2-inspired node cards and historical graphics while
+preserving the V3 monitoring endpoint, realtime room, alarm-level controls and
+fault-filter separation.
+
+**Decision:** Add typed Mantine/GSS monitoring presentation components for a
+persisted TABLE/CARD latest-state preference, accessible door cards, angle and
+gangform T-shaped indicators, and a selected-node detail drawer. Keep one
+realtime state stream, fetch only the selected node's existing bounded history,
+and render a local SVG chart rather than adding a chart dependency. Do not put
+a fault-filter control in the detail drawer; retain it only in the dedicated
+fault-filter tab.
+
+**Consequences:** Company monitoring gains card/table parity and bounded detail
+history without schema/API changes or per-card requests. Admin monitoring will
+reuse the presentation components in Task 11. Production telemetry retention
+remains deferred.
+
+**Files affected:** `apps/web/src/features/monitoring/CompanyMonitoringPage.tsx`,
+`apps/web/src/features/monitoring/components/`,
+`apps/web/src/test/monitoring.spec.tsx`,
+`docs/architecture/MONITORING_PRESENTATION.md`.
+
+## DEC-2026-056 — Global Admin monitoring read models and shared workspace
+
+**Status:** accepted
+
+**Context:** Task 11 needs a useful `/admin/monitoring` landing page while
+keeping Company scope enforcement separate and avoiding unbounded sensor
+queries or duplicated monitoring cards/detail behavior.
+
+**Decision:** Add permission-guarded Admin options and summary endpoints using
+bounded Prisma aggregates over latest node state, active gateway freshness,
+building grouping and eight recent nodes. Use the existing Admin
+building/node-type/history endpoints for drilldown. Build the Admin page with
+company/site/building cascades, operational/severity summaries, legacy
+node-type images, the shared Task 10 presentation components and a selected
+building/node-type realtime room.
+
+**Consequences:** GSS Admin can monitor globally without Company scope
+confusion; only the selected room and selected node history are fetched. Five
+minutes remains the established stale freshness convention. No schema,
+migration or seed change is required.
+
+**Files affected:** `apps/api/src/modules/monitoring/`,
+`apps/api/test/e2e/monitoring.e2e-spec.ts`,
+`packages/contracts/src/index.ts`,
+`apps/web/src/features/monitoring/AdminMonitoringPage.tsx`,
+`apps/web/src/app/router.tsx`, `apps/web/src/test/monitoring.spec.tsx`,
+`docs/architecture/ADMIN_MONITORING.md`.
+
+## DEC-2026-053 — Atomic canonical bulk node creation
+
+**Status:** accepted
+
+**Context:** Task 08 needs the V2 single/range/list node-number behavior while
+preserving V3 validation, audit, permission and transaction boundaries. Node
+numbers are strings in the database and MQTT adapters already normalize numeric
+wire values separately.
+
+**Decision:** Add a shared parser and typed `POST /admin/devices/nodes/bulk`
+contract. Accept positive safe decimal values, inclusive ranges and mixed comma
+segments; trim whitespace, canonicalize decimal strings, deduplicate input and
+cap each batch at 1,000 unique numbers. Compare requested values against all
+existing numeric inventory by canonical value. Reject malformed input with a
+structured 400 and existing-number conflicts with a structured 409. Create the
+whole batch in one transaction, audit one batch record, and keep gateway
+assignment in the existing MQTT requestId/ACK provisioning flow. Use a Mantine
+textarea with preview/count/error states and hide the create action without
+`nodes.create`.
+
+**Consequences:** Duplicate input cannot create duplicate hardware-numeric
+identity, and failures cannot leave partial node rows. The existing single-node
+endpoint and node edit flow remain compatible. No schema migration or seed
+change is required.
+
+**Files affected:** `packages/contracts/src/node-number-parser.ts`,
+`packages/contracts/src/index.ts`, `packages/contracts/test/node-number-parser.spec.ts`,
+`apps/api/src/modules/devices/`, `apps/api/test/e2e/devices.e2e-spec.ts`,
+`apps/web/src/features/devices/AdminDevicesPage.tsx`,
+`apps/web/src/test/devices.spec.tsx`,
+`docs/architecture/BULK_NODE_CREATION.md`, `docs/planning/PROJECT_STATE.md`,
+`docs/planning/TODO.md`, `docs/planning/IMPLEMENTATION_PLAN.md`.
+
+## DEC-2026-057 — Final responsive shell and package-consumer consistency
+
+**Status:** accepted
+
+**Context:** Task 12 needs a single responsive hierarchy across active routes and deterministic browser smoke coverage. The web app also consumes the Task 08 parser from `@gss-iot/contracts`; the package is declared as an ES module but its build configuration emitted CommonJS, which breaks browser named imports from the built workspace package.
+
+**Decision:** Keep Mantine as the shared component system and make the low-risk global improvements in shared primitives: wrapping `PageHeader` actions, accessible optional table names/captions, closing the mobile navigation drawer after selection and a visible GSS focus ring. Change only the contracts package build module target/resolution to ES modules/bundler mode so its published output matches `package.json`. Add deterministic login/protected-redirect/legacy-card/mobile overflow smoke checks and record authenticated all-route visual capture as deferred until a stable session fixture exists.
+
+**Consequences:** Active navigation routes remain permission-filtered and behavior-preserving, tables remain scrollable, and the parser export works in the browser build. No permission, scope, MQTT, alarm, reports or API business rule changes are introduced. Theme switching and production visual-regression infrastructure remain deferred.
+
+**Files affected:** `packages/ui/src/page-header.tsx`, `packages/ui/src/data-table.tsx`, `packages/ui/test/dashboard-primitives.spec.tsx`, `packages/contracts/tsconfig.json`, `apps/web/src/features/shell/PortalLayout.tsx`, `apps/web/src/main.tsx`, `apps/web/src/styles/global.css`, `apps/web/e2e/bootstrap.spec.ts`, `docs/design/DESIGN_SYSTEM.md`, `docs/design/UI_UX_SPEC.md`, `docs/design/PAGE_INVENTORY.md`.
+
+## DEC-2026-058 — Pre-Phase-14 refactor handoff evidence boundary
+
+**Status:** accepted
+
+**Context:** Task 13 requires a complete regression and an honest manual acceptance record without turning unavailable browser sessions or unexecuted hardware checks into claims.
+
+**Decision:** Mark the pre-Phase-14 refactor complete after all configured automated gates pass and record public desktop/mobile browser observations separately from protected API/E2E evidence. Keep authenticated all-route visual walkthrough as a user-review follow-up when a deterministic session fixture is available. Keep live ESP32 cmd 4/cmd 5 verification pending; existing Phase 8 cmd 2 evidence and protocol tests remain valid but are not hardware evidence for this handoff.
+
+**Consequences:** The repository state is `PHASE_13_COMPLETE`, `PHASE_14_NOT_STARTED`, `PRE_PHASE_14_REFACTOR_COMPLETE`. No production S3, worker deployment, retention, migration, rollback, CI/CD, or live hardware implementation is introduced. Automated security/scope/protocol/alarm/report evidence remains the authoritative regression proof until the deferred manual checks are performed.
+
+**Files affected:** `docs/quality/PRE_PHASE_14_REFACTOR_ACCEPTANCE_CHECKLIST.md`, `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/IMPLEMENTATION_PLAN.md`, `docs/planning/DECISION_LOG.md`, `docs/prompts/3rd-step/EXECUTION_STATE.md`.

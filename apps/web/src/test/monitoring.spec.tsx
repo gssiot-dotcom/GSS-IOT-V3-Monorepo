@@ -8,6 +8,9 @@ import {
   BuildingMonitoringPage,
   NodeTypeMonitoringPage,
 } from "../features/monitoring/CompanyMonitoringPage";
+import { AdminMonitoringPage } from "../features/monitoring/AdminMonitoringPage";
+import { NodeStateCard } from "../features/monitoring/components/NodeStateCard";
+import { NodeHistoryChart } from "../features/monitoring/components/NodeHistoryChart";
 import { apiRequest } from "../shared/api/api-client";
 
 vi.mock("../shared/auth/auth-context", () => ({
@@ -47,6 +50,7 @@ vi.mock("socket.io-client", () => ({
 describe("Phase 6 monitoring UI", () => {
   afterEach(() => {
     cleanup();
+    window.localStorage.clear();
   });
 
   beforeEach(() => {
@@ -284,8 +288,14 @@ describe("Phase 6 monitoring UI", () => {
     );
 
     expect(await screen.findByText("Unconfigured")).toBeTruthy();
+    expect(screen.getByLabelText("Monitoring view")).toBeTruthy();
     expect(screen.getByText("Alarm levels")).toBeTruthy();
     expect(screen.getByText("Fault filters")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Cards" }));
+    expect(screen.getByRole("button", { name: "Node 100, Unconfigured" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Node 100, Unconfigured" }));
+    expect(await screen.findByText("Node 100 detail")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /fault filter/i })).toBeNull();
     fireEvent.click(screen.getByText("Alarm levels"));
     await waitFor(() => expect(screen.getAllByText("0300").length).toBeGreaterThan(0));
     fireEvent.click(screen.getByLabelText("Toggle alarm for gateway 0300"));
@@ -299,5 +309,208 @@ describe("Phase 6 monitoring UI", () => {
         }),
       ),
     );
+  });
+
+  it("restores the card preference and renders door, angle and bounded history presentation", () => {
+    window.localStorage.setItem("gss.monitoring.view", "CARD");
+    const now = new Date().toISOString();
+    const common = {
+      areaId: "area-1",
+      building: { id: "building-1", title: "Tower A" },
+      buildingId: "building-1",
+      companyId: "company-1",
+      gateway: { id: "gateway-1", serialNumber: "0300" },
+      gatewayId: "gateway-1",
+      lastSeenAt: now,
+      nodeTypeId: "node-type-1",
+      updatedAt: now,
+    } as const;
+    render(
+      <MantineProvider theme={gssTheme}>
+        <NodeStateCard
+          onOpen={vi.fn()}
+          state={{
+            ...common,
+            classificationEvidence: null,
+            faultFiltered: false,
+            node: { id: "door-1", installedLocation: null, number: "101" },
+            nodeId: "door-1",
+            nodeType: {
+              displayName: "Door Node",
+              id: "door",
+              imageAssetKey: "door.png",
+              key: "door_node",
+              numericCode: 0,
+            },
+            status: "danger",
+            values: { batteryLevel: 42, doorState: "open" },
+          }}
+        />
+        <NodeStateCard
+          onOpen={vi.fn()}
+          state={{
+            ...common,
+            classificationEvidence: null,
+            faultFiltered: false,
+            node: { id: "angle-1", installedLocation: null, number: "102" },
+            nodeId: "angle-1",
+            nodeType: {
+              displayName: "Angle Node",
+              id: "angle",
+              imageAssetKey: "angle.png",
+              key: "angle_node",
+              numericCode: 1,
+            },
+            status: "warning",
+            values: { angleX: 3, angleY: -1 },
+          }}
+        />
+        <NodeHistoryChart
+          history={{
+            items: [
+              {
+                buildingId: "building-1",
+                faultFiltered: false,
+                gateway: { id: "gateway-1", serialNumber: "0300" },
+                gatewayId: "gateway-1",
+                id: "reading-1",
+                measuredAt: now,
+                node: { id: "angle-1", installedLocation: null, number: "102" },
+                nodeId: "angle-1",
+                nodeType: {
+                  displayName: "Angle Node",
+                  id: "angle",
+                  imageAssetKey: "angle.png",
+                  key: "angle_node",
+                  numericCode: 1,
+                },
+                nodeTypeId: "angle",
+                receivedAt: now,
+                status: "warning",
+                values: { angleX: 3, angleY: -1 },
+              },
+            ],
+            page: 1,
+            pageSize: 25,
+            total: 1,
+          }}
+          nodeType="angle_node"
+          thresholds={{ cautionThreshold: 1, dangerThreshold: 4, warningThreshold: 2 }}
+        />
+      </MantineProvider>,
+    );
+    expect(screen.getByText("Open")).toBeTruthy();
+    expect(screen.getByText("Warning")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /T-shaped status indicator/i })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "X/Y angle history" })).toBeTruthy();
+  });
+
+  it("renders the permission-gated Admin summary and selector cascade", async () => {
+    vi.mocked(apiRequest).mockImplementation(async (_session, path) => {
+      if (path === "/admin/monitoring/options") {
+        return {
+          areas: [{ companyId: "company-1", id: "area-1", name: "Site A", status: "ACTIVE" }],
+          buildings: [
+            {
+              areaId: "area-1",
+              companyId: "company-1",
+              id: "building-1",
+              status: "ACTIVE",
+              title: "Tower A",
+            },
+          ],
+          companies: [{ id: "company-1", name: "Company A", status: "ACTIVE" }],
+        };
+      }
+      if (path.startsWith("/admin/monitoring/summary")) {
+        return {
+          buildings: [],
+          gateways: { offline: 0, online: 1, stale: 0, total: 1 },
+          recentNodes: [],
+          severityDistribution: {
+            caution: 0,
+            danger: 0,
+            offline: 0,
+            safe: 1,
+            unconfigured: 0,
+            warning: 0,
+          },
+        };
+      }
+      if (path === "/admin/monitoring/buildings/building-1") {
+        return {
+          building: { id: "building-1", title: "Tower A" },
+          nodeTypes: [
+            {
+              count: 1,
+              latestStatus: "safe",
+              nodeType: {
+                displayName: "Door Node",
+                id: "door",
+                imageAssetKey: "door.png",
+                key: "door_node",
+                numericCode: 0,
+              },
+            },
+          ],
+        };
+      }
+      if (path.includes("/node-types/door_node")) {
+        return {
+          building: { id: "building-1", title: "Tower A" },
+          historyRetentionDays: 180,
+          nodeType: {
+            displayName: "Door Node",
+            id: "door",
+            imageAssetKey: "door.png",
+            key: "door_node",
+            numericCode: 0,
+          },
+          states: [
+            {
+              areaId: "area-1",
+              building: { id: "building-1", title: "Tower A" },
+              buildingId: "building-1",
+              classificationEvidence: null,
+              companyId: "company-1",
+              faultFiltered: false,
+              gateway: { id: "gateway-1", serialNumber: "GW-001" },
+              gatewayId: "gateway-1",
+              lastSeenAt: new Date().toISOString(),
+              node: { id: "node-1", installedLocation: null, number: "100" },
+              nodeId: "node-1",
+              nodeType: {
+                displayName: "Door Node",
+                id: "door",
+                imageAssetKey: "door.png",
+                key: "door_node",
+                numericCode: 0,
+              },
+              nodeTypeId: "door",
+              status: "safe",
+              updatedAt: new Date().toISOString(),
+              values: { batteryLevel: 80, doorState: "closed" },
+            },
+          ],
+        };
+      }
+      return {};
+    });
+
+    render(
+      <MantineProvider theme={gssTheme}>
+        <AdminMonitoringPage />
+      </MantineProvider>,
+    );
+    expect(await screen.findByText("Admin monitoring")).toBeTruthy();
+    expect(screen.getByText("Latest monitored nodes")).toBeTruthy();
+    fireEvent.click(screen.getByRole("combobox", { name: "Company" }));
+    fireEvent.click(screen.getAllByText("Company A")[0]!);
+    fireEvent.click(screen.getByRole("combobox", { name: "Construction site" }));
+    fireEvent.click(screen.getByText("Site A"));
+    fireEvent.click(screen.getByRole("combobox", { name: "Building" }));
+    fireEvent.click(screen.getAllByText("Tower A")[0]!);
+    expect(await screen.findByText("Tower A")).toBeTruthy();
+    expect(await screen.findByTestId("node-type-card-door_node")).toBeTruthy();
   });
 });

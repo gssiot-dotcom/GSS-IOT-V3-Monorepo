@@ -375,6 +375,41 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     });
   });
 
+  it("serves bounded global Admin monitoring options and aggregates without Company scope", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    await request(server)
+      .get("/admin/monitoring/options")
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.companies).toHaveLength(2);
+        expect(body.areas).toHaveLength(3);
+        expect(body.buildings).toHaveLength(3);
+      });
+    await request(server)
+      .get(
+        `/admin/monitoring/summary?companyId=${(await prisma.company.findFirstOrThrow({ where: { name: "Phase 6 Company A" } })).id}`,
+      )
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.gateways.total).toBeGreaterThanOrEqual(2);
+        expect(body.severityDistribution).toHaveProperty("safe");
+        expect(body.buildings).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              building: expect.objectContaining({ title: "Allowed Building" }),
+            }),
+          ]),
+        );
+        expect(body.recentNodes.length).toBeLessThanOrEqual(8);
+      });
+    await request(server)
+      .get("/admin/monitoring/options")
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(403);
+  });
+
   it("classifies angle readings from backend thresholds and stores evidence", async () => {
     const base = process.env.MQTT_TOPIC_BASE ?? "GSSIOT/test";
     await prisma.buildingAlarmLevelConfiguration.create({

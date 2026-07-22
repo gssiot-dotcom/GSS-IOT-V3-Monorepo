@@ -5,9 +5,11 @@ import {
   IsInt,
   IsNumber,
   IsOptional,
+  IsEnum,
   IsString,
   Min,
 } from "class-validator";
+import { ProvisioningMode } from "@prisma/client";
 
 export class RegisterNodesCommandDto {
   @IsString()
@@ -18,6 +20,9 @@ export class RegisterNodesCommandDto {
 
   @IsString()
   nodeTypeId!: string;
+
+  @IsEnum(ProvisioningMode)
+  mode!: ProvisioningMode;
 
   @ArrayNotEmpty()
   @IsArray()

@@ -1,3 +1,5 @@
+export * from "./node-number-parser";
+
 export const HEALTH_STATUS = {
   ok: "ok",
 } as const;
@@ -16,19 +18,61 @@ export const AUTH_CONTEXT = {
 
 export type AuthContext = (typeof AUTH_CONTEXT)[keyof typeof AUTH_CONTEXT];
 
-export interface AuthenticatedUser {
-  companyId?: string;
-  email: string;
+export interface AuthRoleSummary {
   id: string;
   isSuperAdmin: boolean;
+  key: string;
   name: string;
+}
+
+export interface AuthCompanySummary {
+  id: string;
+  name: string;
+}
+
+export interface AuthenticatedUser {
+  companyId?: string;
+  company?: AuthCompanySummary | null;
+  email: string;
+  id: string;
+  isActive: boolean;
+  isSuperAdmin: boolean;
+  lastLoginAt?: string | null;
+  name: string;
+  phone?: string | null;
   permissions: string[];
+  role?: AuthRoleSummary | null;
 }
 
 export interface AuthSession {
   accessToken: string;
   context: AuthContext;
   user: AuthenticatedUser;
+}
+
+export type DashboardRange = "7d" | "30d" | "90d";
+export type DashboardSeverity =
+  "safe" | "caution" | "warning" | "danger" | "offline" | "unconfigured";
+
+export interface DashboardSummary {
+  range: { from: string; to: string; key: DashboardRange };
+  kpis: {
+    activeCompanies?: number;
+    activeSites?: number;
+    activeBuildings?: number;
+    gateways?: number;
+    gatewaysOffline?: number;
+    nodes?: number;
+    nodesUnassigned?: number;
+    telemetryReadings?: number;
+  };
+  gateways?: { online: number; offline: number; unassigned: number };
+  nodesByLifecycle?: Record<string, number>;
+  severityDistribution?: Record<DashboardSeverity, number>;
+  openAlarmsBySeverity?: Record<"CAUTION" | "WARNING" | "DANGER", number>;
+  commandStatus?: Record<string, number>;
+  telemetryTrend?: Array<{ date: string; count: number }>;
+  recentCommandFailures?: Array<{ createdAt: string; failureReason: string | null; id: string }>;
 }
 
 export type CompanyStatus = "ACTIVE" | "INACTIVE";
@@ -178,6 +222,29 @@ export interface CompanyPermissionRecord {
   scopeType?: "GSS" | "COMPANY" | "BOTH";
 }
 
+export interface GssRoleRecord {
+  id: string;
+  isSuperAdmin: boolean;
+  isSystem: boolean;
+  key: string;
+  name: string;
+  _count?: { users: number };
+  permissions: Array<{ permissionId: string; permission?: CompanyPermissionRecord }>;
+}
+
+export interface SystemSettingsRecord {
+  application: { apiVersion: string; environment: string; name: string };
+  commands: { ackTimeoutMs: number; expiresInSeconds: number; maxPublishAttempts: number };
+  controls: { productionDeploymentControls: string; readOnly: boolean };
+  features: { reportCleanupEnabled: boolean };
+  mqtt: { connected: boolean; enabled: boolean; ready: boolean; subscribedFilterCount: number };
+  reports: {
+    storage: { provider: string; ready: boolean };
+    worker: { enabled: boolean; mode: string; ready: boolean };
+  };
+  sensorHistory: { retentionDays: number };
+}
+
 export interface CompanyUserEffectiveAccessRecord {
   assignedAreas: NonNullable<CompanyUserRecord["areaAccess"]>;
   assignedBuildings: NonNullable<CompanyUserRecord["buildingAccess"]>;
@@ -239,6 +306,7 @@ export interface GatewayRecord {
   lastSeenAt: string | null;
   companyAssignments: ActiveCompanyAssignmentRecord[];
   buildingAssignments: ActiveBuildingAssignmentRecord[];
+  deletion?: DeviceDeletionCapability;
 }
 
 export interface NodeRecord {
@@ -252,6 +320,18 @@ export interface NodeRecord {
   nodeType: NodeTypeRecord;
   companyAssignments: ActiveCompanyAssignmentRecord[];
   gatewayAssignments: ActiveGatewayAssignmentRecord[];
+  deletion?: DeviceDeletionCapability;
+}
+
+export interface BulkNodeCreateResponse {
+  created: NodeRecord[];
+  createdCount: number;
+  numbers: string[];
+}
+
+export interface DeviceDeletionCapability {
+  allowed: boolean;
+  blocker: string | null;
 }
 
 export interface CompanyDeviceSnapshot {
@@ -387,6 +467,25 @@ export interface MonitoringNodeTypeResponse {
   states: MonitoringNodeStateRecord[];
 }
 
+export interface AdminMonitoringOptionsRecord {
+  areas: AreaRecord[];
+  buildings: BuildingRecord[];
+  companies: CompanyRecord[];
+}
+
+export interface AdminMonitoringSummaryRecord {
+  buildings: Array<{
+    building: BuildingRecord;
+    danger: number;
+    offline: number;
+    total: number;
+    warning: number;
+  }>;
+  gateways: { offline: number; online: number; stale: number; total: number };
+  recentNodes: MonitoringNodeStateRecord[];
+  severityDistribution: Record<MonitoringStatus, number>;
+}
+
 export interface MonitoringRealtimeJoinRequest {
   buildingId: string;
   nodeType: CanonicalNodeType;
@@ -510,6 +609,7 @@ export interface MqttStatusRecord {
 export interface NodeGatewayProvisioningItemRecord {
   id: string;
   nodeId: string;
+  selected: boolean;
   assignmentId: string | null;
   appliedAt: string | null;
   failureReason: string | null;
@@ -522,6 +622,7 @@ export interface NodeGatewayProvisioningRequestRecord {
   buildingId: string;
   gatewayId: string;
   nodeTypeId: string;
+  mode: "APPEND" | "REPLACE";
   status: GatewayCommandStatus;
   responsePayload: unknown | null;
   failureReason: string | null;

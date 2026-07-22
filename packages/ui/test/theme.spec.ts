@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { gssBlue, gssStatusColors, gssTheme } from "../src";
+import {
+  gssBlue,
+  gssLayoutTokens,
+  gssSemanticTokens,
+  gssStatusColors,
+  gssTheme,
+  gssTypographyScale,
+} from "../src";
 
 describe("gssTheme", () => {
   it("uses the normalized GSS primary color scale", () => {
@@ -19,5 +26,13 @@ describe("gssTheme", () => {
       "unconfigured",
       "warning",
     ]);
+  });
+
+  it("freezes semantic, layout and typography tokens for shared pages", () => {
+    expect(gssSemanticTokens.background.light).toBe("#f5f8fb");
+    expect(gssSemanticTokens.surface.dark).toBe("#131e30");
+    expect(gssLayoutTokens.sectionGap).toContain("1.25rem");
+    expect(gssTypographyScale.pageTitle).toContain("1.875rem");
+    expect(gssTheme.other.gssSemanticTokens).toBe(gssSemanticTokens);
   });
 });

@@ -1,7 +1,7 @@
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminDevicesPage } from "../features/devices/AdminDevicesPage";
 import { apiRequest } from "../shared/api/api-client";
@@ -16,16 +16,21 @@ vi.mock("../shared/auth/auth-context", () => ({
         id: "admin-1",
         isSuperAdmin: false,
         name: "Admin",
-        permissions: [
+        permissions: ((globalThis as Record<string, unknown>).__deviceTestPermissions as
+          string[] | undefined) ?? [
           "devices.assign",
           "devices.view",
           "gateways.assign",
           "gateways.create",
+          "gateways.delete",
+          "gateways.update",
           "gateways.view",
           "mqtt-commands.manage",
           "mqtt-commands.view",
           "nodes.assign",
           "nodes.create",
+          "nodes.delete",
+          "nodes.update",
           "nodes.view",
         ],
       },
@@ -38,8 +43,33 @@ vi.mock("../shared/api/api-client", () => ({
 }));
 
 describe("Phase 8 Admin devices provisioning UI", () => {
+  let deletionAllowed = false;
+  let deleteError = "";
+  let bulkOptions: RequestInit | undefined;
+  let provisioningOptions: RequestInit | undefined;
+
+  afterEach(() => {
+    cleanup();
+    delete (globalThis as Record<string, unknown>).__deviceTestPermissions;
+  });
+
   beforeEach(() => {
-    vi.mocked(apiRequest).mockImplementation((_session, path) => {
+    deletionAllowed = false;
+    deleteError = "";
+    bulkOptions = undefined;
+    provisioningOptions = undefined;
+    vi.mocked(apiRequest).mockImplementation((_session, path, options) => {
+      if (path === "/admin/devices/nodes/bulk") {
+        bulkOptions = options;
+      }
+      if (path === "/admin/gateway-commands/register-nodes") {
+        provisioningOptions = options;
+        return Promise.resolve(undefined);
+      }
+      if (path.startsWith("/admin/devices/gateways/") || path.startsWith("/admin/devices/nodes/")) {
+        if (deleteError) return Promise.reject(new Error(deleteError));
+        return Promise.resolve(undefined);
+      }
       if (path === "/admin/devices/gateways") {
         return Promise.resolve([
           {
@@ -65,6 +95,10 @@ describe("Phase 8 Admin devices provisioning UI", () => {
             lastSeenAt: null,
             serialNumber: "GW-001",
             status: "ACTIVE",
+            deletion: {
+              allowed: deletionAllowed,
+              blocker: deletionAllowed ? null : "companyAssignmentHistory",
+            },
           },
         ]);
       }
@@ -94,6 +128,10 @@ describe("Phase 8 Admin devices provisioning UI", () => {
             nodeTypeId: "node-type-1",
             number: "NODE-001",
             status: "ACTIVE",
+            deletion: {
+              allowed: deletionAllowed,
+              blocker: deletionAllowed ? null : "companyAssignmentHistory",
+            },
           },
         ]);
       }
@@ -194,5 +232,120 @@ describe("Phase 8 Admin devices provisioning UI", () => {
     ).toBeTruthy();
     expect(screen.getByText("SENT")).toBeTruthy();
     expect(screen.getByText("NODE-001")).toBeTruthy();
+  });
+
+  it("selects APPEND mode and sends the explicit provisioning mode", async () => {
+    render(
+      <MantineProvider theme={gssTheme}>
+        <AdminDevicesPage />
+      </MantineProvider>,
+    );
+
+    expect(await screen.findByText("Assignment mode")).toBeTruthy();
+    fireEvent.click(screen.getByRole("combobox", { name: "Company" }));
+    fireEvent.click(screen.getAllByText("Company A")[0]!);
+    fireEvent.click(screen.getByRole("combobox", { name: "Building" }));
+    fireEvent.click(screen.getAllByText("Building A")[0]!);
+    fireEvent.click(screen.getByRole("combobox", { name: "Gateway" }));
+    fireEvent.click(screen.getAllByText("GW-001")[0]!);
+    fireEvent.click(screen.getByRole("combobox", { name: "Assignment mode" }));
+    fireEvent.click(await screen.findByText("APPEND — keep current nodes"));
+    fireEvent.click(screen.getByRole("combobox", { name: "Eligible nodes" }));
+    fireEvent.click(await screen.findByText("NODE-001 (Door Node)"));
+    expect(screen.getByText("Current: 0")).toBeTruthy();
+    expect(screen.getByText("Final: 1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Provision nodes" }));
+
+    await waitFor(() => expect(provisioningOptions).toBeDefined());
+    expect(JSON.parse(String(provisioningOptions?.body))).toMatchObject({ mode: "APPEND" });
+  });
+
+  it("renders compact edit/delete actions with server-derived history blockers", async () => {
+    render(
+      <MantineProvider theme={gssTheme}>
+        <AdminDevicesPage />
+      </MantineProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: "Edit gateway" })).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Delete gateway" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "Nodes" }));
+    expect(screen.getByRole("button", { name: "Edit node" })).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Delete node" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Gateways" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit gateway" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Edit gateway" })).toBeTruthy());
+    expect(screen.getByDisplayValue("GW-001")).toBeTruthy();
+  });
+
+  it("shows localized success and conflict feedback for delete mutations", async () => {
+    deletionAllowed = true;
+    render(
+      <MantineProvider theme={gssTheme}>
+        <AdminDevicesPage />
+      </MantineProvider>,
+    );
+
+    const deleteButton = await screen.findByRole("button", { name: "Delete gateway" });
+    fireEvent.click(deleteButton);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete permanently" }));
+    await waitFor(() => expect(screen.getByText("Device deleted.")).toBeTruthy());
+
+    deleteError = "This gateway has business history and cannot be hard-deleted.";
+    fireEvent.click(screen.getByRole("button", { name: "Delete gateway" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete permanently" }));
+    await waitFor(() => expect(screen.getByText(deleteError)).toBeTruthy());
+  });
+
+  it("previews canonical bulk node input and submits one atomic request", async () => {
+    render(
+      <MantineProvider theme={gssTheme}>
+        <AdminDevicesPage />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create node" }));
+    expect(await screen.findByRole("heading", { name: "Create node" })).toBeTruthy();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Node number" }), {
+      target: { value: "100-102, 102" },
+    });
+    expect(await screen.findByText("3 nodes will be created")).toBeTruthy();
+    expect(screen.getByText("100")).toBeTruthy();
+    expect(screen.getByText("102")).toBeTruthy();
+
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Create node" }),
+    );
+    await waitFor(() => {
+      expect(bulkOptions?.method).toBe("POST");
+      expect(JSON.parse(String(bulkOptions?.body))).toEqual({
+        input: "100-102, 102",
+        installedLocation: "",
+        nodeTypeId: "node-type-1",
+      });
+    });
+    expect(await screen.findByText("Device created.")).toBeTruthy();
+  });
+
+  it("hides bulk node creation when nodes.create is not granted", async () => {
+    (globalThis as Record<string, unknown>).__deviceTestPermissions = [
+      "devices.view",
+      "gateways.view",
+      "nodes.view",
+      "mqtt-commands.view",
+    ];
+    render(
+      <MantineProvider theme={gssTheme}>
+        <AdminDevicesPage />
+      </MantineProvider>,
+    );
+
+    await screen.findByText("Device inventory");
+    expect(screen.queryByRole("button", { name: "Create node" })).toBeNull();
   });
 });

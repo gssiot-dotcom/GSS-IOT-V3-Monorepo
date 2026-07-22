@@ -226,3 +226,34 @@ Validation:
 - No hardcoded user-facing strings.
 - Domain terms use one normalized key across UI, API and docs.
 - Korean UI title uses `건설현장`; code/DB may use `constructionSite` if the accepted blueprint naming is updated accordingly.
+
+## 10. Task 12 final responsive and state contract
+
+All active Admin and Company routes use the same shell and page composition contract:
+
+```txt
+PortalLayout
+→ PageHeader (title, subtitle, permitted actions)
+→ scope/filter region where applicable
+→ summary/section surfaces
+→ table, card grid or monitoring workspace
+→ pagination/detail drawer where applicable
+```
+
+Page headers wrap their action group instead of allowing horizontal overflow. Data tables scroll horizontally at narrow widths and expose a mobile card or detail-drawer path for workflows where rows are not usable as a table. Compact icon actions require a tooltip and `aria-label`; destructive actions retain confirmation and mutation feedback.
+
+Every data route must distinguish loading, empty, recoverable error, forbidden and inactive-session states. Realtime routes additionally preserve the last known value and show connecting, reconnecting or offline state as text plus status styling. Partial optional-provider failures stay local to the affected panel where the route already supports that behavior.
+
+The active navigation inventory has a concrete route branch for every permission-filtered shell item; no approved nav item intentionally renders the generic placeholder. Detail URLs remain protected independently from their parent list route. Authenticated full-route browser coverage is intentionally deferred until a deterministic session/bootstrap fixture is available; permission and scope behavior remains covered by the existing focused tests and API E2E suites.
+
+### Accessibility smoke contract
+
+- keyboard focus is visible on links, buttons, form controls, tables and drawers;
+- every meaningful image has alt text;
+- status is never conveyed by color alone;
+- mobile smoke checks verify no horizontal document overflow for the legacy node-type selection surface;
+- login, protected-route redirect and no-placeholder behavior are covered by deterministic Playwright smoke tests.
+
+## 11. Intentionally deferred visual work
+
+Theme switching, full-route authenticated screenshot baselines and production visual-regression tooling remain outside this pre-Phase-14 wave. These are presentation infrastructure decisions, not authorization, scope, MQTT, alarm or reports behavior.

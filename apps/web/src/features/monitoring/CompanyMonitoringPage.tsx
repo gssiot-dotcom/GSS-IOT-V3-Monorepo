@@ -50,13 +50,16 @@ import type { TranslationKey } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
+import { NodeDetailDrawer } from "./components/NodeDetailDrawer";
+import { NodeStateCard } from "./components/NodeStateCard";
+import { MonitoringViewToggle, type MonitoringView } from "./components/MonitoringViewToggle";
 
 type RealtimeStatus = "connected" | "offline" | "reconnecting";
 type StateRow = MonitoringNodeStateRecord & { id: string };
 
-const nodeTypeOrder: CanonicalNodeType[] = ["door_node", "angle_node", "gangform_node"];
+export const nodeTypeOrder: CanonicalNodeType[] = ["door_node", "angle_node", "gangform_node"];
 
-const nodeTypeText: Record<
+export const nodeTypeText: Record<
   CanonicalNodeType,
   { description: TranslationKey; image: string; title: TranslationKey }
 > = {
@@ -182,6 +185,10 @@ export function NodeTypeMonitoringPage() {
   const [alarmLevels, setAlarmLevels] = useState<BuildingAlarmLevelsResponse>();
   const [faultFilters, setFaultFilters] = useState<BuildingFaultFiltersResponse>();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const [view, setView] = useState<MonitoringView>(() => {
+    const stored = window.localStorage.getItem("gss.monitoring.view");
+    return stored === "CARD" ? "CARD" : "TABLE";
+  });
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("offline");
   const [error, setError] = useState(false);
 
@@ -194,7 +201,6 @@ export function NodeTypeMonitoringPage() {
     )
       .then((data) => {
         setResponse(data);
-        setSelectedNodeId((current) => current ?? data.states[0]?.nodeId);
       })
       .catch(() => setError(true));
   }, [buildingId, canonicalNodeType, session]);
@@ -284,59 +290,76 @@ export function NodeTypeMonitoringPage() {
       />
       {rows.length ? (
         <Tabs defaultValue="states">
-          <Tabs.List>
-            <Tabs.Tab value="states">{t("monitoring.latestStates")}</Tabs.Tab>
-            <Tabs.Tab value="history">{t("monitoring.history")}</Tabs.Tab>
-            <Tabs.Tab value="alarm-levels">{t("alarmLevels.title")}</Tabs.Tab>
-            <Tabs.Tab value="fault-filters">{t("alarmLevels.faultFilters")}</Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel pt="md" value="states">
-            <DataTable
-              columns={[
-                {
-                  key: "number",
-                  label: t("monitoring.nodeNumber"),
-                  render: (row) => row.node.number,
-                },
-                {
-                  key: "value",
-                  label: t("monitoring.latestValue"),
-                  render: (row) => renderValues(row.values),
-                },
-                {
-                  key: "status",
-                  label: t("monitoring.latestStatus"),
-                  render: (row) => (
-                    <StatusBadge label={t(statusKey(row.status))} status={row.status} />
-                  ),
-                },
-                {
-                  key: "gateway",
-                  label: t("devices.gateway"),
-                  render: (row) => row.gateway.serialNumber,
-                },
-                {
-                  key: "age",
-                  label: t("monitoring.valueAge"),
-                  render: (row) => formatAge(row.lastSeenAt),
-                },
-                {
-                  key: "history",
-                  label: t("monitoring.history"),
-                  render: (row) => (
-                    <Button
-                      leftSection={<IconHistory size={16} />}
-                      onClick={() => setSelectedNodeId(row.nodeId)}
-                      size="xs"
-                      variant={row.nodeId === selectedNodeId ? "filled" : "light"}
-                    >
-                      {t("monitoring.openHistory")}
-                    </Button>
-                  ),
-                },
-              ]}
-              rows={rows}
+          <Group justify="space-between" wrap="wrap">
+            <Tabs.List>
+              <Tabs.Tab value="states">{t("monitoring.latestStates")}</Tabs.Tab>
+              <Tabs.Tab value="history">{t("monitoring.history")}</Tabs.Tab>
+              <Tabs.Tab value="alarm-levels">{t("alarmLevels.title")}</Tabs.Tab>
+              <Tabs.Tab value="fault-filters">{t("alarmLevels.faultFilters")}</Tabs.Tab>
+            </Tabs.List>
+            <MonitoringViewToggle
+              onChange={(next) => {
+                setView(next);
+                window.localStorage.setItem("gss.monitoring.view", next);
+              }}
+              value={view}
             />
+          </Group>
+          <Tabs.Panel pt="md" value="states">
+            {view === "CARD" ? (
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+                {rows.map((row) => (
+                  <NodeStateCard key={row.nodeId} onOpen={setSelectedNodeId} state={row} />
+                ))}
+              </SimpleGrid>
+            ) : (
+              <DataTable
+                columns={[
+                  {
+                    key: "number",
+                    label: t("monitoring.nodeNumber"),
+                    render: (row) => row.node.number,
+                  },
+                  {
+                    key: "value",
+                    label: t("monitoring.latestValue"),
+                    render: (row) => renderValues(row.values),
+                  },
+                  {
+                    key: "status",
+                    label: t("monitoring.latestStatus"),
+                    render: (row) => (
+                      <StatusBadge label={t(statusKey(row.status))} status={row.status} />
+                    ),
+                  },
+                  {
+                    key: "gateway",
+                    label: t("devices.gateway"),
+                    render: (row) => row.gateway.serialNumber,
+                  },
+                  {
+                    key: "age",
+                    label: t("monitoring.valueAge"),
+                    render: (row) => formatAge(row.lastSeenAt),
+                  },
+                  {
+                    key: "history",
+                    label: t("monitoring.history"),
+                    render: (row) => (
+                      <Button
+                        leftSection={<IconHistory size={16} />}
+                        onClick={() => setSelectedNodeId(row.nodeId)}
+                        size="xs"
+                        variant={row.nodeId === selectedNodeId ? "filled" : "light"}
+                      >
+                        {t("monitoring.openHistory")}
+                      </Button>
+                    ),
+                  },
+                ]}
+                rows={rows}
+              />
+            )}
           </Tabs.Panel>
           <Tabs.Panel pt="md" value="history">
             <HistoryTable history={history} />
@@ -364,6 +387,15 @@ export function NodeTypeMonitoringPage() {
       <Text c="dimmed" size="sm">
         {tf("monitoring.retention", { days: response.historyRetentionDays })}
       </Text>
+      <NodeDetailDrawer
+        history={history}
+        node={rows.find((row) => row.nodeId === selectedNodeId)}
+        nodeType={canonicalNodeType}
+        onClose={() => setSelectedNodeId(undefined)}
+        thresholds={alarmLevels?.configurations.find(
+          (item) => item.nodeType.key === canonicalNodeType,
+        )}
+      />
     </Stack>
   );
 }
@@ -854,7 +886,7 @@ function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "-";
 }
 
-function upsertState(
+export function upsertState(
   states: MonitoringNodeStateRecord[],
   next: MonitoringNodeStateRecord,
 ): MonitoringNodeStateRecord[] {
@@ -863,7 +895,7 @@ function upsertState(
   return states.map((state, currentIndex) => (currentIndex === index ? next : state));
 }
 
-function isCanonicalNodeType(value: string | undefined): value is CanonicalNodeType {
+export function isCanonicalNodeType(value: string | undefined): value is CanonicalNodeType {
   return value === "door_node" || value === "angle_node" || value === "gangform_node";
 }
 

@@ -40,6 +40,7 @@ describe("RBAC e2e", () => {
   let prisma: PrismaService;
   let sameCompanyOtherBuildingId: string;
   let otherCompanyBuildingId: string;
+  let companySettingsViewPermissionId: string;
   const localhostOrigin = "http://localhost:5173";
   const loopbackOrigin = "http://127.0.0.1:5173";
 
@@ -97,28 +98,73 @@ describe("RBAC e2e", () => {
     await prisma.gssRole.deleteMany();
     await prisma.permission.deleteMany();
 
-    const [dashboardPermission, monitoringPermission] = await Promise.all([
+    const [
+      dashboardPermission,
+      monitoringPermission,
+      companySettingsViewPermission,
+      companySettingsManagePermission,
+    ] = await Promise.all([
       prisma.permission.create({
         data: { action: "view", key: "dashboard.view", module: "dashboard", scopeType: "BOTH" },
       }),
       prisma.permission.create({
         data: { action: "view", key: "monitoring.view", module: "monitoring", scopeType: "BOTH" },
       }),
+      prisma.permission.create({
+        data: {
+          action: "view",
+          key: "settings.company.view",
+          module: "settings",
+          scopeType: "COMPANY",
+        },
+      }),
+      prisma.permission.create({
+        data: {
+          action: "manage",
+          key: "settings.company.manage",
+          module: "settings",
+          scopeType: "COMPANY",
+        },
+      }),
     ]);
-    const [gssSuperRole, gssNoPermissionRole, scopedCompanyRole, noPermissionCompanyRole] =
-      await Promise.all([
-        prisma.gssRole.create({ data: { isSuperAdmin: true, key: "super", name: "Super" } }),
-        prisma.gssRole.create({ data: { key: "none", name: "None" } }),
-        prisma.companyRole.create({
-          data: {
-            isCompanyOwnerRole: false,
-            key: "scoped",
-            name: "Scoped",
-            permissions: { create: { permissionId: monitoringPermission.id } },
+    companySettingsViewPermissionId = companySettingsViewPermission.id;
+    const [
+      gssSuperRole,
+      gssNoPermissionRole,
+      scopedCompanyRole,
+      settingsCompanyRole,
+      noPermissionCompanyRole,
+    ] = await Promise.all([
+      prisma.gssRole.create({ data: { isSuperAdmin: true, key: "super", name: "Super" } }),
+      prisma.gssRole.create({ data: { key: "none", name: "None" } }),
+      prisma.companyRole.create({
+        data: {
+          isCompanyOwnerRole: false,
+          key: "scoped",
+          name: "Scoped",
+          permissions: {
+            create: [
+              { permissionId: dashboardPermission.id },
+              { permissionId: monitoringPermission.id },
+              { permissionId: companySettingsViewPermission.id },
+            ],
           },
-        }),
-        prisma.companyRole.create({ data: { key: "company-none", name: "Company None" } }),
-      ]);
+        },
+      }),
+      prisma.companyRole.create({
+        data: {
+          key: "company-settings-manager",
+          name: "Company Settings Manager",
+          permissions: {
+            create: [
+              { permissionId: companySettingsViewPermission.id },
+              { permissionId: companySettingsManagePermission.id },
+            ],
+          },
+        },
+      }),
+      prisma.companyRole.create({ data: { key: "company-none", name: "Company None" } }),
+    ]);
     const passwordHash = await hash("test-password", 12);
     await prisma.gssAdminUser.create({
       data: { email: "super@example.com", name: "Super", passwordHash, roleId: gssSuperRole.id },
@@ -164,6 +210,15 @@ describe("RBAC e2e", () => {
     });
     await prisma.companyUserBuildingAccess.create({
       data: { buildingId: allowedBuilding.id, companyUserId: scopedUser.id },
+    });
+    await prisma.companyUser.create({
+      data: {
+        companyId: companyA.id,
+        email: "settings-manager@example.com",
+        name: "Settings Manager",
+        passwordHash,
+        roleId: settingsCompanyRole.id,
+      },
     });
     await prisma.companyUser.create({
       data: {
@@ -240,6 +295,13 @@ describe("RBAC e2e", () => {
 
     expect(loginResponse.headers["set-cookie"]).toBeUndefined();
     expect(loginResponse.body.context).toBe("gss-admin");
+    expect(loginResponse.body.user).toMatchObject({
+      email: "super@example.com",
+      isActive: true,
+      role: { key: "super", name: "Super", isSuperAdmin: true },
+    });
+    expect(loginResponse.body.user.passwordHash).toBeUndefined();
+    expect(loginResponse.body.user.tokenVersion).toBeUndefined();
 
     await request(server)
       .get("/auth/gss/me")
@@ -260,6 +322,14 @@ describe("RBAC e2e", () => {
       .expect("Access-Control-Allow-Origin", loopbackOrigin);
 
     expect(loginResponse.body.context).toBe("company-user");
+    expect(loginResponse.body.user).toMatchObject({
+      company: { id: expect.any(String), name: expect.any(String) },
+      email: "scoped@example.com",
+      isActive: true,
+      role: { key: expect.any(String), name: expect.any(String), isSuperAdmin: false },
+    });
+    expect(loginResponse.body.user.passwordHash).toBeUndefined();
+    expect(loginResponse.body.user.tokenVersion).toBeUndefined();
 
     await request(server)
       .get("/auth/company/me")
@@ -267,6 +337,140 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${loginResponse.body.accessToken as string}`)
       .expect(200)
       .expect("Access-Control-Allow-Origin", loopbackOrigin);
+  });
+
+  it("returns bounded permission-aware dashboard summaries", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const adminToken = await login("/auth/gss/login", "super@example.com");
+    const adminSummary = await request(server)
+      .get("/admin/dashboard/summary?range=30d")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(adminSummary.body.range.key).toBe("30d");
+    expect(adminSummary.body.kpis.activeCompanies).toBeGreaterThan(0);
+    expect(adminSummary.body.gateways).toBeDefined();
+
+    await request(server)
+      .get("/admin/dashboard/summary?range=365d")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(400);
+
+    const companyToken = await login("/auth/company/login", "scoped@example.com");
+    const companySummary = await request(server)
+      .get("/company/dashboard/summary?range=7d")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(200);
+    expect(companySummary.body.kpis.activeBuildings).toBe(1);
+
+    const noPermissionToken = await login("/auth/company/login", "company-none@example.com");
+    await request(server)
+      .get("/company/dashboard/summary")
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .expect(403);
+  });
+
+  it("enforces Task 06 GSS roles, redacted system settings and Company settings separation", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const adminToken = await login("/auth/gss/login", "super@example.com");
+    const roles = await request(server)
+      .get("/admin/roles")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(
+      roles.body.some((role: { key: string; isSuperAdmin: boolean }) => role.isSuperAdmin),
+    ).toBe(true);
+
+    const permissions = await request(server)
+      .get("/admin/roles/permissions")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(
+      permissions.body.every(
+        (permission: { scopeType: string }) => permission.scopeType !== "COMPANY",
+      ),
+    ).toBe(true);
+
+    const gssOnlyToken = await login("/auth/gss/login", "gss-none@example.com");
+    await request(server)
+      .get("/admin/roles")
+      .set("Authorization", `Bearer ${gssOnlyToken}`)
+      .expect(403);
+
+    await request(server)
+      .post("/admin/roles")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        key: "bad-company-role",
+        name: "Bad Company Role",
+        permissionIds: [companySettingsViewPermissionId],
+      })
+      .expect(400);
+    const customRole = await request(server)
+      .post("/admin/roles")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ key: "settings-auditor", name: "Settings Auditor", permissionIds: [] })
+      .expect(201);
+    await request(server)
+      .patch(`/admin/roles/${customRole.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Settings Auditor Updated", permissionIds: [] })
+      .expect(200);
+    await request(server)
+      .delete(`/admin/roles/${customRole.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+
+    const superRole = roles.body.find((role: { isSuperAdmin: boolean }) => role.isSuperAdmin);
+    await request(server)
+      .patch(`/admin/roles/${superRole.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Unsafe rename" })
+      .expect(409);
+    const inUseRole = roles.body.find((role: { key: string }) => role.key === "none");
+    await request(server)
+      .delete(`/admin/roles/${inUseRole.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(409);
+    expect(
+      await prisma.auditLog.count({ where: { entityType: "GssRole" } }),
+    ).toBeGreaterThanOrEqual(3);
+
+    const systemSettings = await request(server)
+      .get("/admin/settings/system")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(systemSettings.body.controls.readOnly).toBe(true);
+    expect(systemSettings.body.mqtt.brokerHost).toBeUndefined();
+    expect(systemSettings.body.mqtt.clientId).toBeUndefined();
+    expect(JSON.stringify(systemSettings.body)).not.toContain("GSS_SUPER_ADMIN_PASSWORD");
+
+    const companyViewToken = await login("/auth/company/login", "scoped@example.com");
+    const companySettings = await request(server)
+      .get("/company/settings")
+      .set("Authorization", `Bearer ${companyViewToken}`)
+      .expect(200);
+    expect(companySettings.body.name).toBe("Company A");
+    await request(server)
+      .patch("/company/settings")
+      .set("Authorization", `Bearer ${companyViewToken}`)
+      .send({ name: "Tampered", companyId: "foreign" })
+      .expect(403);
+
+    const companyManageToken = await login("/auth/company/login", "settings-manager@example.com");
+    await request(server)
+      .patch("/company/settings")
+      .set("Authorization", `Bearer ${companyManageToken}`)
+      .send({ email: "settings-manager@company-a.example", phone: "+82-2-0000-0000" })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.email).toBe("settings-manager@company-a.example");
+        expect(body.name).toBe("Company A");
+        expect(body.status).toBe("ACTIVE");
+      });
+    expect(
+      await prisma.auditLog.count({ where: { action: "company-settings.update" } }),
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it("allows a GSS super admin without explicit permission rows", async () => {

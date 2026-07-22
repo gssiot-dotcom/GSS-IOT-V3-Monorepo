@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/test/**/*.spec.ts", "src/test/**/*.spec.tsx"],
+    fileParallelism: false,
     pool: "threads",
     setupFiles: ["src/test/setup.ts"],
   },

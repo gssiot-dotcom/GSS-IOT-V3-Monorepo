@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from "class-validator";
+import { IsEnum, IsOptional, IsString, IsUUID } from "class-validator";
 import { DeviceLifecycleStatus, GatewayType } from "@prisma/client";
 
 export class CreateGatewayDto {
@@ -37,10 +37,24 @@ export class CreateNodeDto {
   installedLocation?: string;
 
   @IsString()
+  @IsUUID()
   nodeTypeId!: string;
 
   @IsString()
   number!: string;
+}
+
+export class BulkCreateNodesDto {
+  @IsOptional()
+  @IsString()
+  installedLocation?: string;
+
+  @IsString()
+  input!: string;
+
+  @IsString()
+  @IsUUID()
+  nodeTypeId!: string;
 }
 
 export class UpdateNodeDto {

@@ -1,0 +1,17 @@
+:root {
+  color-scheme: light;
+}
+
+html {
+  min-width: 320px;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--mantine-color-gss-6);
+  outline-offset: 2px;
+}

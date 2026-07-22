@@ -2,35 +2,38 @@ import {
   ActionIcon,
   AppShell,
   Avatar,
-  Badge,
   Burger,
-  Button,
   Group,
+  Menu,
   Indicator,
   NavLink,
+  ScrollArea,
   Stack,
   Text,
   Title,
   Tooltip,
+  UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconBell, IconLogout } from "@tabler/icons-react";
+import { IconBell, IconBuilding, IconKey, IconLogout, IconUserCircle } from "@tabler/icons-react";
 import type { AuthContext } from "@gss-iot/contracts";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 
 import { readWebEnv } from "../../app/env";
-import { t } from "../../app/i18n";
+import { t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { filterSidebarItems } from "../../shared/rbac/filter-sidebar-items";
 import { hasPermission } from "../../shared/rbac/has-permission";
-import { adminNavItems, companyNavItems, routeTitles } from "./navigation";
+import { RealtimeStatusBadge, type RealtimeConnectionState } from "@gss-iot/ui";
+import { adminNavItems, companyNavItems, routeTitles, type ShellNavItem } from "./navigation";
 
 export function PortalLayout({ children, context }: { children: ReactNode; context: AuthContext }) {
-  const [opened, { toggle }] = useDisclosure();
+  const [opened, { close, toggle }] = useDisclosure();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("idle");
   const { logout, session } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -41,12 +44,25 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
     allItems.find((item) => location.pathname.startsWith(`${item.path}/`))?.titleKey;
   const shellTitle = context === "gss-admin" ? t("shell.admin") : t("shell.company");
   const canViewNotifications = Boolean(session && hasPermission(session, "notifications.view"));
+  const sections = items.reduce<
+    Array<{ key: string; titleKey: ShellNavItem["sectionKey"]; items: typeof items }>
+  >((result, item) => {
+    const section = result.find((entry) => entry.key === item.sectionKey);
+    if (section) {
+      section.items.push(item);
+    } else {
+      result.push({ key: item.sectionKey, titleKey: item.sectionKey, items: [item] });
+    }
+    return result;
+  }, []);
 
   useEffect(() => {
     if (!session || !canViewNotifications) {
       setUnreadCount(0);
+      setRealtimeState("idle");
       return;
     }
+    setRealtimeState("connecting");
     const basePath = context === "gss-admin" ? "/admin" : "/company";
     let cancelled = false;
     void apiRequest<{ unreadCount: number }>(session, `${basePath}/notifications/unread-count`)
@@ -61,8 +77,13 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
       transports: ["websocket"],
     });
     socket.on("connect", () => {
+      setRealtimeState("connected");
       socket.emit("notifications:join");
     });
+    socket.on("disconnect", () => setRealtimeState("offline"));
+    socket.on("connect_error", () => setRealtimeState("offline"));
+    socket.io.on("reconnect_attempt", () => setRealtimeState("reconnecting"));
+    socket.io.on("reconnect", () => setRealtimeState("connected"));
     socket.on("notifications:update", (event: { unreadCount?: number }) => {
       if (typeof event.unreadCount === "number") {
         setUnreadCount(event.unreadCount);
@@ -70,6 +91,12 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
     });
     return () => {
       cancelled = true;
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("connect_error");
+      socket.off("notifications:update");
+      socket.io.off("reconnect_attempt");
+      socket.io.off("reconnect");
       socket.close();
     };
   }, [canViewNotifications, context, session]);
@@ -81,9 +108,15 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
       padding="md"
     >
       <AppShell.Header>
-        <Group h="100%" justify="space-between" px="md">
+        <Group h="100%" justify="space-between" px="md" wrap="wrap">
           <Group gap="sm">
-            <Burger hiddenFrom="sm" onClick={toggle} opened={opened} size="sm" />
+            <Burger
+              aria-label={t("shell.toggleNavigation")}
+              hiddenFrom="sm"
+              onClick={toggle}
+              opened={opened}
+              size="sm"
+            />
             <Stack gap={0}>
               <Title order={3}>{shellTitle}</Title>
               <Text c="dimmed" size="xs">
@@ -92,67 +125,122 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
             </Stack>
           </Group>
           <Group gap="xs">
-            <Badge color="yellow" variant="light">
-              {t("shell.reconnecting")}
-            </Badge>
-            <Tooltip label={t("app.notifications")}>
-              <Indicator disabled={!unreadCount} inline label={unreadCount} size={16}>
-                <ActionIcon
-                  aria-label={t("app.notifications")}
-                  disabled={!canViewNotifications}
-                  onClick={() =>
-                    navigate(
-                      context === "gss-admin" ? "/admin/notifications" : "/company/notifications",
-                    )
-                  }
+            {realtimeState !== "idle" && realtimeState !== "connected" ? (
+              <RealtimeStatusBadge
+                label={
+                  realtimeState === "connecting"
+                    ? t("shell.realtimeConnecting")
+                    : realtimeState === "reconnecting"
+                      ? t("shell.realtimeReconnecting")
+                      : t("shell.realtimeOffline")
+                }
+                status={realtimeState}
+              />
+            ) : null}
+            {canViewNotifications ? (
+              <Tooltip label={t("app.notifications")}>
+                <Indicator disabled={!unreadCount} inline label={unreadCount} size={16}>
+                  <ActionIcon
+                    aria-label={t("app.notifications")}
+                    onClick={() =>
+                      navigate(
+                        context === "gss-admin" ? "/admin/notifications" : "/company/notifications",
+                      )
+                    }
+                  >
+                    <IconBell size={18} />
+                  </ActionIcon>
+                </Indicator>
+              </Tooltip>
+            ) : null}
+            <Menu position="bottom-end" shadow="md" withinPortal>
+              <Menu.Target>
+                <UnstyledButton aria-label={t("shell.accountMenu")}>
+                  <Group gap="xs" wrap="nowrap">
+                    <Avatar color="gss" size="sm">
+                      {session?.user.name.slice(0, 1).toUpperCase()}
+                    </Avatar>
+                    <Stack gap={0} visibleFrom="sm">
+                      <Text fw={600} size="sm">
+                        {session?.user.name}
+                      </Text>
+                      <Text c="dimmed" size="xs">
+                        {session?.user.email}
+                      </Text>
+                    </Stack>
+                  </Group>
+                </UnstyledButton>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>{session?.user.name}</Menu.Label>
+                <Menu.Item
+                  leftSection={<IconUserCircle size={16} />}
+                  component={Link}
+                  to={context === "gss-admin" ? "/admin/profile" : "/company/profile"}
                 >
-                  <IconBell size={18} />
-                </ActionIcon>
-              </Indicator>
-            </Tooltip>
-            <Group gap="xs" visibleFrom="sm">
-              <Avatar color="gss" size="sm">
-                {session?.user.name.slice(0, 1)}
-              </Avatar>
-              <Text fw={500} size="sm">
-                {session?.user.name}
-              </Text>
-            </Group>
-            <Button
-              leftSection={<IconLogout size={16} />}
-              onClick={async () => {
-                await logout();
-                void navigate("/login");
-              }}
-              variant="subtle"
-            >
-              {t("auth.signOut")}
-            </Button>
+                  {t("profile.open")}
+                </Menu.Item>
+                <Menu.Item leftSection={<IconKey size={16} />}>
+                  {tf("welcome.permissionCount", { count: session?.user.permissions.length ?? 0 })}
+                </Menu.Item>
+                {session?.user.company ? (
+                  <Menu.Item leftSection={<IconBuilding size={16} />}>
+                    {session.user.company.name}
+                  </Menu.Item>
+                ) : null}
+                <Menu.Label>{session?.user.role?.name ?? t("welcome.roleUnavailable")}</Menu.Label>
+                {session?.user.isSuperAdmin ? (
+                  <Menu.Label>{t("welcome.superAdmin")}</Menu.Label>
+                ) : null}
+                <Menu.Divider />
+                <Menu.Item
+                  color="red"
+                  leftSection={<IconLogout size={16} />}
+                  onClick={async () => {
+                    await logout();
+                    void navigate("/login");
+                  }}
+                >
+                  {t("auth.signOut")}
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
           </Group>
         </Group>
       </AppShell.Header>
-      <AppShell.Navbar p="sm">
-        <Stack gap={4}>
-          {items.map((item) =>
-            (() => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  active={
-                    location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
-                  }
-                  component={Link}
-                  key={item.path}
-                  label={t(item.titleKey)}
-                  leftSection={<Icon size={17} />}
-                  to={item.path}
-                />
-              );
-            })(),
-          )}
-        </Stack>
+      <AppShell.Navbar style={{ backgroundColor: "var(--mantine-color-body)" }}>
+        <ScrollArea px="sm" py="md" type="auto">
+          <Stack gap="lg">
+            {sections.map((section) => (
+              <Stack gap={4} key={section.key}>
+                <Text c="dimmed" fw={700} px="xs" size="xs" tt="uppercase">
+                  {t(section.titleKey)}
+                </Text>
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      active={
+                        location.pathname === item.path ||
+                        location.pathname.startsWith(`${item.path}/`)
+                      }
+                      component={Link}
+                      key={item.path}
+                      label={t(item.titleKey)}
+                      leftSection={<Icon size={17} />}
+                      onClick={close}
+                      to={item.path}
+                    />
+                  );
+                })}
+              </Stack>
+            ))}
+          </Stack>
+        </ScrollArea>
       </AppShell.Navbar>
-      <AppShell.Main>{children}</AppShell.Main>
+      <AppShell.Main style={{ backgroundColor: "var(--mantine-color-body)" }}>
+        {children}
+      </AppShell.Main>
     </AppShell>
   );
 }

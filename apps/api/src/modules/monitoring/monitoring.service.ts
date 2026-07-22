@@ -4,7 +4,12 @@ import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } fro
 import type { OnModuleInit } from "@nestjs/common";
 import { AssignmentStatus, DeviceLifecycleStatus, Prisma } from "@prisma/client";
 import type { CanonicalNodeType } from "@gss-iot/contracts";
-import type { ClassificationEvidence, MonitoringStatus } from "@gss-iot/contracts";
+import type {
+  AdminMonitoringOptionsRecord,
+  AdminMonitoringSummaryRecord,
+  ClassificationEvidence,
+  MonitoringStatus,
+} from "@gss-iot/contracts";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
 import { AUTH_CONTEXT } from "../../common/auth.types";
@@ -120,6 +125,173 @@ export class MonitoringService implements OnModuleInit {
     metadata: MqttSensorMessageMetadata = {},
   ): void {
     this.mqtt.simulateSensorMessage(topic, payload, metadata);
+  }
+
+  async listAdminOptions(auth: AuthTokenPayload): Promise<AdminMonitoringOptionsRecord> {
+    await this.assertAdminMonitoringAccess(auth);
+    const [companies, areas, buildings] = await Promise.all([
+      this.prisma.company.findMany({
+        orderBy: { name: "asc" },
+        select: {
+          address: true,
+          code: true,
+          email: true,
+          id: true,
+          name: true,
+          phone: true,
+          status: true,
+        },
+      }),
+      this.prisma.constructionArea.findMany({
+        orderBy: { name: "asc" },
+        select: {
+          address: true,
+          companyId: true,
+          description: true,
+          id: true,
+          name: true,
+          status: true,
+        },
+      }),
+      this.prisma.constructionBuilding.findMany({
+        orderBy: { title: "asc" },
+        select: {
+          address: true,
+          areaId: true,
+          buildingType: true,
+          companyId: true,
+          id: true,
+          number: true,
+          status: true,
+          title: true,
+        },
+      }),
+    ]);
+    return { areas, buildings, companies };
+  }
+
+  async listAdminSummary(
+    auth: AuthTokenPayload,
+    filters: { areaId?: string; buildingId?: string; companyId?: string },
+  ): Promise<AdminMonitoringSummaryRecord> {
+    await this.assertAdminMonitoringAccess(auth);
+    const stateWhere: Prisma.LatestNodeStateWhereInput = {
+      ...(filters.areaId ? { areaId: filters.areaId } : {}),
+      ...(filters.buildingId ? { buildingId: filters.buildingId } : {}),
+      ...(filters.companyId ? { companyId: filters.companyId } : {}),
+    };
+    const buildingWhere: Prisma.ConstructionBuildingWhereInput = {
+      ...(filters.areaId ? { areaId: filters.areaId } : {}),
+      ...(filters.buildingId ? { id: filters.buildingId } : {}),
+      ...(filters.companyId ? { companyId: filters.companyId } : {}),
+    };
+    const now = new Date();
+    const staleBefore = new Date(now.getTime() - 5 * 60 * 1000);
+    const gatewayWhere: Prisma.GatewayWhereInput = {
+      ...(filters.companyId || filters.areaId || filters.buildingId
+        ? {
+            buildingAssignments: {
+              some: {
+                status: AssignmentStatus.ACTIVE,
+                building: buildingWhere,
+              },
+            },
+          }
+        : {}),
+    };
+    const [
+      states,
+      groupedBuildings,
+      buildings,
+      gateways,
+      staleGateways,
+      offlineGateways,
+      recentNodes,
+    ] = await Promise.all([
+      this.prisma.latestNodeState.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+        where: stateWhere,
+      }),
+      this.prisma.latestNodeState.groupBy({
+        by: ["buildingId", "status"],
+        _count: { _all: true },
+        where: stateWhere,
+      }),
+      this.prisma.constructionBuilding.findMany({
+        orderBy: { title: "asc" },
+        select: {
+          address: true,
+          areaId: true,
+          buildingType: true,
+          companyId: true,
+          id: true,
+          number: true,
+          status: true,
+          title: true,
+        },
+        where: buildingWhere,
+      }),
+      this.prisma.gateway.count({ where: gatewayWhere }),
+      this.prisma.gateway.count({
+        where: {
+          ...gatewayWhere,
+          lastSeenAt: { lt: staleBefore },
+          status: DeviceLifecycleStatus.ACTIVE,
+        },
+      }),
+      this.prisma.gateway.count({
+        where: { ...gatewayWhere, status: { not: DeviceLifecycleStatus.ACTIVE } },
+      }),
+      this.prisma.latestNodeState.findMany({
+        orderBy: { updatedAt: "desc" },
+        select: latestStateSelect,
+        take: 8,
+        where: stateWhere,
+      }),
+    ]);
+    const severityDistribution = {
+      caution: 0,
+      danger: 0,
+      offline: 0,
+      safe: 0,
+      unconfigured: 0,
+      warning: 0,
+    } as Record<MonitoringStatus, number>;
+    for (const row of states)
+      severityDistribution[row.status.toLowerCase() as MonitoringStatus] = row._count._all;
+    const buildingCounts = new Map<
+      string,
+      { danger: number; offline: number; total: number; warning: number }
+    >();
+    for (const row of groupedBuildings) {
+      const count = buildingCounts.get(row.buildingId) ?? {
+        danger: 0,
+        offline: 0,
+        total: 0,
+        warning: 0,
+      };
+      const status = row.status.toLowerCase();
+      count.total += row._count._all;
+      if (status === "danger") count.danger += row._count._all;
+      if (status === "warning") count.warning += row._count._all;
+      if (status === "offline") count.offline += row._count._all;
+      buildingCounts.set(row.buildingId, count);
+    }
+    return {
+      buildings: buildings.map((building) => ({
+        building,
+        ...(buildingCounts.get(building.id) ?? { danger: 0, offline: 0, total: 0, warning: 0 }),
+      })),
+      gateways: {
+        offline: offlineGateways,
+        online: Math.max(0, gateways - staleGateways - offlineGateways),
+        stale: staleGateways,
+        total: gateways,
+      },
+      recentNodes: recentNodes.map(mapLatestState),
+      severityDistribution,
+    };
   }
 
   async persistSensorReading(
@@ -662,6 +834,20 @@ export class MonitoringService implements OnModuleInit {
       !(await this.hasCompanyBuildingScope(user.id, user.companyId, user.roleId, buildingId))
     ) {
       throw new ForbiddenException("The requested resource is outside the assigned scope.");
+    }
+  }
+
+  private async assertAdminMonitoringAccess(auth: AuthTokenPayload): Promise<void> {
+    if (auth.context !== AUTH_CONTEXT.gssAdmin) {
+      throw new ForbiddenException("The GSS Admin monitoring context is required.");
+    }
+    const permitted = await this.permissions.hasPermission(
+      auth.context,
+      auth.sub,
+      "monitoring.view",
+    );
+    if (!permitted) {
+      throw new ForbiddenException("The monitoring permission is missing.");
     }
   }
 

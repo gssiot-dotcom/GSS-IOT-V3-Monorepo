@@ -13,11 +13,13 @@ import type { AuthTokenPayload } from "../../common/auth.types";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import type {
+  BulkCreateNodesDto,
   CreateGatewayDto,
   CreateNodeDto,
   UpdateGatewayDto,
   UpdateNodeDto,
 } from "./dto/devices.dto";
+import { parseNodeNumberInput } from "@gss-iot/contracts";
 
 type PrismaExecutor = PrismaService | Prisma.TransactionClient;
 
@@ -109,10 +111,19 @@ export class DevicesService {
   }
 
   listGateways() {
-    return this.prisma.gateway.findMany({
-      orderBy: { serialNumber: "asc" },
-      select: gatewaySelect,
-    });
+    return this.prisma.gateway
+      .findMany({
+        orderBy: { serialNumber: "asc" },
+        select: gatewaySelect,
+      })
+      .then((gateways) =>
+        Promise.all(
+          gateways.map(async (gateway) => ({
+            ...gateway,
+            deletion: await this.getGatewayDeletionCapability(gateway.id),
+          })),
+        ),
+      );
   }
 
   createGateway(actor: AuthTokenPayload, dto: CreateGatewayDto) {
@@ -155,8 +166,49 @@ export class DevicesService {
     });
   }
 
+  async deleteGateway(actor: AuthTokenPayload, gatewayId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const gateway = await tx.gateway.findUnique({
+        where: { id: gatewayId },
+        select: { id: true, serialNumber: true },
+      });
+      if (!gateway) throw new NotFoundException("The gateway was not found.");
+
+      const deletion = await this.getGatewayDeletionCapability(gatewayId, tx);
+      if (!deletion.allowed) {
+        throw new ConflictException({
+          blocker: deletion.blocker,
+          code: "DEVICE_HISTORY_EXISTS",
+          lifecycle: "INACTIVE_OR_RETIRED",
+          message: "This gateway has business history and cannot be hard-deleted.",
+        });
+      }
+
+      await tx.gateway.delete({ where: { id: gatewayId } });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "gateway.delete",
+          entityId: gateway.id,
+          entityType: "Gateway",
+          oldValue: gateway,
+        },
+        tx,
+      );
+    });
+  }
+
   listNodes() {
-    return this.prisma.node.findMany({ orderBy: { number: "asc" }, select: nodeSelect });
+    return this.prisma.node
+      .findMany({ orderBy: { number: "asc" }, select: nodeSelect })
+      .then((nodes) =>
+        Promise.all(
+          nodes.map(async (node) => ({
+            ...node,
+            deletion: await this.getNodeDeletionCapability(node.id),
+          })),
+        ),
+      );
   }
 
   async listProvisioningOptions() {
@@ -181,6 +233,72 @@ export class DevicesService {
     });
   }
 
+  async bulkCreateNodes(actor: AuthTokenPayload, dto: BulkCreateNodesDto) {
+    const parsed = parseNodeNumberInput(dto.input);
+    if (parsed.errors.length || !parsed.numbers.length) {
+      throw new BadRequestException({
+        code: "INVALID_NODE_NUMBER_INPUT",
+        errors: parsed.errors,
+        invalidSegments: parsed.invalidSegments,
+        message:
+          "Enter positive safe integers using single values, ranges or comma-separated lists.",
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.getNodeTypeOrThrow(dto.nodeTypeId, tx);
+      const existingNodes = await tx.node.findMany({ select: { id: true, number: true } });
+      const existingByCanonicalNumber = new Map<string, string>();
+      for (const existingNode of existingNodes) {
+        const existingNumber = parseNodeNumberInput(existingNode.number, 1);
+        if (!existingNumber.errors.length && existingNumber.numbers[0]) {
+          existingByCanonicalNumber.set(existingNumber.numbers[0], existingNode.id);
+        }
+      }
+      const conflicts = parsed.numbers.filter((number) => existingByCanonicalNumber.has(number));
+      if (conflicts.length) {
+        throw new ConflictException({
+          code: "NODE_NUMBER_CONFLICT",
+          conflicts,
+          message: `Node numbers already exist: ${conflicts.join(", ")}.`,
+        });
+      }
+
+      const createdNodes = [];
+      for (const number of parsed.numbers) {
+        createdNodes.push(
+          await tx.node.create({
+            data: {
+              installedLocation: dto.installedLocation,
+              nodeTypeId: dto.nodeTypeId,
+              number,
+            },
+            select: nodeSelect,
+          }),
+        );
+      }
+      await this.auditLog.record(
+        actor,
+        {
+          action: "node.bulk_create",
+          entityId: dto.nodeTypeId,
+          entityType: "NodeBatch",
+          newValue: {
+            createdNodeIds: createdNodes.map((node) => node.id),
+            numbers: createdNodes.map((node) => node.number),
+            nodeTypeId: dto.nodeTypeId,
+          },
+        },
+        tx,
+      );
+      return {
+        created: createdNodes,
+        createdCount: createdNodes.length,
+        numbers: createdNodes.map((node) => node.number),
+      };
+    });
+  }
+
   updateNode(actor: AuthTokenPayload, nodeId: string, dto: UpdateNodeDto) {
     return this.prisma.$transaction(async (tx) => {
       const oldNode = await this.getNodeOrThrow(nodeId, tx);
@@ -200,6 +318,38 @@ export class DevicesService {
         tx,
       );
       return node;
+    });
+  }
+
+  async deleteNode(actor: AuthTokenPayload, nodeId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const node = await tx.node.findUnique({
+        where: { id: nodeId },
+        select: { id: true, number: true },
+      });
+      if (!node) throw new NotFoundException("The node was not found.");
+
+      const deletion = await this.getNodeDeletionCapability(nodeId, tx);
+      if (!deletion.allowed) {
+        throw new ConflictException({
+          blocker: deletion.blocker,
+          code: "DEVICE_HISTORY_EXISTS",
+          lifecycle: "INACTIVE_OR_RETIRED",
+          message: "This node has business history and cannot be hard-deleted.",
+        });
+      }
+
+      await tx.node.delete({ where: { id: nodeId } });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "node.delete",
+          entityId: node.id,
+          entityType: "Node",
+          oldValue: node,
+        },
+        tx,
+      );
     });
   }
 
@@ -566,4 +716,99 @@ export class DevicesService {
       throw new NotFoundException("The construction building was not found.");
     }
   }
+
+  private async getGatewayDeletionCapability(
+    gatewayId: string,
+    executor: PrismaExecutor = this.prisma,
+  ) {
+    const [
+      companyAssignments,
+      buildingAssignments,
+      nodeAssignments,
+      commands,
+      provisioningRequests,
+      alarmEvents,
+      alarmLevelApplications,
+      faultFilterDesiredStates,
+      faultFilterAppliedStates,
+      latestNodeStates,
+      sensorReadings,
+    ] = await Promise.all([
+      executor.companyDeviceAssignment.count({ where: { gatewayId } }),
+      executor.gatewayBuildingAssignment.count({ where: { gatewayId } }),
+      executor.nodeGatewayAssignment.count({ where: { gatewayId } }),
+      executor.gatewayCommand.count({ where: { gatewayId } }),
+      executor.nodeGatewayProvisioningRequest.count({ where: { gatewayId } }),
+      executor.alarmEvent.count({ where: { gatewayId } }),
+      executor.gatewayAlarmLevelApplication.count({ where: { gatewayId } }),
+      executor.gatewayFaultFilterDesiredState.count({ where: { gatewayId } }),
+      executor.gatewayFaultFilterAppliedState.count({ where: { gatewayId } }),
+      executor.latestNodeState.count({ where: { gatewayId } }),
+      executor.sensorReading.count({ where: { gatewayId } }),
+    ]);
+
+    return deletionCapability([
+      [companyAssignments, "companyAssignmentHistory"],
+      [buildingAssignments, "buildingAssignmentHistory"],
+      [nodeAssignments, "nodeAssignmentHistory"],
+      [commands, "commandHistory"],
+      [provisioningRequests, "provisioningHistory"],
+      [alarmEvents, "alarmHistory"],
+      [alarmLevelApplications, "alarmConfigurationHistory"],
+      [faultFilterDesiredStates, "faultFilterHistory"],
+      [faultFilterAppliedStates, "faultFilterHistory"],
+      [latestNodeStates, "monitoringHistory"],
+      [sensorReadings, "sensorHistory"],
+    ]);
+  }
+
+  private async getNodeDeletionCapability(nodeId: string, executor: PrismaExecutor = this.prisma) {
+    const [
+      companyAssignments,
+      gatewayAssignments,
+      provisioningItems,
+      faultFilterDesiredStates,
+      faultFilterAppliedStates,
+      latestStates,
+      sensorReadings,
+      counterStates,
+      alarmEvents,
+      policyTriggers,
+      notifications,
+    ] = await Promise.all([
+      executor.companyDeviceAssignment.count({ where: { nodeId } }),
+      executor.nodeGatewayAssignment.count({ where: { nodeId } }),
+      executor.nodeGatewayProvisioningItem.count({ where: { nodeId } }),
+      executor.gatewayFaultFilterDesiredState.count({ where: { nodeId } }),
+      executor.gatewayFaultFilterAppliedState.count({ where: { nodeId } }),
+      executor.latestNodeState.count({ where: { nodeId } }),
+      executor.sensorReading.count({ where: { nodeId } }),
+      executor.alarmCounterState.count({ where: { nodeId } }),
+      executor.alarmEvent.count({ where: { nodeId } }),
+      executor.alarmPolicyTrigger.count({ where: { nodeId } }),
+      executor.alarmNotification.count({ where: { alarmEvent: { nodeId } } }),
+    ]);
+
+    return deletionCapability([
+      [companyAssignments, "companyAssignmentHistory"],
+      [gatewayAssignments, "nodeAssignmentHistory"],
+      [provisioningItems, "provisioningHistory"],
+      [faultFilterDesiredStates, "faultFilterHistory"],
+      [faultFilterAppliedStates, "faultFilterHistory"],
+      [latestStates, "monitoringHistory"],
+      [sensorReadings, "sensorHistory"],
+      [counterStates, "alarmHistory"],
+      [alarmEvents, "alarmHistory"],
+      [policyTriggers, "alarmHistory"],
+      [notifications, "alarmNotificationHistory"],
+    ]);
+  }
+}
+
+function deletionCapability(blockers: Array<[number, string]>): {
+  allowed: boolean;
+  blocker: string | null;
+} {
+  const blocker = blockers.find(([count]) => count > 0)?.[1] ?? null;
+  return { allowed: blocker === null, blocker };
 }

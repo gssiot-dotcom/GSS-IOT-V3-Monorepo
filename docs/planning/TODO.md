@@ -207,3 +207,20 @@
 ## Deferred
 
 Reports, exports, partitioning, archival, migration, deployment, live cmd 4/cmd 5 hardware verification and real external delivery vendors remain deferred according to the approved 2nd-step execution order and open provider decisions.
+
+## Pre-Phase-14 refactor wave (3rd step)
+
+- [x] Task 02: complete the preflight audit, reference extraction, refactor plan and ten-requirement acceptance checklist without changing Phase 13 or starting Phase 14.
+- [x] Task 03: design-system foundation and app-shell completion with shared tokens/primitives, grouped permission-filtered navigation, accessible mobile toggle, focused tests and deterministic web unit execution.
+- [x] Task 04: complete authenticated Admin/Company Welcome and view-only profile surfaces, safe session metadata, responsive account menu, permission-filtered notification bell and truthful notification realtime status with focused web/API coverage.
+- [x] Task 05: add bounded permission-aware Admin/Company dashboard summaries, scoped KPI aggregates, operational charts, range selection, empty/loading/error states and retain report-job cards with API/web coverage.
+- [x] Task 06: Admin roles and portal settings (GSS role CRUD with protected system roles, redacted read-only system readiness, authenticated Company contact settings and focused permission/scope/redaction coverage).
+- [x] Task 07: device edit/delete and action UX (permission-controlled edits, pristine-only hard delete, server-derived blockers, structured lifecycle conflicts, audit preservation and accessible compact actions).
+- [x] Task 08: bulk node creation (canonical V2-style single/range/list parser, atomic auditable API, duplicate/validation conflicts and preview/count UX).
+- [x] Task 09: explicit APPEND/REPLACE node provisioning protocol (durable mode/final membership, strict-ACK replacement history, concurrency guard and preview UX).
+- [x] Task 10: monitoring cards, tables and node-detail charts (Company TABLE/CARD toggle, V2-inspired typed cards, bounded detail charts and fault-filter separation).
+- [x] Task 11: Admin monitoring completion (global aggregate read models, selector cascade, shared drilldown/realtime workspace and permission/scope coverage).
+- [x] Task 12: global UI/UX modernization and responsive polish (shared responsive hierarchy, table accessibility/scroll, mobile drawer close, focus styling, representative desktop/mobile smoke and frozen design conventions).
+- [x] Task 13: final regression, manual acceptance and handoff (full automated regression green; public desktop/mobile browser smoke recorded; protected visual and live hardware evidence explicitly kept as follow-up/pending).
+
+Phase 14 remains explicitly deferred and must not be started by this wave.

@@ -214,6 +214,8 @@ describe("auth routing", () => {
       await screen.findByText("Company setup, resources, users, and assigned devices."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Toggle navigation" })).toBeTruthy();
+    expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
   });
 
   it("restores an authenticated deep link from session storage", async () => {

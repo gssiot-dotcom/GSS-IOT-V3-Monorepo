@@ -8,15 +8,20 @@ export interface DataTableColumn<Row> {
 }
 
 export function DataTable<Row extends { id: string }>({
+  ariaLabel,
+  caption,
   columns,
   rows,
 }: {
+  ariaLabel?: string;
+  caption?: ReactNode;
   columns: DataTableColumn<Row>[];
   rows: Row[];
 }) {
   return (
     <Table.ScrollContainer minWidth={640}>
-      <Table highlightOnHover verticalSpacing="sm">
+      <Table aria-label={ariaLabel} highlightOnHover verticalSpacing="sm">
+        {caption ? <Table.Caption>{caption}</Table.Caption> : null}
         <Table.Thead>
           <Table.Tr>
             {columns.map((column) => (

@@ -4,13 +4,29 @@ import type { AuthenticatedRequest } from "../../common/auth.types";
 import { AdminEndpoint } from "../../common/decorators/admin-endpoint.decorator";
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
-import { SensorHistoryQueryDto } from "./dto/monitoring.dto";
+import { AdminMonitoringQueryDto, SensorHistoryQueryDto } from "./dto/monitoring.dto";
 import { MonitoringService } from "./monitoring.service";
 
 @AdminEndpoint()
 @Controller("admin/monitoring")
 export class MonitoringAdminController {
   constructor(@Inject(MonitoringService) private readonly monitoring: MonitoringService) {}
+
+  @RequirePermissions("monitoring.view")
+  @Get("options")
+  listOptions(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
+    return this.monitoring.listAdminOptions(auth!.principal);
+  }
+
+  @RequirePermissions("monitoring.view")
+  @Get("summary")
+  listSummary(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: AdminMonitoringQueryDto, transform: true }))
+    query: AdminMonitoringQueryDto,
+  ) {
+    return this.monitoring.listAdminSummary(auth!.principal, query);
+  }
 
   @RequirePermissions("monitoring.view")
   @Get("buildings/:buildingId")

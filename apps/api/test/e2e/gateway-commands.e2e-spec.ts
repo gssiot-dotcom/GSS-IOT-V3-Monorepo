@@ -314,7 +314,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
     const created = await request(server)
       .post("/admin/gateway-commands/register-nodes")
       .set("Authorization", `Bearer ${token}`)
-      .send({ buildingId, gatewayId, nodeIds: [nodeId], nodeTypeId })
+      .send({ buildingId, gatewayId, mode: "REPLACE", nodeIds: [nodeId], nodeTypeId })
       .expect(201);
     expect(created.body.commandNumber).toBe(2);
     expect(created.body.payload).toEqual({
@@ -708,7 +708,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ buildingId, gatewayId, nodeIds: [], nodeTypeId })
+      .send({ buildingId, gatewayId, mode: "REPLACE", nodeIds: [], nodeTypeId })
       .expect(400);
   });
 
@@ -1073,7 +1073,13 @@ describe("Phase 5 gateway command outbox e2e", () => {
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
       .set("Authorization", `Bearer ${token}`)
-      .send({ buildingId, gatewayId: gateway.id, nodeIds: [foreignNode.id], nodeTypeId })
+      .send({
+        buildingId,
+        gatewayId: gateway.id,
+        mode: "REPLACE",
+        nodeIds: [foreignNode.id],
+        nodeTypeId,
+      })
       .expect(400);
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
@@ -1081,6 +1087,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .send({
         buildingId: otherBuildingId,
         gatewayId: gateway.id,
+        mode: "REPLACE",
         nodeIds: [angleNode.id],
         nodeTypeId: angleNodeTypeId,
       })
@@ -1088,12 +1095,24 @@ describe("Phase 5 gateway command outbox e2e", () => {
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
       .set("Authorization", `Bearer ${token}`)
-      .send({ buildingId, gatewayId: gateway.id, nodeIds: [angleNode.id], nodeTypeId })
+      .send({
+        buildingId,
+        gatewayId: gateway.id,
+        mode: "REPLACE",
+        nodeIds: [angleNode.id],
+        nodeTypeId,
+      })
       .expect(400);
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
       .set("Authorization", `Bearer ${token}`)
-      .send({ buildingId, gatewayId: gateway.id, nodeIds: [assignedNode.id], nodeTypeId })
+      .send({
+        buildingId,
+        gatewayId: gateway.id,
+        mode: "REPLACE",
+        nodeIds: [assignedNode.id],
+        nodeTypeId,
+      })
       .expect(409);
   });
 
@@ -1122,7 +1141,13 @@ describe("Phase 5 gateway command outbox e2e", () => {
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
       .set("Authorization", `Bearer ${token}`)
-      .send({ buildingId, gatewayId: gateway.id, nodeIds: [nonNumericNode.id], nodeTypeId })
+      .send({
+        buildingId,
+        gatewayId: gateway.id,
+        mode: "REPLACE",
+        nodeIds: [nonNumericNode.id],
+        nodeTypeId,
+      })
       .expect(400);
     expect(await prisma.gatewayCommand.count()).toBe(beforeCount);
 
@@ -1132,10 +1157,154 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .send({
         buildingId,
         gatewayId: gateway.id,
+        mode: "REPLACE",
         nodeIds: [paddedNode.id, normalizedDuplicateNode.id],
         nodeTypeId,
       })
       .expect(400);
     expect(await prisma.gatewayCommand.count()).toBe(beforeCount);
+  });
+
+  it("applies APPEND unions and REPLACE removals without touching another node type", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("p5-manager@example.com");
+    const appendGateway = await prisma.gateway.create({
+      data: { gatewayType: "NODES_GATEWAY", serialNumber: "GW-P9-APPEND-REPLACE" },
+    });
+    await prisma.companyDeviceAssignment.create({
+      data: { companyId, gatewayId: appendGateway.id },
+    });
+    await prisma.gatewayBuildingAssignment.create({
+      data: { buildingId, gatewayId: appendGateway.id },
+    });
+    const existingNodes = [];
+    for (const number of ["9200", "9201", "9202"]) {
+      const node = await prisma.node.create({ data: { nodeTypeId, number } });
+      existingNodes.push(node);
+      await prisma.companyDeviceAssignment.create({ data: { companyId, nodeId: node.id } });
+      await prisma.nodeGatewayAssignment.create({
+        data: { gatewayId: appendGateway.id, nodeId: node.id },
+      });
+    }
+    const [newNodeA, newNodeB, otherTypeNode] = await Promise.all([
+      prisma.node.create({ data: { nodeTypeId, number: "9203" } }),
+      prisma.node.create({ data: { nodeTypeId, number: "9204" } }),
+      prisma.node.create({ data: { nodeTypeId: angleNodeTypeId, number: "9205" } }),
+    ]);
+    await prisma.companyDeviceAssignment.createMany({
+      data: [newNodeA, newNodeB, otherTypeNode].map((node) => ({ companyId, nodeId: node.id })),
+    });
+    await prisma.nodeGatewayAssignment.create({
+      data: { gatewayId: appendGateway.id, nodeId: otherTypeNode.id },
+    });
+
+    const append = await request(server)
+      .post("/admin/gateway-commands/register-nodes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        buildingId,
+        gatewayId: appendGateway.id,
+        mode: "APPEND",
+        nodeIds: [newNodeA.id, newNodeB.id],
+        nodeTypeId,
+      })
+      .expect(201);
+    expect(append.body.payload.nodes).toEqual([9200, 9201, 9202, 9203, 9204]);
+    expect(append.body.provisioningRequest.mode).toBe("APPEND");
+    expect(
+      append.body.provisioningRequest.items.filter((item: { selected: boolean }) => item.selected),
+    ).toHaveLength(2);
+    await waitForStatus(append.body.id, "ACKNOWLEDGED");
+    expect(
+      await prisma.nodeGatewayAssignment.count({
+        where: { gatewayId: appendGateway.id, node: { nodeTypeId }, status: "ACTIVE" },
+      }),
+    ).toBe(5);
+
+    const replace = await request(server)
+      .post("/admin/gateway-commands/register-nodes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        buildingId,
+        gatewayId: appendGateway.id,
+        mode: "REPLACE",
+        nodeIds: [newNodeA.id, newNodeB.id],
+        nodeTypeId,
+      })
+      .expect(201);
+    expect(replace.body.payload.nodes).toEqual([9203, 9204]);
+    expect(replace.body.provisioningRequest.mode).toBe("REPLACE");
+    await waitForStatus(replace.body.id, "ACKNOWLEDGED");
+    expect(
+      await prisma.nodeGatewayAssignment.count({
+        where: { gatewayId: appendGateway.id, node: { nodeTypeId }, status: "ACTIVE" },
+      }),
+    ).toBe(2);
+    expect(
+      await prisma.nodeGatewayAssignment.count({
+        where: {
+          gatewayId: appendGateway.id,
+          node: { nodeTypeId: angleNodeTypeId },
+          status: "ACTIVE",
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.nodeGatewayProvisioningEndedAssignment.count({
+        where: { requestId: replace.body.provisioningRequest.id },
+      }),
+    ).toBe(3);
+    expect(
+      await prisma.nodeGatewayAssignment.count({
+        where: {
+          gatewayId: appendGateway.id,
+          nodeId: { in: existingNodes.map((node) => node.id) },
+          status: "ENDED",
+        },
+      }),
+    ).toBe(3);
+  });
+
+  it("rejects a concurrent nonterminal provisioning command for the same gateway and type", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("p5-manager@example.com");
+    const activeGateway = await prisma.gateway.findUniqueOrThrow({ where: { id: gatewayId } });
+    const pendingCommand = await prisma.gatewayCommand.create({
+      data: {
+        commandNumber: 900,
+        commandType: "REGISTER_NODES",
+        correlationKey: `${activeGateway.serialNumber}:900`,
+        expiresAt: new Date(Date.now() + 60_000),
+        gatewayId: activeGateway.id,
+        payload: { cmd: 2, nodeType: 0, nodes: [100], numNodes: 1 },
+        requesterId: null,
+        requesterType: "SYSTEM",
+        topic: "GSSIOT/test/GATE_SUB/GRM22JU22P" + activeGateway.serialNumber,
+      },
+    });
+    const pendingRequest = await prisma.nodeGatewayProvisioningRequest.create({
+      data: {
+        buildingId,
+        commandId: pendingCommand.id,
+        companyId,
+        gatewayId: activeGateway.id,
+        mode: "APPEND",
+        nodeTypeId,
+        requestedByType: "SYSTEM",
+        items: { create: { nodeId } },
+      },
+    });
+    expect(pendingRequest.id).toBeDefined();
+    await request(server)
+      .post("/admin/gateway-commands/register-nodes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        buildingId,
+        gatewayId: activeGateway.id,
+        mode: "APPEND",
+        nodeIds: [nodeId],
+        nodeTypeId,
+      })
+      .expect(409);
   });
 });

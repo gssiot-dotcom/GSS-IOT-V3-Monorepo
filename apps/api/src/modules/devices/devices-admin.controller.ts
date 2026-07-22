@@ -18,6 +18,7 @@ import {
   AssignDeviceToCompanyDto,
   AssignGatewayToBuildingDto,
   AssignNodeToGatewayDto,
+  BulkCreateNodesDto,
   CreateGatewayDto,
   CreateNodeDto,
   UpdateGatewayDto,
@@ -69,6 +70,15 @@ export class DevicesAdminController {
     return this.devices.updateGateway(auth!.principal, gatewayId, dto);
   }
 
+  @RequirePermissions("gateways.delete")
+  @Delete("gateways/:gatewayId")
+  deleteGateway(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("gatewayId") gatewayId: string,
+  ) {
+    return this.devices.deleteGateway(auth!.principal, gatewayId);
+  }
+
   @RequirePermissions("gateways.assign")
   @Post("gateways/:gatewayId/company-assignment")
   assignGatewayToCompany(
@@ -116,6 +126,16 @@ export class DevicesAdminController {
   }
 
   @RequirePermissions("nodes.create")
+  @Post("nodes/bulk")
+  bulkCreateNodes(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Body(new ValidationPipe({ expectedType: BulkCreateNodesDto, transform: true }))
+    dto: BulkCreateNodesDto,
+  ) {
+    return this.devices.bulkCreateNodes(auth!.principal, dto);
+  }
+
+  @RequirePermissions("nodes.create")
   @Post("nodes")
   createNode(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
@@ -134,6 +154,15 @@ export class DevicesAdminController {
     dto: UpdateNodeDto,
   ) {
     return this.devices.updateNode(auth!.principal, nodeId, dto);
+  }
+
+  @RequirePermissions("nodes.delete")
+  @Delete("nodes/:nodeId")
+  deleteNode(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("nodeId") nodeId: string,
+  ) {
+    return this.devices.deleteNode(auth!.principal, nodeId);
   }
 
   @RequirePermissions("nodes.assign")

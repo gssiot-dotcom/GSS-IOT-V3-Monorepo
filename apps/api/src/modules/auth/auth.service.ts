@@ -14,13 +14,57 @@ export interface AuthSessionResponse {
   context: AuthContext;
   user: {
     companyId?: string;
+    company?: { id: string; name: string } | null;
     email: string;
     id: string;
+    isActive: boolean;
     isSuperAdmin: boolean;
+    lastLoginAt: string | null;
     name: string;
+    phone: string | null;
     permissions: string[];
+    role: { id: string; isSuperAdmin: boolean; key: string; name: string } | null;
   };
 }
+
+const roleSelect = {
+  id: true,
+  isSuperAdmin: true,
+  key: true,
+  name: true,
+} as const;
+
+const companyRoleSelect = {
+  id: true,
+  key: true,
+  name: true,
+} as const;
+
+const gssUserSelect = {
+  email: true,
+  id: true,
+  isActive: true,
+  lastLoginAt: true,
+  name: true,
+  passwordHash: true,
+  phone: true,
+  role: { select: roleSelect },
+  tokenVersion: true,
+} as const;
+
+const companyUserSelect = {
+  company: { select: { id: true, name: true } },
+  companyId: true,
+  email: true,
+  id: true,
+  isActive: true,
+  lastLoginAt: true,
+  name: true,
+  passwordHash: true,
+  phone: true,
+  role: { select: companyRoleSelect },
+  tokenVersion: true,
+} as const;
 
 @Injectable()
 export class AuthService {
@@ -34,14 +78,17 @@ export class AuthService {
   async loginGss(login: LoginDto): Promise<AuthSessionResponse> {
     const user = await this.prisma.gssAdminUser.findUnique({
       where: { email: login.email.toLowerCase() },
+      select: gssUserSelect,
     });
 
     await this.assertCredentials(user, login.password);
     const activeUser = user!;
+    const loginAt = new Date();
     await this.prisma.gssAdminUser.update({
       where: { id: activeUser.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLoginAt: loginAt },
     });
+    activeUser.lastLoginAt = loginAt;
 
     return this.createSession(AUTH_CONTEXT.gssAdmin, activeUser);
   }
@@ -49,14 +96,17 @@ export class AuthService {
   async loginCompany(login: LoginDto): Promise<AuthSessionResponse> {
     const user = await this.prisma.companyUser.findUnique({
       where: { email: login.email.toLowerCase() },
+      select: companyUserSelect,
     });
 
     await this.assertCredentials(user, login.password);
     const activeUser = user!;
+    const loginAt = new Date();
     await this.prisma.companyUser.update({
       where: { id: activeUser.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLoginAt: loginAt },
     });
+    activeUser.lastLoginAt = loginAt;
 
     return this.createSession(AUTH_CONTEXT.companyUser, activeUser);
   }
@@ -64,8 +114,14 @@ export class AuthService {
   async getSession(context: AuthContext, userId: string): Promise<AuthSessionResponse> {
     const user =
       context === AUTH_CONTEXT.gssAdmin
-        ? await this.prisma.gssAdminUser.findUnique({ where: { id: userId } })
-        : await this.prisma.companyUser.findUnique({ where: { id: userId } });
+        ? await this.prisma.gssAdminUser.findUnique({
+            where: { id: userId },
+            select: gssUserSelect,
+          })
+        : await this.prisma.companyUser.findUnique({
+            where: { id: userId },
+            select: companyUserSelect,
+          });
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException("The user is inactive or unavailable.");
@@ -102,9 +158,14 @@ export class AuthService {
     context: AuthContext,
     user: {
       companyId?: string;
+      company?: { id: string; name: string } | null;
       email: string;
       id: string;
+      isActive: boolean;
+      lastLoginAt: Date | null;
       name: string;
+      phone: string | null;
+      role: { id: string; isSuperAdmin?: boolean; key: string; name: string };
       tokenVersion: number;
     },
   ): Promise<AuthSessionResponse> {
@@ -126,11 +187,16 @@ export class AuthService {
       context,
       user: {
         ...(user.companyId ? { companyId: user.companyId } : {}),
+        company: user.company ?? null,
         email: user.email,
         id: user.id,
+        isActive: user.isActive,
         isSuperAdmin: resolution.isSuperAdmin,
+        lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
         name: user.name,
+        phone: user.phone,
         permissions: [...resolution.permissions].sort(),
+        role: { ...user.role, isSuperAdmin: user.role.isSuperAdmin ?? false },
       },
     };
   }
