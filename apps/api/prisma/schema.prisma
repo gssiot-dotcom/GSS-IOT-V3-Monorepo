@@ -144,6 +144,38 @@ enum AlarmDeliveryAttemptStatus {
   SKIPPED
 }
 
+enum ReportRequesterType {
+  GSS_ADMIN
+  COMPANY_USER
+}
+
+enum ReportJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ReportType {
+  COMPANY_SUMMARY
+  SITE_SUMMARY
+  BUILDING_SUMMARY
+  DEVICE_INVENTORY
+  DEVICE_ASSIGNMENT_HISTORY
+  GATEWAY_STATUS_HISTORY
+  NODE_STATUS_HISTORY
+  SENSOR_HISTORY
+  ALARM_HISTORY
+  MQTT_COMMAND_HISTORY
+  USER_ACTIVITY
+  AUDIT_LOG
+}
+
+enum ReportFileFormat {
+  CSV
+  XLSX
+}
+
 enum AuditActorType {
   GSS_ADMIN
   COMPANY_USER
@@ -231,6 +263,7 @@ model Company {
   latestNodeStates         LatestNodeState[]
   roles                    CompanyRole[]
   sensorReadings           SensorReading[]
+  reportJobs               ReportJob[]
   users                    CompanyUser[]
   positions                CompanyPosition[]
   createdAt                DateTime                          @default(now())
@@ -250,6 +283,7 @@ model ConstructionArea {
   sensorReadings      SensorReading[]
   alarmRules          AlarmRule[]
   alarmEvents         AlarmEvent[]
+  reportJobs          ReportJob[]
   userAccess          CompanyUserAreaAccess[]
   positionAssignments CompanyUserPositionAssignment[]
   createdAt           DateTime                        @default(now())
@@ -281,6 +315,7 @@ model ConstructionBuilding {
   alarmLevelApplications   GatewayAlarmLevelApplication[]
   latestNodeStates         LatestNodeState[]
   sensorReadings           SensorReading[]
+  reportJobs               ReportJob[]
   createdAt                DateTime                          @default(now())
   updatedAt                DateTime                          @updatedAt
 
@@ -1019,6 +1054,58 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([actorType, actorId])
+  @@index([createdAt])
+}
+
+model ReportJob {
+  id              String                @id @default(uuid()) @db.Uuid
+  requestedByType ReportRequesterType
+  requestedById   String                @db.Uuid
+  companyId       String?               @db.Uuid
+  areaId          String?               @db.Uuid
+  buildingId      String?               @db.Uuid
+  reportType      ReportType
+  filters         Json
+  scopeSnapshot   Json
+  status          ReportJobStatus       @default(PENDING)
+  progress        Int                   @default(0)
+  errorMessage    String?
+  completedAt     DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  company         Company?              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  area            ConstructionArea?     @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  building        ConstructionBuilding? @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  exports         ReportExport[]
+
+  @@index([requestedByType, requestedById, createdAt])
+  @@index([companyId, createdAt])
+  @@index([reportType, status, createdAt])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model ReportExport {
+  id               String           @id @default(uuid()) @db.Uuid
+  reportJobId      String           @db.Uuid
+  storageKey       String           @unique
+  fileName         String
+  format           ReportFileFormat
+  contentType      String
+  sizeBytes        Int?
+  checksum         String?
+  expiresAt        DateTime
+  storageDeletedAt DateTime?
+  createdByType    AuditActorType
+  createdById      String?          @db.Uuid
+  downloadedAt     DateTime?
+  createdAt        DateTime         @default(now())
+  reportJob        ReportJob        @relation(fields: [reportJobId], references: [id], onDelete: Restrict)
+
+  @@index([reportJobId, createdAt])
+  @@index([expiresAt])
+  @@index([expiresAt, storageDeletedAt])
+  @@index([createdByType, createdById, createdAt])
 }
 
 model CompanyRolePermission {

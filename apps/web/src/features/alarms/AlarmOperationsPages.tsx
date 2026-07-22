@@ -27,8 +27,8 @@ import { IconBellCheck, IconCheck, IconEye, IconPlus } from "@tabler/icons-react
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { t } from "../../app/i18n";
-import { apiRequest } from "../../shared/api/api-client";
+import { t, tf } from "../../app/i18n";
+import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
@@ -246,6 +246,8 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
     }
   >();
   const [error, setError] = useState(false);
+  const [mutation, setMutation] = useState<"acknowledge" | "resolve" | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!session || !alarmId) return;
@@ -262,12 +264,40 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
   }, [load]);
 
   const mutate = async (action: "acknowledge" | "resolve") => {
-    if (!session || !alarmId) return;
-    await apiRequest(session, endpoint(basePath, `/alarms/${alarmId}/${action}`), {
-      body: JSON.stringify({ note: "" }),
-      method: "PATCH",
-    });
-    await load();
+    if (!session || !alarmId || mutation) return;
+    setMutation(action);
+    setMutationError(null);
+    try {
+      const updated = await apiRequest<AlarmEventRecord>(
+        session,
+        endpoint(basePath, `/alarms/${alarmId}/${action}`),
+        {
+          body: JSON.stringify({ note: "" }),
+          method: "PATCH",
+        },
+      );
+      setAlarm((current) => ({ ...current, ...updated }));
+    } catch (caught) {
+      const backendMessage =
+        caught instanceof ApiError && caught.status >= 400 && caught.status < 500
+          ? caught.message
+          : "";
+      if (action === "resolve") {
+        setMutationError(
+          backendMessage && !backendMessage.startsWith("API request failed with status")
+            ? tf("alarms.resolveFailed", { message: backendMessage })
+            : t("alarms.resolveFailedFallback"),
+        );
+      } else {
+        setMutationError(
+          backendMessage && !backendMessage.startsWith("API request failed with status")
+            ? tf("alarms.actionFailed", { message: backendMessage })
+            : t("alarms.actionFailedFallback"),
+        );
+      }
+    } finally {
+      setMutation(null);
+    }
   };
 
   if (!alarm) return <LoadingState title={t("common.loading")} />;
@@ -286,7 +316,8 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
       <Group>
         <Can permission="alarms.acknowledge">
           <Button
-            disabled={alarm.status !== "OPEN"}
+            disabled={alarm.status !== "OPEN" || Boolean(mutation)}
+            loading={mutation === "acknowledge"}
             leftSection={<IconBellCheck size={16} />}
             onClick={() => void mutate("acknowledge")}
             variant="light"
@@ -296,7 +327,8 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
         </Can>
         <Can permission="alarms.resolve">
           <Button
-            disabled={alarm.status === "RESOLVED"}
+            disabled={alarm.status === "RESOLVED" || Boolean(mutation)}
+            loading={mutation === "resolve"}
             leftSection={<IconCheck size={16} />}
             onClick={() => void mutate("resolve")}
             variant="light"
@@ -305,6 +337,11 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
           </Button>
         </Can>
       </Group>
+      {mutationError ? (
+        <Text c="red" role="alert" size="sm">
+          {mutationError}
+        </Text>
+      ) : null}
       <Tabs defaultValue="triggers">
         <Tabs.List>
           <Tabs.Tab value="triggers">{t("alarms.triggers")}</Tabs.Tab>

@@ -57,6 +57,8 @@ describe("RBAC e2e", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
+    await prisma.reportExport.deleteMany();
+    await prisma.reportJob.deleteMany();
     await prisma.alarmDeliveryLog.deleteMany();
     await prisma.alarmNotification.deleteMany();
     await prisma.alarmPolicyTrigger.deleteMany();

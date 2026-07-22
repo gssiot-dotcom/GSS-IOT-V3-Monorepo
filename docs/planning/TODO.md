@@ -180,9 +180,29 @@
 - [x] Perform combined manual sensor-to-notification-to-operations acceptance before marking Phase 12 complete.
 - [x] Mark Phase 12 complete after manual verification of CompanyPosition + scope recipient resolution, scoped Site Manager notifications, independent Platform Manager policy notifications, shared alarm acknowledgement visibility, alarm detail Triggers/Notifications tabs, unsafe resolve rejection, automatic safe resolution and post-safe manual resolve.
 
-## Phase 13 carryover
+## Phase 13
 
-- [ ] Company Alarm UI must surface backend conflict/validation responses when Resolve is rejected because the node is still unsafe as a localized toast or inline error; the failed mutation must leave alarm status unchanged and reset loading state correctly.
+- [x] Surface backend conflict/validation responses in the shared Company/Admin Alarm UI when Resolve is rejected because the node is still unsafe; show a localized inline error with the safe backend message, leave alarm status unchanged, reset loading state and prevent duplicate submissions.
+- [x] Add the backend/database ReportJob and ReportExport foundation with approved lifecycle statuses, requester/scope context, progress/error metadata, export expiry and opaque storage-key metadata.
+- [x] Add company, device, monitoring, sensor, alarm, MQTT and audit reports with bounded scoped generators.
+- [x] Keep report view/export permissions separate for Admin/Company list/detail, request and download endpoints.
+- [x] Enforce authenticated Company company/site/building scope on report requests and export downloads; reject unvalidated client resource IDs.
+- [x] Add export expiration and successful-download audit behavior without exposing storage keys.
+- [x] Add focused automated coverage for the Phase 13 report foundation, lifecycle, permissions, scope and download requirements.
+- [x] Add report generators, internal claim-safe job processing and scoped report data queries with normalized CSV/XLSX output.
+- [x] Add configurable internal report scheduler/worker integration with bounded batches, conditional claims, overlap prevention and graceful shutdown.
+- [x] Add local development/test and production-capable S3-compatible report storage providers with private backend-authorized downloads.
+- [x] Add bounded, idempotent expired-export storage cleanup while preserving ReportJob/ReportExport history.
+- [x] Implement protected `/admin/reports` and `/company/reports` pages with separate view/export permission behavior.
+- [x] Implement approved report type/filter/format selectors, scoped Company resources, date-range validation, active-job polling, expiration UX and authorized backend-stream downloads.
+- [x] Add focused frontend report permission, scope, polling, duplicate-submit, CSV/XLSX, download, expiry, failure-redaction and endpoint-separation coverage.
+- [x] Add approved dashboard recent-report-job and generation-status summary links without inventing analytics metrics.
+- [x] Record the 2026-07-21 Phase 13 browser acceptance: GSS Admin and Company Reports routes, `PENDING` to `READY`/`COMPLETED` lifecycle, polling, CSV/XLSX generation/download, dashboard recent-report summaries/links and verified API-local report files.
+- [x] Close Phase 13 after the browser evidence and existing focused web/API report security, scope, lifecycle, download and cleanup tests passed. Keep unsupported permission/security claims tied to automated evidence rather than claiming them as browser observations.
+- [x] Keep undocumented legacy report layouts, direct-file access and unsafe storage behavior out of the product; no unsafe parity was added.
+- [x] Record Phase 13 local private storage and expiry/cleanup verification. Production S3 execution and standalone worker deployment were not executed.
+- [ ] Phase 14 (deferred; not started): configure and verify production S3 storage, production worker deployment, deployment manifests, migration/rollback runbooks and production acceptance.
+- [ ] Phase 14 (deferred; not started): implement and verify long-term sensor retention, partitioning, archival and purge behavior.
 
 ## Deferred
 

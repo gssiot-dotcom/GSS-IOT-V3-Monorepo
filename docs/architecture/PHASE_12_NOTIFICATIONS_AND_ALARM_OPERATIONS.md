@@ -123,6 +123,6 @@ Manual acceptance passed on 2026-07-21. The verified live flow confirmed:
 - Manual resolve also worked after the node was `SAFE`.
 - The counter/notification flow and shared `AlarmEvent` behavior were manually verified end to end.
 
-Known non-blocking carryover for Phase 13: when Resolve is rejected because the node is still unsafe, the backend correctly prevents resolution, but the Company Alarm UI shows no visible error message. Phase 13 must surface the backend conflict/validation response as a localized toast or inline error. The failed mutation must leave the alarm status unchanged and must reset loading state correctly.
+The Phase 13 first compatible task resolved the recorded unsafe-resolve UI carryover. The shared Company/Admin alarm detail now renders a localized inline error containing the safe backend 4xx message when Resolve is rejected because the node is still unsafe; the failed mutation leaves the alarm status unchanged, resets loading state and prevents duplicate submissions. Focused web regression coverage verifies rejected unsafe Resolve in Company and successful SAFE Resolve in Admin.
 
 This closeout does not change MQTT ingestion, alarm occurrence-count semantics, recipient resolution, `AlarmEvent` identity rules, automatic safe resolution or Phase 9 alarm-level behavior.

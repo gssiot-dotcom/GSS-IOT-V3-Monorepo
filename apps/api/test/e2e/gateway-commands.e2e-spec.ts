@@ -38,6 +38,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
     responseHandler = app.get(MqttResponseHandlerService);
     commandsService = app.get(GatewayCommandsService);
 
+    await prisma.reportExport.deleteMany();
+    await prisma.reportJob.deleteMany();
     await prisma.alarmDeliveryLog.deleteMany();
     await prisma.alarmNotification.deleteMany();
     await prisma.alarmPolicyTrigger.deleteMany();

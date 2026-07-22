@@ -529,3 +529,51 @@ export interface NodeGatewayProvisioningRequestRecord {
   failedAt: string | null;
   items: NodeGatewayProvisioningItemRecord[];
 }
+
+export type ReportJobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+export type ReportType =
+  | "COMPANY_SUMMARY"
+  | "SITE_SUMMARY"
+  | "BUILDING_SUMMARY"
+  | "DEVICE_INVENTORY"
+  | "DEVICE_ASSIGNMENT_HISTORY"
+  | "GATEWAY_STATUS_HISTORY"
+  | "NODE_STATUS_HISTORY"
+  | "SENSOR_HISTORY"
+  | "ALARM_HISTORY"
+  | "MQTT_COMMAND_HISTORY"
+  | "USER_ACTIVITY"
+  | "AUDIT_LOG";
+export type ReportFileFormat = "CSV" | "XLSX";
+
+export interface ReportExportRecord {
+  id: string;
+  reportJobId: string;
+  fileName: string;
+  format: ReportFileFormat;
+  contentType: string;
+  sizeBytes: number | null;
+  expiresAt: string;
+  createdByType: "GSS_ADMIN" | "COMPANY_USER" | "SYSTEM";
+  createdById: string | null;
+  downloadedAt: string | null;
+  createdAt: string;
+}
+
+export interface ReportJobRecord {
+  id: string;
+  requestedByType: "GSS_ADMIN" | "COMPANY_USER";
+  requestedById: string;
+  companyId: string | null;
+  areaId: string | null;
+  buildingId: string | null;
+  reportType: ReportType;
+  filters: unknown;
+  status: ReportJobStatus;
+  progress: number;
+  errorMessage: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  exports: ReportExportRecord[];
+}

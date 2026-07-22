@@ -482,3 +482,77 @@ Files affected:
 **Consequences:** Typing a display name does not submit, navigate, mutate cache, reset selectors, reset counters or change Phase 11 occurrence semantics. A failed create request leaves the page and modal usable, and the same behavior is covered for Company and Admin alarm-rule pages.
 
 **Files affected:** `apps/web/src/features/alarms/AlarmOperationsPages.tsx`, `apps/web/src/test/alarm-rules.spec.tsx`, `apps/api/src/modules/alarms/dto/alarms.dto.ts`, `apps/api/src/modules/alarms/alarms.service.ts`, `docs/architecture/PHASE_12_NOTIFICATIONS_AND_ALARM_OPERATIONS.md`, `docs/quality/PHASE_12_MANUAL_ACCEPTANCE_CHECKLIST.md`.
+
+## DEC-2026-042
+
+**Status:** accepted
+
+**Context:** Phase 12 recorded that the Company Alarm UI did not surface the backend 409 response when manual Resolve was rejected while the node remained unsafe. The shared alarm detail is used by both Company and GSS Admin routes, and action mutations had no loading/error guard.
+
+**Decision:** The shared alarm detail keeps the current alarm state until an action PATCH succeeds, disables both alarm actions while a mutation is pending, resets the mutation state in `finally`, and renders a localized inline error on failure. The API client preserves a safe backend `message` from 4xx JSON responses; other failures use a localized fallback. The same behavior applies to Company and GSS Admin alarm detail interfaces.
+
+**Consequences:** Unsafe Resolve remains rejected by the backend and is now visible to the operator without optimistic `RESOLVED` state. Successful SAFE Resolve continues to apply the returned `RESOLVED` event. No backend, MQTT, occurrence-count, recipient, shared-event or Phase 9 alarm-level behavior changes.
+
+**Files affected:** `apps/web/src/shared/api/api-client.ts`, `apps/web/src/features/alarms/AlarmOperationsPages.tsx`, `apps/web/src/app/i18n.ts`, `apps/web/src/test/alarm-operations.spec.tsx`.
+
+## DEC-2026-043
+
+**Status:** accepted
+
+**Context:** Phase 13 requires the durable report/export foundation, while the authoritative blueprint describes report categories and job fields at a higher level than the execution prompt. The repository does not yet have a report worker or a production storage provider.
+
+**Decision:** Implement the Phase 13 execution-prompt report types (`company_summary`, `site_summary`, `building_summary`, `device_inventory`, `device_assignment_history`, `gateway_status_history`, `node_status_history`, `sensor_history`, `alarm_history`, `mqtt_command_history`, `user_activity`, `audit_log`), with `site_summary` mapped to the existing `ConstructionArea` hierarchy. `ReportJob` uses only the approved `PENDING`, `PROCESSING`, `COMPLETED` and `FAILED` statuses; expiration applies to `ReportExport`, not to the job lifecycle. The foundation supports CSV/XLSX metadata and a provider-neutral opaque storage-key boundary. Report generation remains an internal worker-facing completion service; no generator or worker endpoint is introduced in this task. Company requests snapshot the authenticated accessible building scope, and current scope must still authorize export download.
+
+**Consequences:** Report view and export permissions remain separate, client-supplied company/area/building identifiers are validated against authenticated context, expired or out-of-scope downloads return the same non-disclosing not-found response, and a successful download updates export metadata and writes the existing `AuditLog` record in one transaction. Production S3-compatible storage and report generators remain open Phase 13 work; the local in-memory adapter is test/development-only.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260721150000_phase_13_report_foundation/migration.sql`, `apps/api/src/modules/reports/`, `apps/api/test/e2e/reports.e2e-spec.ts`, `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`.
+
+## DEC-2026-044
+
+**Status:** accepted
+
+**Context:** The Phase 13 execution prompt requires bounded report generation and actual ReportJob processing, but the repository does not contain a configured Nest scheduler, Redis/BullMQ worker, or production object-storage provider. The approved plan does not define automatic retry counts or a larger report row/date limit.
+
+**Decision:** Implement an internal pull-processor service with a conditional `PENDING -> PROCESSING` claim, idempotent terminal handling and no implicit retry of `FAILED` or stuck `PROCESSING` jobs. A later approved scheduler/worker can call `processPending()` without changing the job contract. Use a maximum of 10,000 rows per export, a 366-day general date range and a 31-day sensor-history range; requests exceeding these bounds fail safely. Use the existing provider-neutral in-memory storage adapter only for development/tests; production storage remains deferred.
+
+**Consequences:** Concurrent processors cannot claim the same pending job, completed jobs do not create duplicate exports, generation failures store only a redacted bounded summary and completion/failure are system-audited. Large datasets are bounded at the database query and normalized-dataset boundary, while production queue scheduling, retry policy and cloud storage remain explicit Phase 13 follow-up work rather than invented infrastructure.
+
+**Files affected:** `apps/api/src/modules/reports/`, `apps/api/src/modules/reports/dto/reports.dto.ts`, `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260721153000_phase_13_report_audit_date_index/migration.sql`, `apps/api/test/reports.spec.ts`, `apps/api/test/e2e/reports.e2e-spec.ts`, `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/IMPLEMENTATION_PLAN.md`.
+
+## DEC-2026-045 — Phase 13 internal report worker, provider selection and expiration cleanup
+
+**Context:** The Phase 13 report vertical slice needs automatic processing and storage cleanup, but the repository has no approved report queue/scheduler integration. The Phase 13 architecture approves local development storage and production S3-compatible storage, while recovery semantics for crashed `PROCESSING` jobs remain undefined.
+
+**Decision:** Use a Nest lifecycle polling worker that calls the existing `ReportJobProcessorService` and `ReportExportCleanupService`; do not introduce Redis/BullMQ. Make worker execution disableable and validate `REPORT_WORKER_ENABLED`, `REPORT_WORKER_INTERVAL_MS` (30-second development default), `REPORT_WORKER_BATCH_SIZE` (10), `REPORT_CLEANUP_ENABLED`, `REPORT_CLEANUP_INTERVAL_MS` (5-minute default) and `REPORT_CLEANUP_BATCH_SIZE` (100). Use memory storage in tests, local filesystem storage in development and a private S3-compatible provider in production. Downloads remain authorized backend streams; no public or permanent object URLs are emitted. Add `ReportExport.storageDeletedAt`, delete expired objects in bounded idempotent batches, preserve database history and audit only successful conditional cleanup.
+
+**Unresolved:** A crashed `PROCESSING` job is not automatically reclaimed or retried. No safe retry count, lease, or recovery transition was approved, and reclaiming it could create duplicate exports. This remains an explicit follow-up decision.
+
+**Consequences:** Concurrent worker ticks and claims cannot double-process a job; one failed job or cleanup deletion does not block the batch; production storage credentials are validated but never committed or returned; expired objects can be retried without deleting active exports; ReportJob and ReportExport history remains durable. The worker, storage adapters and cleanup remain Phase 13 backend work. Frontend report pages and the approved dashboard recent-job/status card use the existing portal-specific list endpoints; manual acceptance remains open.
+
+**Files affected:** `packages/config/src/env.ts`, `apps/api/.env.example`, `apps/api/src/modules/reports/`, `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20260721160000_phase_13_report_storage_cleanup/migration.sql`, `apps/api/test/report-storage.spec.ts`, `apps/api/test/report-worker.spec.ts`, `apps/api/test/e2e/reports.e2e-spec.ts`, `docs/architecture/PHASE_13_REPORTS_AND_EXPORTS.md`, `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/IMPLEMENTATION_PLAN.md`.
+
+## DEC-2026-046 — Phase 13 report acceptance and Phase 14 operational boundary
+
+**Status:** accepted
+
+**Context:** Phase 13 browser acceptance verified the Admin and Company report
+pages, local report generation/download workflow, polling, lifecycle updates
+and dashboard recent-report summaries. The approved execution order names
+retention, hardening and deployment as Phase 14 work.
+
+**Decision:** Close Phase 13 as `PHASE_13_COMPLETE` using the verified private
+local report storage path plus implemented export expiry/cleanup and the
+existing automated permission, scope, lifecycle, download and security tests.
+Production S3 execution, standalone worker deployment, deployment manifests
+and rollback runbooks, and long-term sensor retention/partitioning/archival/
+purge remain deferred Phase 14 scope. No Phase 14 implementation or production
+execution is claimed by this acceptance.
+
+**Consequences:** The report API contract, worker behavior, private download
+boundary, row/date limits and cleanup semantics remain unchanged. Future Phase
+14 deployment work must provide the production configuration and operational
+acceptance separately.
+
+**Files affected:** `docs/quality/PHASE_13_MANUAL_ACCEPTANCE_CHECKLIST.md`,
+`docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`,
+`docs/architecture/PHASE_13_REPORTS_AND_EXPORTS.md`.

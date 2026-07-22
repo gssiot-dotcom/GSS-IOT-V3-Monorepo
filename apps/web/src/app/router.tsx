@@ -17,6 +17,7 @@ import { CompanyRolesPage } from "../features/company-management/CompanyRolesPag
 import { CompanyUsersPage } from "../features/company-management/CompanyUsersPage";
 import { AdminDevicesPage } from "../features/devices/AdminDevicesPage";
 import { CompanyDevicesPage } from "../features/devices/CompanyDevicesPage";
+import { AdminDashboardPage, CompanyDashboardPage } from "../features/dashboard/DashboardPages";
 import { GatewayCommandsPage } from "../features/gateway-commands/GatewayCommandsPage";
 import {
   BuildingMonitoringPage,
@@ -31,6 +32,7 @@ import {
   CompanyBuildingPlanPage,
 } from "../features/organizations/CompanyResourceDetailPages";
 import { CompanyResourcesPage } from "../features/organizations/CompanyResourcesPage";
+import { AdminReportsPage, CompanyReportsPage } from "../features/reports/ReportsPage";
 import { DesignSystemDemoPage } from "../features/shell/DesignSystemDemoPage";
 import { adminNavItems, companyNavItems } from "../features/shell/navigation";
 import { NotFoundPage } from "../features/shell/NotFoundPage";
@@ -73,6 +75,8 @@ export function AppRouter(): ReactElement {
                   <ProtectedPage context="gss-admin" permission={item.permission}>
                     {item.path === "/admin/design-system" ? (
                       <DesignSystemDemoPage />
+                    ) : item.path === "/admin/dashboard" ? (
+                      <AdminDashboardPage />
                     ) : item.path === "/admin/companies" ? (
                       <CompaniesPage />
                     ) : item.path === "/admin/devices" ? (
@@ -85,6 +89,8 @@ export function AppRouter(): ReactElement {
                       <AdminAlarmRulesPage />
                     ) : item.path === "/admin/notifications" ? (
                       <AdminNotificationsPage />
+                    ) : item.path === "/admin/reports" ? (
+                      <AdminReportsPage />
                     ) : (
                       <PlaceholderPage titleKey={item.titleKey} />
                     )}
@@ -148,6 +154,8 @@ export function AppRouter(): ReactElement {
                   <ProtectedPage context="company-user" permission={item.permission}>
                     {item.path === "/company/monitoring" ? (
                       <CompanyMonitoringIndexPage />
+                    ) : item.path === "/company/dashboard" ? (
+                      <CompanyDashboardPage />
                     ) : item.path === "/company/alarms" ? (
                       <CompanyAlarmsPage />
                     ) : item.path === "/company/alarm-rules" ? (
@@ -164,6 +172,8 @@ export function AppRouter(): ReactElement {
                       <CompanyUsersPage />
                     ) : item.path === "/company/roles" ? (
                       <CompanyRolesPage />
+                    ) : item.path === "/company/reports" ? (
+                      <CompanyReportsPage />
                     ) : (
                       <PlaceholderPage titleKey={item.titleKey} />
                     )}

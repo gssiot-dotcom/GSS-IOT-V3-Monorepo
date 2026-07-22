@@ -2,6 +2,7 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { loadApiEnv } from "@gss-iot/config";
 import { AlarmChannel, AlarmSeverity, AlarmTargetType } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { hash } from "bcrypt";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -38,6 +39,8 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     monitoring = app.get(MonitoringService);
     notificationDispatch = app.get(AlarmNotificationDispatchService);
 
+    await prisma.reportExport.deleteMany();
+    await prisma.reportJob.deleteMany();
     await prisma.alarmDeliveryLog.deleteMany();
     await prisma.alarmNotification.deleteMany();
     await prisma.alarmPolicyTrigger.deleteMany();
@@ -205,7 +208,7 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     });
     expect(notification.status).toBe("SENT");
     expect(notification.deliveryLogs).toHaveLength(1);
-    expect(notification.deliveryLogs[0].providerKey).toBe("in_app");
+    expect(notification.deliveryLogs[0]?.providerKey).toBe("in_app");
 
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     await request(server)
@@ -412,7 +415,7 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
       data: {
         channel,
         channelKey: channel.toLowerCase(),
-        channelMetadata,
+        channelMetadata: channelMetadata as Prisma.InputJsonValue,
         countIntervalSeconds,
         createdByType: "SYSTEM",
         positionId,

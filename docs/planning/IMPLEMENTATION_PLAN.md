@@ -246,14 +246,18 @@ Codex ishni boshlashidan oldin source-of-truth, loyiha struktura va quality gate
 
 ## Phase 13 — Reports, dashboards and legacy parity
 
+Current status: `PHASE_13_COMPLETE` as of 2026-07-21. The unsafe-resolve Company/Admin Alarm UI carryover, ReportJob/ReportExport foundation, bounded scoped report queries, normalized CSV/XLSX generators, internal claim-safe job processor, configurable report worker, provider-selected storage, bounded export cleanup, Admin/Company report pages and approved dashboard recent-job/status integration passed focused automated coverage and browser acceptance. Production S3 execution, standalone worker deployment/manifests and long-term retention remain Phase 14 scope; Phase 14 is not started.
+
 ### Ishlar
 
 - Carryover: surface backend conflict/validation responses in the Company Alarm UI when Resolve is rejected because the node is still unsafe; show a localized toast or inline error, leave alarm status unchanged and reset loading state correctly.
 - ReportJob va ReportExport queue.
+- Backend ReportJob/ReportExport lifecycle foundation: request validation, requester/scope context, progress/error state, CSV/XLSX export metadata, opaque storage boundary, expiration and download audit.
 - Company, device, monitoring, sensor, alarm, MQTT va audit reports.
 - View/export permission separation.
 - Company/site/building scope filtering.
 - File expiration va download audit.
+- Report processing uses the internal pull-processor boundary with the validated local development storage path in Phase 13. Production S3 execution, standalone worker deployment and deployment manifests are deferred to Phase 14. Current limits are 10,000 rows, 366 days for general date filters and 31 days for sensor history.
 
 ### Exit criteria
 
