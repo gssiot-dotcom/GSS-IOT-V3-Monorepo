@@ -20,7 +20,13 @@ export function DataTable<Row extends { id: string }>({
 }) {
   return (
     <Table.ScrollContainer minWidth={640}>
-      <Table className="gss-data-table" aria-label={ariaLabel} highlightOnHover striped verticalSpacing="sm">
+      <Table
+        className="gss-data-table"
+        aria-label={ariaLabel}
+        highlightOnHover
+        striped
+        verticalSpacing="sm"
+      >
         {caption ? <Table.Caption>{caption}</Table.Caption> : null}
         <Table.Thead>
           <Table.Tr>

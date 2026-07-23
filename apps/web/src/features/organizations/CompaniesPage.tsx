@@ -108,7 +108,9 @@ export function CompaniesPage() {
       {companies?.length ? (
         <Stack gap="md">
           <DataToolbar>
-            <Text c="dimmed" size="sm">{companies.length} {t("organizations.companiesTitle")}</Text>
+            <Text c="dimmed" size="sm">
+              {companies.length} {t("organizations.companiesTitle")}
+            </Text>
             <DataViewToggle
               data={[
                 { label: t("common.cardView"), value: "cards" },
@@ -122,15 +124,30 @@ export function CompaniesPage() {
             <EntityCardGrid>
               {companies.map((company) => (
                 <EntityCard
-                  action={<Button onClick={() => void navigate(`/admin/companies/${company.id}`)} size="xs" variant="light">{t("organizations.open")}</Button>}
+                  action={
+                    <Button
+                      onClick={() => void navigate(`/admin/companies/${company.id}`)}
+                      size="xs"
+                      variant="light"
+                    >
+                      {t("organizations.open")}
+                    </Button>
+                  }
                   description={company.address ?? company.email ?? undefined}
                   eyebrow={company.code ?? t("organizations.companiesTitle")}
                   key={company.id}
                   title={company.name}
                 >
-                  <EntityStatusRow color={company.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={company.status} />
+                  <EntityStatusRow
+                    color={company.status === "ACTIVE" ? "green" : "gray"}
+                    label={t("organizations.status")}
+                    value={company.status}
+                  />
                   <Group gap="lg">
-                    <EntityMetric label={t("organizations.managerEmail")} value={company.email ?? "-"} />
+                    <EntityMetric
+                      label={t("organizations.managerEmail")}
+                      value={company.email ?? "-"}
+                    />
                     <EntityMetric label={t("organizations.phone")} value={company.phone ?? "-"} />
                   </Group>
                 </EntityCard>
@@ -140,9 +157,29 @@ export function CompaniesPage() {
             <DataTable
               columns={[
                 { key: "name", label: t("organizations.name"), render: (company) => company.name },
-                { key: "code", label: t("organizations.code"), render: (company) => company.code ?? "-" },
-                { key: "status", label: t("organizations.status"), render: (company) => company.status },
-                { key: "open", label: t("organizations.actions"), render: (company) => <Button onClick={() => void navigate(`/admin/companies/${company.id}`)} size="xs" variant="light">{t("organizations.open")}</Button> },
+                {
+                  key: "code",
+                  label: t("organizations.code"),
+                  render: (company) => company.code ?? "-",
+                },
+                {
+                  key: "status",
+                  label: t("organizations.status"),
+                  render: (company) => company.status,
+                },
+                {
+                  key: "open",
+                  label: t("organizations.actions"),
+                  render: (company) => (
+                    <Button
+                      onClick={() => void navigate(`/admin/companies/${company.id}`)}
+                      size="xs"
+                      variant="light"
+                    >
+                      {t("organizations.open")}
+                    </Button>
+                  ),
+                },
               ]}
               rows={companies}
             />

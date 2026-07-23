@@ -109,13 +109,26 @@ export function CompanyMonitoringIndexPage() {
         <EntityCardGrid>
           {buildings.map((building) => (
             <EntityCard
-              action={<Button leftSection={<IconPlugConnected size={16} />} onClick={() => navigate(`/company/buildings/${building.id}/monitoring`)} size="xs" variant="light">{t("monitoring.open")}</Button>}
+              action={
+                <Button
+                  leftSection={<IconPlugConnected size={16} />}
+                  onClick={() => navigate(`/company/buildings/${building.id}/monitoring`)}
+                  size="xs"
+                  variant="light"
+                >
+                  {t("monitoring.open")}
+                </Button>
+              }
               description={building.address ?? building.buildingType ?? undefined}
               eyebrow={t("organizations.buildingsTitle")}
               key={building.id}
               title={building.title}
             >
-              <EntityStatusRow color={building.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={building.status} />
+              <EntityStatusRow
+                color={building.status === "ACTIVE" ? "green" : "gray"}
+                label={t("organizations.status")}
+                value={building.status}
+              />
               <EntityMetric label={t("organizations.code")} value={building.number ?? "-"} />
             </EntityCard>
           ))}

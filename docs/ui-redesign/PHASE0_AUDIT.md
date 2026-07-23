@@ -23,4 +23,3 @@ Prior public/design-system and login captures remain under:
 `C:\Users\stran\.codex\visualizations\2026\07\23\019f8d14-7a79-7463-b04f-4954f90ee099\gss-baseline\`
 
 The new protected-route capture fixture is `apps/web/e2e/ui-redesign.visual.spec.ts` and writes screenshots under Playwright `test-results/ui-redesign.visual-*/*/screenshots/`.
-

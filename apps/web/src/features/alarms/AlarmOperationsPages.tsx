@@ -588,53 +588,56 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
       <Modal opened={opened} onClose={closeCreateRule} title={t("alarms.createRule")}>
         <FormWorkspace>
           <FormSection title={t("alarms.rulesTitle")}>
-          <FormFieldGrid>
-          <Select
-            allowDeselect={false}
-            data={options.buildings.map((item) => ({
-              label: item.company?.name ? `${item.company.name} / ${item.title}` : item.title,
-              value: item.id,
-            }))}
-            label={t("organizations.building")}
-            onChange={(value) =>
-              setRuleDraft((current) => ({ ...current, buildingId: value ?? "" }))
-            }
-            value={ruleDraft.buildingId}
-          />
-          <Select
-            allowDeselect={false}
-            data={options.nodeTypes.map((item) => ({ label: item.displayName, value: item.id }))}
-            label={t("devices.nodeType")}
-            onChange={(value) =>
-              setRuleDraft((current) => ({ ...current, nodeTypeId: value ?? "" }))
-            }
-            value={ruleDraft.nodeTypeId}
-          />
-          <Select
-            allowDeselect={false}
-            data={severityOptions.map((item) => ({ label: item, value: item }))}
-            label={t("alarms.severity")}
-            onChange={(value) =>
-              setRuleDraft((current) => ({
-                ...current,
-                severity: (value ?? current.severity) as AlarmSeverity,
-              }))
-            }
-            value={ruleDraft.severity}
-          />
-          <TextInput
-            error={ruleNameError}
-            label={t("organizations.name")}
-            maxLength={alarmRuleNameMaxLength}
-            onChange={(event) => {
-              const name = event.currentTarget.value;
-              setRuleDraft((current) => ({ ...current, name }));
-              setRuleNameError(null);
-              setRuleFormError(null);
-            }}
-            value={ruleDraft.name}
-          />
-          </FormFieldGrid>
+            <FormFieldGrid>
+              <Select
+                allowDeselect={false}
+                data={options.buildings.map((item) => ({
+                  label: item.company?.name ? `${item.company.name} / ${item.title}` : item.title,
+                  value: item.id,
+                }))}
+                label={t("organizations.building")}
+                onChange={(value) =>
+                  setRuleDraft((current) => ({ ...current, buildingId: value ?? "" }))
+                }
+                value={ruleDraft.buildingId}
+              />
+              <Select
+                allowDeselect={false}
+                data={options.nodeTypes.map((item) => ({
+                  label: item.displayName,
+                  value: item.id,
+                }))}
+                label={t("devices.nodeType")}
+                onChange={(value) =>
+                  setRuleDraft((current) => ({ ...current, nodeTypeId: value ?? "" }))
+                }
+                value={ruleDraft.nodeTypeId}
+              />
+              <Select
+                allowDeselect={false}
+                data={severityOptions.map((item) => ({ label: item, value: item }))}
+                label={t("alarms.severity")}
+                onChange={(value) =>
+                  setRuleDraft((current) => ({
+                    ...current,
+                    severity: (value ?? current.severity) as AlarmSeverity,
+                  }))
+                }
+                value={ruleDraft.severity}
+              />
+              <TextInput
+                error={ruleNameError}
+                label={t("organizations.name")}
+                maxLength={alarmRuleNameMaxLength}
+                onChange={(event) => {
+                  const name = event.currentTarget.value;
+                  setRuleDraft((current) => ({ ...current, name }));
+                  setRuleNameError(null);
+                  setRuleFormError(null);
+                }}
+                value={ruleDraft.name}
+              />
+            </FormFieldGrid>
           </FormSection>
           {ruleFormError ? (
             <Text c="red" size="sm">

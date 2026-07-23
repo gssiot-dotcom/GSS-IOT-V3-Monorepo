@@ -10,7 +10,7 @@
   --gss-focus-ring: 0 0 0 3px rgb(21 159 222 / 20%);
 }
 
-[data-mantine-color-scheme='dark'] {
+[data-mantine-color-scheme="dark"] {
   color-scheme: dark;
   --gss-app-background: #0d1524;
   --gss-surface: #131e30;
@@ -51,7 +51,7 @@ body {
   min-height: 40px;
 }
 
-.gss-shell-navbar .mantine-NavLink-root[data-active='true'] {
+.gss-shell-navbar .mantine-NavLink-root[data-active="true"] {
   background: color-mix(in srgb, var(--gss-accent) 13%, transparent);
   color: var(--gss-accent);
   font-weight: 700;
@@ -113,7 +113,10 @@ body {
 
 .gss-entity-card-interactive {
   cursor: pointer;
-  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
 }
 
 .gss-entity-card-interactive:hover {

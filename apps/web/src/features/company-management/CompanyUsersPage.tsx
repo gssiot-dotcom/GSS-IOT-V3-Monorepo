@@ -428,181 +428,181 @@ export function CompanyUsersPage() {
       >
         <FormWorkspace>
           <FormSection title={t("management.role")}>
-          <FormFieldGrid>
-            <TextInput
-              label={t("organizations.name")}
-              onChange={(event) => setForm({ ...form, name: event.currentTarget.value })}
-              value={form.name}
-            />
-            <TextInput
-              label={t("management.email")}
-              onChange={(event) => setForm({ ...form, email: event.currentTarget.value })}
-              value={form.email}
-            />
-            <TextInput
-              label={t("management.phone")}
-              onChange={(event) => setForm({ ...form, phone: event.currentTarget.value })}
-              value={form.phone}
-            />
-            <TextInput
-              label={t("management.password")}
-              onChange={(event) => setForm({ ...form, password: event.currentTarget.value })}
-              type="password"
-              value={form.password}
-            />
-            <Select
-              data={roleOptions}
-              label={t("management.role")}
-              onChange={(roleId) => setForm({ ...form, roleId })}
-              value={form.roleId}
-            />
-            <Checkbox
-              checked={form.isActive}
-              label={t("management.active")}
-              onChange={(event) => setForm({ ...form, isActive: event.currentTarget.checked })}
-            />
-          </FormFieldGrid>
+            <FormFieldGrid>
+              <TextInput
+                label={t("organizations.name")}
+                onChange={(event) => setForm({ ...form, name: event.currentTarget.value })}
+                value={form.name}
+              />
+              <TextInput
+                label={t("management.email")}
+                onChange={(event) => setForm({ ...form, email: event.currentTarget.value })}
+                value={form.email}
+              />
+              <TextInput
+                label={t("management.phone")}
+                onChange={(event) => setForm({ ...form, phone: event.currentTarget.value })}
+                value={form.phone}
+              />
+              <TextInput
+                label={t("management.password")}
+                onChange={(event) => setForm({ ...form, password: event.currentTarget.value })}
+                type="password"
+                value={form.password}
+              />
+              <Select
+                data={roleOptions}
+                label={t("management.role")}
+                onChange={(roleId) => setForm({ ...form, roleId })}
+                value={form.roleId}
+              />
+              <Checkbox
+                checked={form.isActive}
+                label={t("management.active")}
+                onChange={(event) => setForm({ ...form, isActive: event.currentTarget.checked })}
+              />
+            </FormFieldGrid>
           </FormSection>
           <FormSection title={t("management.directPermissions")}>
-          <SimpleGrid cols={{ base: 1, md: 2 }}>
-            <MultiSelect
-              data={permissionOptions.filter(
-                (permission) => !form.directDenyIds.includes(permission.value),
-              )}
-              label={t("management.directAllow")}
-              onChange={(directAllowIds) => setForm({ ...form, directAllowIds })}
-              searchable
-              value={form.directAllowIds}
-            />
-            <MultiSelect
-              data={permissionOptions.filter(
-                (permission) => !form.directAllowIds.includes(permission.value),
-              )}
-              label={t("management.directDeny")}
-              onChange={(directDenyIds) => setForm({ ...form, directDenyIds })}
-              searchable
-              value={form.directDenyIds}
-            />
-          </SimpleGrid>
-          </FormSection>
-          <FormSection title={t("management.resourceScope")}>
-          <MultiSelect
-            data={areaOptions}
-            label={t("management.siteAccess")}
-            onChange={setAreaIds}
-            searchable
-            value={selectedAreaIds}
-          />
-          {form.areaAccess.map((access) => (
-            <Select
-              data={["VIEW", "MANAGE"]}
-              key={access.id}
-              label={areas.find((area) => area.id === access.id)?.name ?? t("organizations.area")}
-              onChange={(accessLevel) =>
-                setForm({
-                  ...form,
-                  areaAccess: form.areaAccess.map((item) =>
-                    item.id === access.id
-                      ? { ...item, accessLevel: (accessLevel ?? "VIEW") as AccessLevel }
-                      : item,
-                  ),
-                })
-              }
-              value={access.accessLevel}
-            />
-          ))}
-          <MultiSelect
-            data={buildingOptions}
-            label={t("management.buildingAccess")}
-            onChange={setBuildingIds}
-            searchable
-            value={selectedBuildingIds}
-          />
-          {form.buildingAccess.map((access) => (
-            <Select
-              data={["VIEW", "MANAGE"]}
-              key={access.id}
-              label={
-                buildings.find((building) => building.id === access.id)?.title ??
-                t("organizations.building")
-              }
-              onChange={(accessLevel) =>
-                setForm({
-                  ...form,
-                  buildingAccess: form.buildingAccess.map((item) =>
-                    item.id === access.id
-                      ? { ...item, accessLevel: (accessLevel ?? "VIEW") as AccessLevel }
-                      : item,
-                  ),
-                })
-              }
-              value={access.accessLevel}
-            />
-          ))}
-          </FormSection>
-          <FormSection title={t("management.positionAssignments")}>
-          {form.positionAssignments.map((assignment, index) => (
-            <SimpleGrid cols={{ base: 1, md: 3 }} key={`${assignment.positionId}-${index}`}>
-              <Select
-                data={positionOptions}
-                label={t("management.position")}
-                onChange={(positionId) =>
-                  setForm({
-                    ...form,
-                    positionAssignments: form.positionAssignments.map((item, itemIndex) =>
-                      itemIndex === index ? { ...item, positionId: positionId ?? "" } : item,
-                    ),
-                  })
-                }
-                value={assignment.positionId}
+            <SimpleGrid cols={{ base: 1, md: 2 }}>
+              <MultiSelect
+                data={permissionOptions.filter(
+                  (permission) => !form.directDenyIds.includes(permission.value),
+                )}
+                label={t("management.directAllow")}
+                onChange={(directAllowIds) => setForm({ ...form, directAllowIds })}
+                searchable
+                value={form.directAllowIds}
               />
-              <Select
-                clearable
-                data={areaOptions}
-                label={t("organizations.area")}
-                onChange={(areaId) =>
-                  setForm({
-                    ...form,
-                    positionAssignments: form.positionAssignments.map((item, itemIndex) =>
-                      itemIndex === index ? { ...item, areaId } : item,
-                    ),
-                  })
-                }
-                value={assignment.areaId}
-              />
-              <Select
-                clearable
-                data={buildingOptions.filter((building) => {
-                  const buildingRecord = buildings.find((item) => item.id === building.value);
-                  return !assignment.areaId || buildingRecord?.areaId === assignment.areaId;
-                })}
-                label={t("organizations.building")}
-                onChange={(buildingId) =>
-                  setForm({
-                    ...form,
-                    positionAssignments: form.positionAssignments.map((item, itemIndex) =>
-                      itemIndex === index ? { ...item, buildingId } : item,
-                    ),
-                  })
-                }
-                value={assignment.buildingId}
+              <MultiSelect
+                data={permissionOptions.filter(
+                  (permission) => !form.directAllowIds.includes(permission.value),
+                )}
+                label={t("management.directDeny")}
+                onChange={(directDenyIds) => setForm({ ...form, directDenyIds })}
+                searchable
+                value={form.directDenyIds}
               />
             </SimpleGrid>
-          ))}
-          <Button
-            onClick={() =>
-              setForm({
-                ...form,
-                positionAssignments: [
-                  ...form.positionAssignments,
-                  { areaId: null, buildingId: null, positionId: positionOptions[0]?.value ?? "" },
-                ],
-              })
-            }
-            variant="light"
-          >
-            {t("management.addPositionAssignment")}
-          </Button>
+          </FormSection>
+          <FormSection title={t("management.resourceScope")}>
+            <MultiSelect
+              data={areaOptions}
+              label={t("management.siteAccess")}
+              onChange={setAreaIds}
+              searchable
+              value={selectedAreaIds}
+            />
+            {form.areaAccess.map((access) => (
+              <Select
+                data={["VIEW", "MANAGE"]}
+                key={access.id}
+                label={areas.find((area) => area.id === access.id)?.name ?? t("organizations.area")}
+                onChange={(accessLevel) =>
+                  setForm({
+                    ...form,
+                    areaAccess: form.areaAccess.map((item) =>
+                      item.id === access.id
+                        ? { ...item, accessLevel: (accessLevel ?? "VIEW") as AccessLevel }
+                        : item,
+                    ),
+                  })
+                }
+                value={access.accessLevel}
+              />
+            ))}
+            <MultiSelect
+              data={buildingOptions}
+              label={t("management.buildingAccess")}
+              onChange={setBuildingIds}
+              searchable
+              value={selectedBuildingIds}
+            />
+            {form.buildingAccess.map((access) => (
+              <Select
+                data={["VIEW", "MANAGE"]}
+                key={access.id}
+                label={
+                  buildings.find((building) => building.id === access.id)?.title ??
+                  t("organizations.building")
+                }
+                onChange={(accessLevel) =>
+                  setForm({
+                    ...form,
+                    buildingAccess: form.buildingAccess.map((item) =>
+                      item.id === access.id
+                        ? { ...item, accessLevel: (accessLevel ?? "VIEW") as AccessLevel }
+                        : item,
+                    ),
+                  })
+                }
+                value={access.accessLevel}
+              />
+            ))}
+          </FormSection>
+          <FormSection title={t("management.positionAssignments")}>
+            {form.positionAssignments.map((assignment, index) => (
+              <SimpleGrid cols={{ base: 1, md: 3 }} key={`${assignment.positionId}-${index}`}>
+                <Select
+                  data={positionOptions}
+                  label={t("management.position")}
+                  onChange={(positionId) =>
+                    setForm({
+                      ...form,
+                      positionAssignments: form.positionAssignments.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, positionId: positionId ?? "" } : item,
+                      ),
+                    })
+                  }
+                  value={assignment.positionId}
+                />
+                <Select
+                  clearable
+                  data={areaOptions}
+                  label={t("organizations.area")}
+                  onChange={(areaId) =>
+                    setForm({
+                      ...form,
+                      positionAssignments: form.positionAssignments.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, areaId } : item,
+                      ),
+                    })
+                  }
+                  value={assignment.areaId}
+                />
+                <Select
+                  clearable
+                  data={buildingOptions.filter((building) => {
+                    const buildingRecord = buildings.find((item) => item.id === building.value);
+                    return !assignment.areaId || buildingRecord?.areaId === assignment.areaId;
+                  })}
+                  label={t("organizations.building")}
+                  onChange={(buildingId) =>
+                    setForm({
+                      ...form,
+                      positionAssignments: form.positionAssignments.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, buildingId } : item,
+                      ),
+                    })
+                  }
+                  value={assignment.buildingId}
+                />
+              </SimpleGrid>
+            ))}
+            <Button
+              onClick={() =>
+                setForm({
+                  ...form,
+                  positionAssignments: [
+                    ...form.positionAssignments,
+                    { areaId: null, buildingId: null, positionId: positionOptions[0]?.value ?? "" },
+                  ],
+                })
+              }
+              variant="light"
+            >
+              {t("management.addPositionAssignment")}
+            </Button>
           </FormSection>
           {preview ? (
             <Stack gap="xs">

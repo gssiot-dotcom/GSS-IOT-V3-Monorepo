@@ -99,7 +99,9 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
       {rows?.length ? (
         <Stack gap="md">
           <DataToolbar>
-            <Text c="dimmed" size="sm">{rows.length} {title}</Text>
+            <Text c="dimmed" size="sm">
+              {rows.length} {title}
+            </Text>
             <DataViewToggle
               data={[
                 { label: t("common.cardView"), value: "cards" },
@@ -113,25 +115,63 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
             <EntityCardGrid>
               {rows.map((row) => {
                 const name = "name" in row ? row.name : row.title;
-                const detail = "name" in row ? row.address ?? row.description : row.address ?? row.buildingType;
+                const detail =
+                  "name" in row
+                    ? (row.address ?? row.description)
+                    : (row.address ?? row.buildingType);
                 const identifier = "name" in row ? row.id.slice(0, 8) : (row.number ?? "-");
                 return (
                   <EntityCard
-                    action={<Button onClick={() => navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)} size="xs" variant="light">{t("organizations.open")}</Button>}
+                    action={
+                      <Button
+                        onClick={() =>
+                          navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)
+                        }
+                        size="xs"
+                        variant="light"
+                      >
+                        {t("organizations.open")}
+                      </Button>
+                    }
                     description={detail ?? undefined}
-                    eyebrow={isAreas ? t("organizations.areasTitle") : t("organizations.buildingsTitle")}
+                    eyebrow={
+                      isAreas ? t("organizations.areasTitle") : t("organizations.buildingsTitle")
+                    }
                     key={row.id}
                     title={name}
                   >
-                    <EntityStatusRow color={row.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={row.status} />
+                    <EntityStatusRow
+                      color={row.status === "ACTIVE" ? "green" : "gray"}
+                      label={t("organizations.status")}
+                      value={row.status}
+                    />
                     <Group gap="lg">
-                      <EntityMetric label={isAreas ? t("organizations.code") : t("devices.nodeNumber")} value={identifier} />
+                      <EntityMetric
+                        label={isAreas ? t("organizations.code") : t("devices.nodeNumber")}
+                        value={identifier}
+                      />
                       <Can permission="monitoring.view">
-                        {!isAreas ? <Button leftSection={<IconPlugConnected size={16} />} onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)} size="xs" variant="subtle">{t("monitoring.open")}</Button> : null}
+                        {!isAreas ? (
+                          <Button
+                            leftSection={<IconPlugConnected size={16} />}
+                            onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)}
+                            size="xs"
+                            variant="subtle"
+                          >
+                            {t("monitoring.open")}
+                          </Button>
+                        ) : null}
                       </Can>
                     </Group>
                     <Can permission={isAreas ? "areas.delete" : "buildings.delete"}>
-                      <Button color="red" onClick={() => void deactivate(row.id)} size="xs" variant="subtle">{t("organizations.deactivate")}</Button>
+                      <Button
+                        color="red"
+                        onClick={() => void deactivate(row.id)}
+                        size="xs"
+                        variant="subtle"
+                      >
+                        {t("organizations.deactivate")}
+                      </Button>
                     </Can>
                   </EntityCard>
                 );
@@ -140,9 +180,51 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
           ) : (
             <DataTable
               columns={[
-                { key: "name", label: t("organizations.name"), render: (row) => ("name" in row ? row.name : row.title) },
+                {
+                  key: "name",
+                  label: t("organizations.name"),
+                  render: (row) => ("name" in row ? row.name : row.title),
+                },
                 { key: "status", label: t("organizations.status"), render: (row) => row.status },
-                { key: "actions", label: t("organizations.actions"), render: (row) => <Stack gap={6}><Button onClick={() => navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)} size="xs" variant="light">{t("organizations.open")}</Button>{!isAreas ? <Can permission="monitoring.view"><Button leftSection={<IconPlugConnected size={16} />} onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)} size="xs" variant="light">{t("monitoring.open")}</Button></Can> : null}<Can permission={isAreas ? "areas.delete" : "buildings.delete"}><Button color="red" onClick={() => void deactivate(row.id)} size="xs" variant="light">{t("organizations.deactivate")}</Button></Can></Stack> },
+                {
+                  key: "actions",
+                  label: t("organizations.actions"),
+                  render: (row) => (
+                    <Stack gap={6}>
+                      <Button
+                        onClick={() =>
+                          navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)
+                        }
+                        size="xs"
+                        variant="light"
+                      >
+                        {t("organizations.open")}
+                      </Button>
+                      {!isAreas ? (
+                        <Can permission="monitoring.view">
+                          <Button
+                            leftSection={<IconPlugConnected size={16} />}
+                            onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)}
+                            size="xs"
+                            variant="light"
+                          >
+                            {t("monitoring.open")}
+                          </Button>
+                        </Can>
+                      ) : null}
+                      <Can permission={isAreas ? "areas.delete" : "buildings.delete"}>
+                        <Button
+                          color="red"
+                          onClick={() => void deactivate(row.id)}
+                          size="xs"
+                          variant="light"
+                        >
+                          {t("organizations.deactivate")}
+                        </Button>
+                      </Can>
+                    </Stack>
+                  ),
+                },
               ]}
               rows={rows}
             />

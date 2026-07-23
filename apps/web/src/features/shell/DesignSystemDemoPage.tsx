@@ -1,5 +1,7 @@
 import {
   DataTable,
+  PageContainer,
+  SectionPanel,
   EmptyState,
   ErrorState,
   NodeTypeSelectionCard,
@@ -8,7 +10,7 @@ import {
   StatusBadge,
   TablePaginationFooter,
 } from "@gss-iot/ui";
-import { Button, Card, SimpleGrid, Stack } from "@mantine/core";
+import { Card, SimpleGrid, Stack } from "@mantine/core";
 
 import { t, tf } from "../../app/i18n";
 
@@ -47,14 +49,10 @@ const statusRows = [
 
 export function DesignSystemDemoPage() {
   return (
-    <Stack gap="lg" p="md" data-testid="phase-2-demo">
-      <PageHeader
-        action={<Button>{t("demo.action")}</Button>}
-        subtitle={t("demo.subtitle")}
-        title={t("demo.title")}
-      />
+    <PageContainer data-testid="phase-2-demo">
+      <PageHeader subtitle={t("demo.subtitle")} title={t("demo.title")} />
 
-      <Card>
+      <SectionPanel>
         <Stack gap="md">
           <PageHeader subtitle={t("monitoring.nodeCardsSubtitle")} title={t("demo.nodeCards")} />
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
@@ -71,10 +69,10 @@ export function DesignSystemDemoPage() {
             ))}
           </SimpleGrid>
         </Stack>
-      </Card>
+      </SectionPanel>
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-        <Card>
+        <SectionPanel>
           <Stack gap="md">
             <PageHeader subtitle={t("demo.subtitle")} title={t("demo.components")} />
             <DataTable
@@ -94,7 +92,7 @@ export function DesignSystemDemoPage() {
               rangeLabel={t("table.range")}
             />
           </Stack>
-        </Card>
+        </SectionPanel>
         <Stack gap="md">
           <Card>
             <EmptyState description={t("common.emptyDescription")} title={t("common.emptyTitle")} />
@@ -112,6 +110,6 @@ export function DesignSystemDemoPage() {
           </Card>
         </Stack>
       </SimpleGrid>
-    </Stack>
+    </PageContainer>
   );
 }

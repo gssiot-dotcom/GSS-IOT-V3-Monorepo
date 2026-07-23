@@ -1,5 +1,12 @@
 import type { GatewayCommandRecord, MqttStatusRecord } from "@gss-iot/contracts";
-import { DataTable, DataToolbar, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
+import {
+  DataTable,
+  DataToolbar,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+} from "@gss-iot/ui";
 import { Badge, Button, Code, Drawer, Group, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -107,71 +114,77 @@ export function GatewayCommandsPage() {
       {commands.length ? (
         <Stack gap="md">
           <DataToolbar>
-            <Text c="dimmed" size="sm">{commands.length} {t("gatewayCommands.title")}</Text>
+            <Text c="dimmed" size="sm">
+              {commands.length} {t("gatewayCommands.title")}
+            </Text>
             <Group gap="xs">
               {(["PENDING", "SENT", "ACKNOWLEDGED", "FAILED"] as const).map((status) => {
                 const count = commands.filter((command) => command.status === status).length;
-                return count ? <Badge color={statusColor(status)} key={status} variant="light">{status} {count}</Badge> : null;
+                return count ? (
+                  <Badge color={statusColor(status)} key={status} variant="light">
+                    {status} {count}
+                  </Badge>
+                ) : null;
               })}
             </Group>
           </DataToolbar>
           <DataTable
             columns={[
-            {
-              key: "gateway",
-              label: t("gatewayCommands.gateway"),
-              render: (row) => row.gateway.serialNumber,
-            },
-            {
-              key: "type",
-              label: t("gatewayCommands.commandType"),
-              render: (row) => row.commandType,
-            },
-            {
-              key: "status",
-              label: t("gatewayCommands.status"),
-              render: (row) => <Badge color={statusColor(row.status)}>{row.status}</Badge>,
-            },
-            {
-              key: "attempts",
-              label: t("gatewayCommands.attempts"),
-              render: (row) => `${row.attemptCount}/${row.maxAttempts}`,
-            },
-            {
-              key: "created",
-              label: t("gatewayCommands.createdAt"),
-              render: (row) => formatDate(row.createdAt),
-            },
-            {
-              key: "actions",
-              label: t("organizations.actions"),
-              render: (row) => (
-                <Group gap="xs">
-                  <Button onClick={() => setSelected(row)} size="xs" variant="light">
-                    {t("organizations.open")}
-                  </Button>
-                  <Can permission="mqtt-commands.manage">
-                    {row.status === "FAILED" ? (
-                      <Button onClick={() => void mutate(row, "retry")} size="xs" variant="light">
-                        {t("gatewayCommands.retry")}
-                      </Button>
-                    ) : null}
-                    {row.status === "PENDING" || row.status === "FAILED" ? (
-                      <Button
-                        color="red"
-                        onClick={() => void mutate(row, "cancel")}
-                        size="xs"
-                        variant="light"
-                      >
-                        {t("gatewayCommands.cancel")}
-                      </Button>
-                    ) : null}
-                  </Can>
-                </Group>
-              ),
-            },
-          ]}
-          rows={commands}
+              {
+                key: "gateway",
+                label: t("gatewayCommands.gateway"),
+                render: (row) => row.gateway.serialNumber,
+              },
+              {
+                key: "type",
+                label: t("gatewayCommands.commandType"),
+                render: (row) => row.commandType,
+              },
+              {
+                key: "status",
+                label: t("gatewayCommands.status"),
+                render: (row) => <Badge color={statusColor(row.status)}>{row.status}</Badge>,
+              },
+              {
+                key: "attempts",
+                label: t("gatewayCommands.attempts"),
+                render: (row) => `${row.attemptCount}/${row.maxAttempts}`,
+              },
+              {
+                key: "created",
+                label: t("gatewayCommands.createdAt"),
+                render: (row) => formatDate(row.createdAt),
+              },
+              {
+                key: "actions",
+                label: t("organizations.actions"),
+                render: (row) => (
+                  <Group gap="xs">
+                    <Button onClick={() => setSelected(row)} size="xs" variant="light">
+                      {t("organizations.open")}
+                    </Button>
+                    <Can permission="mqtt-commands.manage">
+                      {row.status === "FAILED" ? (
+                        <Button onClick={() => void mutate(row, "retry")} size="xs" variant="light">
+                          {t("gatewayCommands.retry")}
+                        </Button>
+                      ) : null}
+                      {row.status === "PENDING" || row.status === "FAILED" ? (
+                        <Button
+                          color="red"
+                          onClick={() => void mutate(row, "cancel")}
+                          size="xs"
+                          variant="light"
+                        >
+                          {t("gatewayCommands.cancel")}
+                        </Button>
+                      ) : null}
+                    </Can>
+                  </Group>
+                ),
+              },
+            ]}
+            rows={commands}
           />
         </Stack>
       ) : (

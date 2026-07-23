@@ -217,61 +217,61 @@ export function CompanyRolesPage() {
         title={editingRole ? t("management.editRole") : t("management.createRole")}
       >
         <FormWorkspace>
-          <FormSection title={t("management.role") }>
-          <FormFieldGrid>
-            <TextInput
-              disabled={!!editingRole?.isSystem || !!editingRole?.isCompanyOwnerRole}
-              label={t("management.roleKey")}
-              onChange={(event) => setForm({ ...form, key: event.currentTarget.value })}
-              value={form.key}
-            />
-            <TextInput
-              disabled={!!editingRole?.isSystem || !!editingRole?.isCompanyOwnerRole}
-              label={t("organizations.name")}
-              onChange={(event) => setForm({ ...form, name: event.currentTarget.value })}
-              value={form.name}
-            />
-          </FormFieldGrid>
+          <FormSection title={t("management.role")}>
+            <FormFieldGrid>
+              <TextInput
+                disabled={!!editingRole?.isSystem || !!editingRole?.isCompanyOwnerRole}
+                label={t("management.roleKey")}
+                onChange={(event) => setForm({ ...form, key: event.currentTarget.value })}
+                value={form.key}
+              />
+              <TextInput
+                disabled={!!editingRole?.isSystem || !!editingRole?.isCompanyOwnerRole}
+                label={t("organizations.name")}
+                onChange={(event) => setForm({ ...form, name: event.currentTarget.value })}
+                value={form.name}
+              />
+            </FormFieldGrid>
           </FormSection>
           <FormSection title={t("management.effectiveRolePermissions")}>
-          <SimpleGrid cols={{ base: 1, md: 2 }}>
-            {Object.entries(groupedPermissions).map(([module, modulePermissions]) => (
-              <Stack gap={6} key={module}>
-                <Text c="dimmed" fw={600} size="sm">
-                  {module}
-                </Text>
-                {modulePermissions.map((permission) => (
-                  <Checkbox
-                    checked={form.permissionIds.includes(permission.id)}
-                    disabled={!!editingRole?.isSystem || !!editingRole?.isCompanyOwnerRole}
-                    key={permission.id}
-                    label={permission.key}
-                    onChange={(event) =>
-                      togglePermission(permission.id, event.currentTarget.checked)
-                    }
-                  />
-                ))}
-              </Stack>
-            ))}
-          </SimpleGrid>
+            <SimpleGrid cols={{ base: 1, md: 2 }}>
+              {Object.entries(groupedPermissions).map(([module, modulePermissions]) => (
+                <Stack gap={6} key={module}>
+                  <Text c="dimmed" fw={600} size="sm">
+                    {module}
+                  </Text>
+                  {modulePermissions.map((permission) => (
+                    <Checkbox
+                      checked={form.permissionIds.includes(permission.id)}
+                      disabled={!!editingRole?.isSystem || !!editingRole?.isCompanyOwnerRole}
+                      key={permission.id}
+                      label={permission.key}
+                      onChange={(event) =>
+                        togglePermission(permission.id, event.currentTarget.checked)
+                      }
+                    />
+                  ))}
+                </Stack>
+              ))}
+            </SimpleGrid>
           </FormSection>
           <StickyFormActions>
-          <Group justify="space-between" w="100%">
-            <Text c="dimmed" size="sm">
-              {tf("management.permissionCount", { count: form.permissionIds.length })}
-            </Text>
-            <Button
-              disabled={
-                !form.key ||
-                !form.name ||
-                !!editingRole?.isSystem ||
-                !!editingRole?.isCompanyOwnerRole
-              }
-              onClick={() => void save()}
-            >
-              {t("organizations.save")}
-            </Button>
-          </Group>
+            <Group justify="space-between" w="100%">
+              <Text c="dimmed" size="sm">
+                {tf("management.permissionCount", { count: form.permissionIds.length })}
+              </Text>
+              <Button
+                disabled={
+                  !form.key ||
+                  !form.name ||
+                  !!editingRole?.isSystem ||
+                  !!editingRole?.isCompanyOwnerRole
+                }
+                onClick={() => void save()}
+              >
+                {t("organizations.save")}
+              </Button>
+            </Group>
           </StickyFormActions>
         </FormWorkspace>
       </Modal>

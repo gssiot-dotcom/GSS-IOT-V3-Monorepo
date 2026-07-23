@@ -356,11 +356,36 @@ export function AdminCompanyDetailPage(): ReactElement {
       <ContextSectionLayout
         navigation={
           <ContextSectionNav>
-            <NavLink active={section === "overview"} component={Link} label={t("organizations.overview")} to={routeBase} />
-            <NavLink active={section === "sites"} component={Link} label={t("organizations.areasTitle")} to={`${routeBase}/sites`} />
-            <NavLink active={section === "buildings"} component={Link} label={t("organizations.buildingsTitle")} to={`${routeBase}/buildings`} />
-            <NavLink active={section === "users"} component={Link} label={t("management.usersTitle")} to={`${routeBase}/users`} />
-            <NavLink active={section === "devices"} component={Link} label={t("devices.companyDevicesTitle")} to={`${routeBase}/devices`} />
+            <NavLink
+              active={section === "overview"}
+              component={Link}
+              label={t("organizations.overview")}
+              to={routeBase}
+            />
+            <NavLink
+              active={section === "sites"}
+              component={Link}
+              label={t("organizations.areasTitle")}
+              to={`${routeBase}/sites`}
+            />
+            <NavLink
+              active={section === "buildings"}
+              component={Link}
+              label={t("organizations.buildingsTitle")}
+              to={`${routeBase}/buildings`}
+            />
+            <NavLink
+              active={section === "users"}
+              component={Link}
+              label={t("management.usersTitle")}
+              to={`${routeBase}/users`}
+            />
+            <NavLink
+              active={section === "devices"}
+              component={Link}
+              label={t("devices.companyDevicesTitle")}
+              to={`${routeBase}/devices`}
+            />
           </ContextSectionNav>
         }
       >
@@ -582,8 +607,17 @@ function SitesSection({
       {areas.length ? (
         <EntityCardGrid>
           {areas.map((area) => (
-            <EntityCard description={area.address ?? area.description ?? undefined} eyebrow={t("organizations.areasTitle")} key={area.id} title={area.name}>
-              <EntityStatusRow color={area.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={area.status} />
+            <EntityCard
+              description={area.address ?? area.description ?? undefined}
+              eyebrow={t("organizations.areasTitle")}
+              key={area.id}
+              title={area.name}
+            >
+              <EntityStatusRow
+                color={area.status === "ACTIVE" ? "green" : "gray"}
+                label={t("organizations.status")}
+                value={area.status}
+              />
               <EntityMetric label={t("organizations.code")} value={area.id.slice(0, 8)} />
             </EntityCard>
           ))}
@@ -625,8 +659,17 @@ function BuildingsSection({
       {buildings.length ? (
         <EntityCardGrid>
           {buildings.map((building) => (
-            <EntityCard description={building.address ?? building.buildingType ?? undefined} eyebrow={t("organizations.buildingsTitle")} key={building.id} title={building.title}>
-              <EntityStatusRow color={building.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={building.status} />
+            <EntityCard
+              description={building.address ?? building.buildingType ?? undefined}
+              eyebrow={t("organizations.buildingsTitle")}
+              key={building.id}
+              title={building.title}
+            >
+              <EntityStatusRow
+                color={building.status === "ACTIVE" ? "green" : "gray"}
+                label={t("organizations.status")}
+                value={building.status}
+              />
               <EntityMetric label={t("organizations.code")} value={building.number ?? "-"} />
             </EntityCard>
           ))}
