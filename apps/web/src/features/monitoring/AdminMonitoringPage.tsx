@@ -9,17 +9,22 @@ import type {
 } from "@gss-iot/contracts";
 import {
   DataTable,
+  DashboardSection,
   EmptyState,
   ErrorState,
   LoadingState,
   NodeTypeSelectionCard,
+  OperationalSummaryCard,
   PageHeader,
   StatusBadge,
 } from "@gss-iot/ui";
-import { Badge, Button, Card, Group, Paper, Select, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Badge, Button, Card, Group, Select, SimpleGrid, Stack, Text } from "@mantine/core";
 import {
   IconBuilding,
+  IconCircleCheck,
   IconExternalLink,
+  IconAlertTriangle,
+  IconActivity,
   IconPlugConnected,
   IconPlugConnectedX,
 } from "@tabler/icons-react";
@@ -225,63 +230,93 @@ export function AdminMonitoringPage() {
         title={t("monitoring.adminTitle")}
       />
       <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }}>
-        <SummaryCard
+        <OperationalSummaryCard
+          accent="blue"
+          icon={<IconActivity size={18} />}
           label={t("monitoring.adminNodes")}
           value={Object.values(summary.severityDistribution).reduce(
             (total, count) => total + count,
             0,
           )}
         />
-        <SummaryCard label={t("monitoring.adminGatewaysOnline")} value={summary.gateways.online} />
-        <SummaryCard label={t("monitoring.adminGatewaysStale")} value={summary.gateways.stale} />
-        <SummaryCard
-          label={t("monitoring.adminDangerNodes")}
-          value={summary.severityDistribution.danger}
+        <OperationalSummaryCard
+          accent="cyan"
+          icon={<IconPlugConnected size={18} />}
+          label={t("dashboard.gateways")}
+          value={summary.gateways.total}
         />
+        <OperationalSummaryCard
+          accent="teal"
+          helper={<span className="gss-status-online">{t("status.online")}</span>}
+          icon={<IconPlugConnected size={18} />}
+          label={t("monitoring.adminGatewaysOnline")}
+          value={<span className="gss-status-online">{summary.gateways.online}</span>}
+        />
+        <OperationalSummaryCard
+          accent="neutral"
+          helper={<span className="gss-status-offline">{t("status.offline")}</span>}
+          icon={<IconPlugConnectedX size={18} />}
+          label={t("monitoring.adminGatewaysStale")}
+          value={<span className="gss-status-stale">{summary.gateways.stale}</span>}
+        />
+        {(["safe", "caution", "warning", "danger", "offline"] as const).map((status) => (
+          <OperationalSummaryCard
+            accent={status === "safe" ? "teal" : status === "danger" ? "neutral" : "indigo"}
+            helper={<span className={`gss-status-${status}`}>{t(`status.${status}`)}</span>}
+            icon={
+              status === "safe" ? <IconCircleCheck size={18} /> : <IconAlertTriangle size={18} />
+            }
+            key={status}
+            label={t(`status.${status}`)}
+            value={
+              <span className={`gss-status-${status}`}>
+                {summary.severityDistribution[status] ?? 0}
+              </span>
+            }
+          />
+        ))}
       </SimpleGrid>
-      <Paper withBorder p="md">
-        <Stack gap="sm">
-          <Group>
-            <IconBuilding size={18} />
-            <Text fw={600}>{t("monitoring.adminFilters")}</Text>
-          </Group>
-          <SimpleGrid cols={{ base: 1, sm: 3 }}>
-            <Select
-              clearable
-              data={options.companies.map((company) => ({
-                label: company.name,
-                value: company.id,
-              }))}
-              label={t("devices.company")}
-              onChange={(value) => {
-                setCompanyId(value ?? "");
-                setAreaId("");
-                setBuildingId("");
-              }}
-              value={companyId}
-            />
-            <Select
-              clearable
-              data={areas.map((area) => ({ label: area.name, value: area.id }))}
-              disabled={!companyId}
-              label={t("organizations.area")}
-              onChange={(value) => {
-                setAreaId(value ?? "");
-                setBuildingId("");
-              }}
-              value={areaId}
-            />
-            <Select
-              clearable
-              data={buildings.map((building) => ({ label: building.title, value: building.id }))}
-              disabled={!areaId}
-              label={t("devices.building")}
-              onChange={(value) => setBuildingId(value ?? "")}
-              value={buildingId}
-            />
-          </SimpleGrid>
-        </Stack>
-      </Paper>
+      <DashboardSection
+        accent="blue"
+        icon={<IconBuilding size={18} />}
+        title={t("monitoring.adminFilters")}
+      >
+        <SimpleGrid cols={{ base: 1, sm: 3 }}>
+          <Select
+            clearable
+            data={options.companies.map((company) => ({
+              label: company.name,
+              value: company.id,
+            }))}
+            label={t("devices.company")}
+            onChange={(value) => {
+              setCompanyId(value ?? "");
+              setAreaId("");
+              setBuildingId("");
+            }}
+            value={companyId}
+          />
+          <Select
+            clearable
+            data={areas.map((area) => ({ label: area.name, value: area.id }))}
+            disabled={!companyId}
+            label={t("organizations.area")}
+            onChange={(value) => {
+              setAreaId(value ?? "");
+              setBuildingId("");
+            }}
+            value={areaId}
+          />
+          <Select
+            clearable
+            data={buildings.map((building) => ({ label: building.title, value: building.id }))}
+            disabled={!areaId}
+            label={t("devices.building")}
+            onChange={(value) => setBuildingId(value ?? "")}
+            value={buildingId}
+          />
+        </SimpleGrid>
+      </DashboardSection>
       <SeveritySummary distribution={summary.severityDistribution} />
       {!buildingId ? (
         <EmptyState
@@ -418,19 +453,6 @@ export function AdminMonitoringPage() {
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: number }) {
-  return (
-    <Paper withBorder p="md">
-      <Text c="dimmed" size="sm">
-        {label}
-      </Text>
-      <Text fw={700} size="xl">
-        {value}
-      </Text>
-    </Paper>
-  );
-}
-
 function SeveritySummary({
   distribution,
 }: {
@@ -439,9 +461,11 @@ function SeveritySummary({
   return (
     <Group gap="xs">
       {Object.entries(distribution).map(([status, count]) => (
-        <Badge key={status} variant="light">
-          {t(`status.${status}` as never)}: {count}
-        </Badge>
+        <StatusBadge
+          key={status}
+          label={`${t(`status.${status}` as never)}: ${count}`}
+          status={status as never}
+        />
       ))}
     </Group>
   );
@@ -457,32 +481,33 @@ function RecentNodes({
   if (!nodes.length) return null;
   const rows = nodes.map((node) => ({ ...node, id: node.nodeId }));
   return (
-    <Card>
-      <Stack gap="sm">
-        <Text fw={600}>{t("monitoring.adminRecentNodes")}</Text>
-        <DataTable
-          columns={[
-            { key: "node", label: t("monitoring.nodeNumber"), render: (row) => row.node.number },
-            {
-              key: "status",
-              label: t("monitoring.latestStatus"),
-              render: (row) => (
-                <StatusBadge label={t(`status.${row.status}` as never)} status={row.status} />
-              ),
-            },
-            {
-              key: "open",
-              label: t("monitoring.history"),
-              render: (row) => (
-                <Button onClick={() => onOpen(row.nodeId)} size="xs" variant="subtle">
-                  {t("monitoring.openHistory")}
-                </Button>
-              ),
-            },
-          ]}
-          rows={rows}
-        />
-      </Stack>
-    </Card>
+    <DashboardSection
+      accent="teal"
+      icon={<IconActivity size={18} />}
+      title={t("monitoring.adminRecentNodes")}
+    >
+      <DataTable
+        columns={[
+          { key: "node", label: t("monitoring.nodeNumber"), render: (row) => row.node.number },
+          {
+            key: "status",
+            label: t("monitoring.latestStatus"),
+            render: (row) => (
+              <StatusBadge label={t(`status.${row.status}` as never)} status={row.status} />
+            ),
+          },
+          {
+            key: "open",
+            label: t("monitoring.history"),
+            render: (row) => (
+              <Button onClick={() => onOpen(row.nodeId)} size="xs" variant="subtle">
+                {t("monitoring.openHistory")}
+              </Button>
+            ),
+          },
+        ]}
+        rows={rows}
+      />
+    </DashboardSection>
   );
 }

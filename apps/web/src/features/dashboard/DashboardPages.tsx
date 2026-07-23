@@ -1,7 +1,6 @@
 import type { DashboardRange, DashboardSummary, ReportJobRecord } from "@gss-iot/contracts";
 import {
   Badge,
-  Button,
   Group,
   Paper,
   NativeSelect,
@@ -15,8 +14,11 @@ import {
 import {
   IconActivity,
   IconAlertTriangle,
+  IconBellRinging,
   IconBuilding,
+  IconChartBar,
   IconDeviceDesktopAnalytics,
+  IconReportAnalytics,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -30,6 +32,7 @@ import {
   DashboardSection,
   EmptyState,
   ErrorState,
+  GssButton,
   LoadingState,
   PageHeader,
   ResponsiveContentGrid,
@@ -71,17 +74,24 @@ export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/comp
 
   return (
     <DashboardSection
+      accent="indigo"
       action={
-        <Button onClick={() => void navigate(`${basePath}/reports`)} variant="light">
+        <GssButton onClick={() => void navigate(`${basePath}/reports`)} variant="soft">
           {t("reports.dashboardOpen")}
-        </Button>
+        </GssButton>
       }
+      icon={<IconReportAnalytics size={18} />}
       subtitle={t("reports.dashboardSubtitle")}
       title={t("reports.dashboardTitle")}
     >
       <SimpleGrid cols={{ base: 2, sm: 4 }}>
         {(["PENDING", "PROCESSING", "COMPLETED", "FAILED"] as const).map((status) => (
-          <Paper key={status} p="sm" withBorder>
+          <Paper
+            className={`gss-status-tile gss-status-${status.toLowerCase()}`}
+            key={status}
+            p="sm"
+            withBorder
+          >
             <Text c="dimmed" size="xs">
               {statusLabel(status)}
             </Text>
@@ -207,8 +217,8 @@ function SeverityChart({
           </Group>
           <div aria-label={tf("dashboard.severityBarLabel", { severity, count })} role="img">
             <div
+              className={`gss-severity-bar gss-status-${severity.toLowerCase()}`}
               style={{
-                background: "var(--mantine-color-gss-6)",
                 borderRadius: 999,
                 height: 8,
                 width: `${(count / max) * 100}%`,
@@ -247,24 +257,28 @@ function DashboardPage({
     const items = [];
     if (summary.kpis.activeCompanies !== undefined)
       items.push({
+        accent: "indigo" as const,
         icon: <IconBuilding size={19} />,
         label: t("dashboard.activeCompanies"),
         value: summary.kpis.activeCompanies,
       });
     if (summary.kpis.activeSites !== undefined)
       items.push({
+        accent: "blue" as const,
         icon: <IconBuilding size={19} />,
         label: t("dashboard.activeSites"),
         value: summary.kpis.activeSites,
       });
     if (summary.kpis.activeBuildings !== undefined)
       items.push({
+        accent: "violet" as const,
         icon: <IconBuilding size={19} />,
         label: t("dashboard.activeBuildings"),
         value: summary.kpis.activeBuildings,
       });
     if (summary.kpis.gateways !== undefined)
       items.push({
+        accent: "cyan" as const,
         icon: <IconDeviceDesktopAnalytics size={19} />,
         label: t("dashboard.gateways"),
         value: summary.kpis.gateways,
@@ -275,6 +289,7 @@ function DashboardPage({
       });
     if (summary.kpis.nodes !== undefined)
       items.push({
+        accent: "teal" as const,
         icon: <IconActivity size={19} />,
         label: t("dashboard.nodes"),
         value: summary.kpis.nodes,
@@ -285,6 +300,7 @@ function DashboardPage({
       });
     if (summary.kpis.telemetryReadings !== undefined)
       items.push({
+        accent: "blue" as const,
         icon: <IconActivity size={19} />,
         label: t("dashboard.telemetryReadings"),
         value: summary.kpis.telemetryReadings,
@@ -329,6 +345,8 @@ function DashboardPage({
         <SimpleGrid cols={{ base: 1, lg: 2 }}>
           {summary.severityDistribution ? (
             <DashboardSection
+              accent="violet"
+              icon={<IconAlertTriangle size={18} />}
               subtitle={t("dashboard.severitySubtitle")}
               title={t("dashboard.severityTitle")}
             >
@@ -337,6 +355,8 @@ function DashboardPage({
           ) : null}
           {summary.telemetryTrend ? (
             <DashboardSection
+              accent="blue"
+              icon={<IconChartBar size={18} />}
               subtitle={t("dashboard.telemetrySubtitle")}
               title={t("dashboard.telemetryTitle")}
             >
@@ -352,6 +372,8 @@ function DashboardPage({
       )}
       {summary.openAlarmsBySeverity ? (
         <DashboardSection
+          accent="neutral"
+          icon={<IconBellRinging size={18} />}
           subtitle={t("dashboard.alarmsSubtitle")}
           title={t("dashboard.alarmsTitle")}
         >
@@ -370,11 +392,21 @@ function DashboardPage({
         </DashboardSection>
       ) : null}
       {summary.gateways ? (
-        <DashboardSection title={t("dashboard.gatewayStatusTitle")}>
+        <DashboardSection
+          accent="cyan"
+          icon={<IconDeviceDesktopAnalytics size={18} />}
+          title={t("dashboard.gatewayStatusTitle")}
+        >
           <Group gap="lg">
-            <Text>{tf("dashboard.gatewayOnline", { count: summary.gateways.online })}</Text>
-            <Text>{tf("dashboard.gatewayOffline", { count: summary.gateways.offline })}</Text>
-            <Text>{tf("dashboard.gatewayUnassigned", { count: summary.gateways.unassigned })}</Text>
+            <Text className="gss-status-online">
+              {tf("dashboard.gatewayOnline", { count: summary.gateways.online })}
+            </Text>
+            <Text className="gss-status-offline">
+              {tf("dashboard.gatewayOffline", { count: summary.gateways.offline })}
+            </Text>
+            <Text className="gss-status-pending">
+              {tf("dashboard.gatewayUnassigned", { count: summary.gateways.unassigned })}
+            </Text>
           </Group>
         </DashboardSection>
       ) : null}

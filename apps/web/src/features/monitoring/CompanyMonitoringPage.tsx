@@ -22,6 +22,7 @@ import {
   ErrorState,
   LoadingState,
   NodeTypeSelectionCard,
+  OperationalSummaryCard,
   PageHeader,
   StatusBadge,
 } from "@gss-iot/ui";
@@ -39,6 +40,9 @@ import {
   Text,
 } from "@mantine/core";
 import {
+  IconActivity,
+  IconAlertTriangle,
+  IconCircleCheck,
   IconHistory,
   IconPlugConnected,
   IconPlugConnectedX,
@@ -286,6 +290,10 @@ export function NodeTypeMonitoringPage() {
     () => response?.states.map((state) => ({ ...state, id: state.nodeId })) ?? [],
     [response],
   );
+  const statusCounts = rows.reduce<Record<string, number>>((counts, row) => {
+    counts[row.status] = (counts[row.status] ?? 0) + 1;
+    return counts;
+  }, {});
 
   if (error || !canonicalNodeType)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
@@ -298,6 +306,26 @@ export function NodeTypeMonitoringPage() {
         subtitle={tf("monitoring.nodeTypeSubtitle", { building: response.building.title })}
         action={<RealtimeBadge status={realtimeStatus} />}
       />
+      <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }}>
+        <OperationalSummaryCard
+          accent="blue"
+          icon={<IconActivity size={18} />}
+          label={t("monitoring.totalNodes")}
+          value={rows.length}
+        />
+        {(["safe", "caution", "warning", "danger", "offline"] as const).map((status) => (
+          <OperationalSummaryCard
+            accent={status === "safe" ? "teal" : status === "danger" ? "neutral" : "indigo"}
+            helper={<span className={`gss-status-${status}`}>{t(`status.${status}`)}</span>}
+            icon={
+              status === "safe" ? <IconCircleCheck size={18} /> : <IconAlertTriangle size={18} />
+            }
+            key={status}
+            label={t(`status.${status}`)}
+            value={<span className={`gss-status-${status}`}>{statusCounts[status] ?? 0}</span>}
+          />
+        ))}
+      </SimpleGrid>
       {rows.length ? (
         <Tabs defaultValue="states">
           <Group justify="space-between" wrap="wrap">
