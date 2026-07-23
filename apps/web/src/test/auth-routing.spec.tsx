@@ -229,6 +229,26 @@ describe("auth routing", () => {
     expect(screen.getByText("Platform managers")).toBeTruthy();
   });
 
+  it("keeps the Admin company workspace mounted while child sections change", async () => {
+    storeSession("gss-admin", "admin-token");
+    const fetchMock = mockFetch();
+    renderApp("/admin/companies/company-1");
+
+    const layout = await screen.findByTestId("admin-company-workspace-layout");
+    const instance = layout.getAttribute("data-workspace-instance");
+    fireEvent.click(await screen.findByRole("link", { name: "Construction sites" }));
+
+    expect(await screen.findByText("Site A")).toBeTruthy();
+    expect(
+      screen.getByTestId("admin-company-workspace-layout").getAttribute("data-workspace-instance"),
+    ).toBe(instance);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input]) => String(input) === `${apiBaseUrl}/admin/companies/company-1`,
+      ),
+    ).toHaveLength(1);
+  });
+
   it("renders company-owned roles in the GSS Admin company-user create form", async () => {
     storeSession("gss-admin", "admin-token");
     const fetchMock = mockFetch();

@@ -1,6 +1,6 @@
 import type { AuthContext } from "@gss-iot/contracts";
 import type { ReactElement, ReactNode } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import {
   AdminAlarmDetailPage,
@@ -25,7 +25,14 @@ import {
   NodeTypeMonitoringPage,
 } from "../features/monitoring/CompanyMonitoringPage";
 import { AdminMonitoringPage } from "../features/monitoring/AdminMonitoringPage";
-import { AdminCompanyDetailPage } from "../features/organizations/AdminCompanyDetailPage";
+import {
+  AdminCompanyBuildingsSection,
+  AdminCompanyDevicesSection,
+  AdminCompanyOverviewSection,
+  AdminCompanySitesSection,
+  AdminCompanyUsersSection,
+  AdminCompanyWorkspaceLayout,
+} from "../features/organizations/AdminCompanyDetailPage";
 import { CompaniesPage } from "../features/organizations/CompaniesPage";
 import {
   CompanyAreaDetailPage,
@@ -65,6 +72,28 @@ function ProtectedPage({
           <RequirePermission permission={permission}>{children}</RequirePermission>
         ) : (
           children
+        )}
+      </PortalLayout>
+    </RequireAuth>
+  );
+}
+
+function ProtectedRouteLayout({
+  context,
+  permission,
+}: {
+  context: AuthContext;
+  permission?: string;
+}) {
+  return (
+    <RequireAuth context={context}>
+      <PortalLayout context={context}>
+        {permission ? (
+          <RequirePermission permission={permission}>
+            <Outlet />
+          </RequirePermission>
+        ) : (
+          <Outlet />
         )}
       </PortalLayout>
     </RequireAuth>
@@ -131,45 +160,45 @@ export function AppRouter(): ReactElement {
               path="/admin/alarms/:alarmId"
             />
             <Route
-              element={
-                <ProtectedPage context="gss-admin" permission="companies.view">
-                  <AdminCompanyDetailPage />
-                </ProtectedPage>
-              }
+              element={<ProtectedRouteLayout context="gss-admin" permission="companies.view" />}
               path="/admin/companies/:companyId"
-            />
-            <Route
-              element={
-                <ProtectedPage context="gss-admin" permission="areas.view">
-                  <AdminCompanyDetailPage />
-                </ProtectedPage>
-              }
-              path="/admin/companies/:companyId/sites"
-            />
-            <Route
-              element={
-                <ProtectedPage context="gss-admin" permission="buildings.view">
-                  <AdminCompanyDetailPage />
-                </ProtectedPage>
-              }
-              path="/admin/companies/:companyId/buildings"
-            />
-            <Route
-              element={
-                <ProtectedPage context="gss-admin" permission="company-users.view">
-                  <AdminCompanyDetailPage />
-                </ProtectedPage>
-              }
-              path="/admin/companies/:companyId/users"
-            />
-            <Route
-              element={
-                <ProtectedPage context="gss-admin" permission="devices.view">
-                  <AdminCompanyDetailPage />
-                </ProtectedPage>
-              }
-              path="/admin/companies/:companyId/devices"
-            />
+            >
+              <Route element={<AdminCompanyWorkspaceLayout />}>
+                <Route element={<AdminCompanyOverviewSection />} index />
+                <Route
+                  element={
+                    <RequirePermission permission="areas.view">
+                      <AdminCompanySitesSection />
+                    </RequirePermission>
+                  }
+                  path="sites"
+                />
+                <Route
+                  element={
+                    <RequirePermission permission="buildings.view">
+                      <AdminCompanyBuildingsSection />
+                    </RequirePermission>
+                  }
+                  path="buildings"
+                />
+                <Route
+                  element={
+                    <RequirePermission permission="company-users.view">
+                      <AdminCompanyUsersSection />
+                    </RequirePermission>
+                  }
+                  path="users"
+                />
+                <Route
+                  element={
+                    <RequirePermission permission="devices.view">
+                      <AdminCompanyDevicesSection />
+                    </RequirePermission>
+                  }
+                  path="devices"
+                />
+              </Route>
+            </Route>
             {companyNavItems.map((item) => (
               <Route
                 element={

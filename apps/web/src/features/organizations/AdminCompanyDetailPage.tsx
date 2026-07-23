@@ -38,8 +38,15 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useNavigate,
+  useOutletContext,
+  useParams,
+} from "react-router-dom";
 
 import { t } from "../../app/i18n";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
@@ -50,7 +57,7 @@ import { deviceStatusLabel, gatewayTypeLabel } from "../devices/device-labels";
 
 type CompanyDetailSection = "overview" | "sites" | "buildings" | "users" | "devices";
 
-interface DetailState {
+export interface DetailState {
   areas: AreaRecord[];
   buildings: BuildingRecord[];
   company?: CompanyRecord;
@@ -58,6 +65,17 @@ interface DetailState {
   nodes: NodeRecord[];
   roles: CompanyRoleRecord[];
   users: CompanyUserRecord[];
+}
+
+export interface AdminCompanyWorkspaceContext {
+  canLoadAreas: boolean;
+  canLoadDevices: boolean;
+  canLoadBuildings: boolean;
+  canLoadUsers: boolean;
+  detail: DetailState;
+  onCreateArea: () => void;
+  onCreateBuilding: () => void;
+  onCreateUser: () => void;
 }
 
 const emptyState: DetailState = {
@@ -77,7 +95,14 @@ function getSection(pathname: string): CompanyDetailSection {
   return "overview";
 }
 
-export function AdminCompanyDetailPage(): ReactElement {
+let workspaceInstanceCounter = 0;
+
+export function AdminCompanyWorkspaceLayout(): ReactElement {
+  const [workspaceInstance] = useState(() => {
+    workspaceInstanceCounter += 1;
+    return `workspace-${workspaceInstanceCounter}`;
+  });
+  const initialLoadKeyRef = useRef<string | undefined>(undefined);
   const { companyId = "" } = useParams();
   const { logout, session } = useAuth();
   const navigate = useNavigate();
@@ -184,8 +209,11 @@ export function AdminCompanyDetailPage(): ReactElement {
   ]);
 
   useEffect(() => {
+    const loadKey = `${session?.accessToken ?? ""}:${companyId}`;
+    if (!loadKey || initialLoadKeyRef.current === loadKey) return;
+    initialLoadKeyRef.current = loadKey;
     void load();
-  }, [load]);
+  }, [companyId, load, session?.accessToken]);
 
   const roleOptions = useMemo(
     () => detail.roles.map((role) => ({ label: role.name, value: role.id })),
@@ -329,7 +357,10 @@ export function AdminCompanyDetailPage(): ReactElement {
   }
 
   return (
-    <PageContainer>
+    <PageContainer
+      data-testid="admin-company-workspace-layout"
+      data-workspace-instance={workspaceInstance}
+    >
       <PageHeader
         title={detail.company.name}
         subtitle={t("organizations.companyDetailSubtitle")}
@@ -390,36 +421,20 @@ export function AdminCompanyDetailPage(): ReactElement {
         }
       >
         <Stack gap="md">
-          {section === "overview" ? <OverviewSection detail={detail} /> : null}
-          {section === "sites" ? (
-            <SitesSection
-              areas={detail.areas}
-              canView={canLoadAreas}
-              onCreate={() => setModal("area")}
-            />
-          ) : null}
-          {section === "buildings" ? (
-            <BuildingsSection
-              buildings={detail.buildings}
-              canCreate={detail.areas.length > 0}
-              canView={canLoadBuildings}
-              onCreate={() => setModal("building")}
-            />
-          ) : null}
-          {section === "users" ? (
-            <UsersSection
-              canView={canLoadUsers}
-              onCreate={() => setModal("user")}
-              users={detail.users}
-            />
-          ) : null}
-          {section === "devices" ? (
-            <DevicesSection
-              canView={canLoadDevices}
-              gateways={detail.gateways}
-              nodes={detail.nodes}
-            />
-          ) : null}
+          <Outlet
+            context={
+              {
+                canLoadAreas,
+                canLoadBuildings,
+                canLoadDevices,
+                canLoadUsers,
+                detail,
+                onCreateArea: () => setModal("area"),
+                onCreateBuilding: () => setModal("building"),
+                onCreateUser: () => setModal("user"),
+              } satisfies AdminCompanyWorkspaceContext
+            }
+          />
         </Stack>
       </ContextSectionLayout>
 
@@ -526,6 +541,48 @@ export function AdminCompanyDetailPage(): ReactElement {
         </Stack>
       </Modal>
     </PageContainer>
+  );
+}
+
+export function AdminCompanyDetailPage(): ReactElement {
+  return <AdminCompanyWorkspaceLayout />;
+}
+
+function useAdminCompanyWorkspaceContext() {
+  return useOutletContext<AdminCompanyWorkspaceContext>();
+}
+
+export function AdminCompanyOverviewSection() {
+  const { detail } = useAdminCompanyWorkspaceContext();
+  return <OverviewSection detail={detail} />;
+}
+
+export function AdminCompanySitesSection() {
+  const { canLoadAreas, detail, onCreateArea } = useAdminCompanyWorkspaceContext();
+  return <SitesSection areas={detail.areas} canView={canLoadAreas} onCreate={onCreateArea} />;
+}
+
+export function AdminCompanyBuildingsSection() {
+  const { canLoadBuildings, detail, onCreateBuilding } = useAdminCompanyWorkspaceContext();
+  return (
+    <BuildingsSection
+      buildings={detail.buildings}
+      canCreate={detail.areas.length > 0}
+      canView={canLoadBuildings}
+      onCreate={onCreateBuilding}
+    />
+  );
+}
+
+export function AdminCompanyUsersSection() {
+  const { canLoadUsers, detail, onCreateUser } = useAdminCompanyWorkspaceContext();
+  return <UsersSection canView={canLoadUsers} onCreate={onCreateUser} users={detail.users} />;
+}
+
+export function AdminCompanyDevicesSection() {
+  const { canLoadDevices, detail } = useAdminCompanyWorkspaceContext();
+  return (
+    <DevicesSection canView={canLoadDevices} gateways={detail.gateways} nodes={detail.nodes} />
   );
 }
 
