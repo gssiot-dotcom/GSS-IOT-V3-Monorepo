@@ -14,6 +14,7 @@ import type {
 } from "@gss-iot/contracts";
 import {
   DataTable,
+  EntityActionMenu,
   EntityCard,
   EntityCardGrid,
   EntityMetric,
@@ -43,7 +44,6 @@ import {
   IconActivity,
   IconAlertTriangle,
   IconCircleCheck,
-  IconHistory,
   IconPlugConnected,
   IconPlugConnectedX,
   IconRefresh,
@@ -388,14 +388,16 @@ export function NodeTypeMonitoringPage() {
                     key: "history",
                     label: t("monitoring.history"),
                     render: (row) => (
-                      <Button
-                        leftSection={<IconHistory size={16} />}
-                        onClick={() => setSelectedNodeId(row.nodeId)}
-                        size="xs"
-                        variant={row.nodeId === selectedNodeId ? "filled" : "light"}
-                      >
-                        {t("monitoring.openHistory")}
-                      </Button>
+                      <EntityActionMenu
+                        ariaLabel={`${t("common.moreActions")}: ${row.node.number}`}
+                        items={[
+                          {
+                            key: "history",
+                            label: t("monitoring.openHistory"),
+                            onClick: () => setSelectedNodeId(row.nodeId),
+                          },
+                        ]}
+                      />
                     ),
                   },
                 ]}

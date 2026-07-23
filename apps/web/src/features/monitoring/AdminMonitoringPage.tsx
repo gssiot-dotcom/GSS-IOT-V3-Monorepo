@@ -10,15 +10,17 @@ import type {
 import {
   DataTable,
   DashboardSection,
+  EntityActionMenu,
   EmptyState,
   ErrorState,
   LoadingState,
   NodeTypeSelectionCard,
   OperationalSummaryCard,
   PageHeader,
+  RealtimeStatusBadge,
   StatusBadge,
 } from "@gss-iot/ui";
-import { Badge, Button, Card, Group, Select, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Button, Card, Group, Select, SimpleGrid, Stack, Text } from "@mantine/core";
 import {
   IconBuilding,
   IconCircleCheck,
@@ -206,26 +208,7 @@ export function AdminMonitoringPage() {
   return (
     <Stack gap="lg">
       <PageHeader
-        action={
-          <Badge
-            color={
-              realtimeStatus === "connected"
-                ? "gss"
-                : realtimeStatus === "reconnecting"
-                  ? "yellow"
-                  : "gray"
-            }
-            leftSection={
-              realtimeStatus === "connected" ? (
-                <IconPlugConnected size={14} />
-              ) : (
-                <IconPlugConnectedX size={14} />
-              )
-            }
-          >
-            {realtimeLabel}
-          </Badge>
-        }
+        action={<RealtimeStatusBadge label={realtimeLabel} status={realtimeStatus} />}
         subtitle={t("monitoring.adminSubtitle")}
         title={t("monitoring.adminTitle")}
       />
@@ -415,13 +398,16 @@ export function AdminMonitoringPage() {
                         key: "open",
                         label: t("monitoring.history"),
                         render: (row) => (
-                          <Button
-                            onClick={() => setSelectedNodeId(row.nodeId)}
-                            size="xs"
-                            variant="light"
-                          >
-                            {t("monitoring.openHistory")}
-                          </Button>
+                          <EntityActionMenu
+                            ariaLabel={`${t("common.moreActions")}: ${row.node.number}`}
+                            items={[
+                              {
+                                key: "history",
+                                label: t("monitoring.openHistory"),
+                                onClick: () => setSelectedNodeId(row.nodeId),
+                              },
+                            ]}
+                          />
                         ),
                       },
                     ]}
@@ -500,9 +486,16 @@ function RecentNodes({
             key: "open",
             label: t("monitoring.history"),
             render: (row) => (
-              <Button onClick={() => onOpen(row.nodeId)} size="xs" variant="subtle">
-                {t("monitoring.openHistory")}
-              </Button>
+              <EntityActionMenu
+                ariaLabel={`${t("common.moreActions")}: ${row.node.number}`}
+                items={[
+                  {
+                    key: "history",
+                    label: t("monitoring.openHistory"),
+                    onClick: () => onOpen(row.nodeId),
+                  },
+                ]}
+              />
             ),
           },
         ]}

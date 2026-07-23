@@ -33,7 +33,6 @@ import {
   EmptyState,
   ErrorState,
   GssButton,
-  LoadingState,
   PageHeader,
   ResponsiveContentGrid,
 } from "@gss-iot/ui";
@@ -61,9 +60,30 @@ export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/comp
   }, [basePath, session]);
 
   if (!hasPermission(session, "reports.view")) return null;
-  if (loading) return <LoadingState title={t("common.loading")} />;
+  if (loading)
+    return (
+      <DashboardSection
+        accent="indigo"
+        icon={<IconReportAnalytics size={18} />}
+        subtitle={t("reports.dashboardSubtitle")}
+        title={t("reports.dashboardTitle")}
+      >
+        <Skeleton height={92} />
+      </DashboardSection>
+    );
   if (error)
-    return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
+    return (
+      <DashboardSection
+        accent="indigo"
+        icon={<IconReportAnalytics size={18} />}
+        subtitle={t("common.errorDescription")}
+        title={t("reports.dashboardTitle")}
+      >
+        <Text c="red" size="sm">
+          {t("common.errorTitle")}
+        </Text>
+      </DashboardSection>
+    );
 
   const counts = {
     COMPLETED: jobs.filter((job) => job.status === "COMPLETED").length,
@@ -245,7 +265,6 @@ function DashboardPage({
 
   useEffect(() => {
     if (!session) return;
-    setSummary(undefined);
     setError(false);
     void apiRequest<DashboardSummary>(session, `${basePath}/dashboard/summary?range=${range}`)
       .then(setSummary)

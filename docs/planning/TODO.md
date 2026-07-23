@@ -262,4 +262,22 @@ Wave 1 is complete for review.
       at 1440x900, 1280x800 and 390x844.
 - [x] Run Wave 2 handoff quality gates and record remaining risks.
 
-Wave 2 is complete for review. Wave 3 remains intentionally unstarted.
+Wave 2 is complete for review.
+
+## Wave 3 UI redesign
+
+- [x] Refine Admin and Company dashboards with real contract fields, partial
+      report loading and operational hierarchy without inventing metrics.
+- [x] Refine Company/Admin monitoring cards, tables, realtime status and
+      detail entry while preserving legacy node-type card behavior.
+- [x] Refine alarms, rules, notification and detail surfaces with semantic
+      statuses, contextual actions and occurrence/count-interval evidence.
+- [x] Refine report view/export split, job statuses and deliberate mobile
+      report fallback without changing export endpoints or authorization.
+- [x] Refine GSS roles, read-only system status and scoped Company settings
+      while preserving protected-role and self-lockout safeguards.
+- [x] Preserve routes, APIs, RBAC/scope checks, i18n and business behavior.
+- [ ] Re-run authenticated targeted visual captures and focused web tests when
+      a deterministic browser/test session is available.
+
+Wave 3 is implemented for review. Wave 4 remains intentionally unstarted.

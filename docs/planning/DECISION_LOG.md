@@ -859,3 +859,30 @@ introduced. Wave 3 remains deferred.
 `apps/web/src/features/company-management/CompanyRolesPage.tsx`,
 `apps/web/e2e/ui-redesign.visual.spec.ts`, focused web tests and the Wave 2
 planning handoff entries.
+
+## DEC-2026-061 — Wave 3 operational surfaces and evidence boundary
+
+**Status:** accepted
+
+**Context:** Wave 3 requires a visual redesign of dashboards, monitoring,
+alarms, reports and settings while preserving all existing backend contracts,
+authorization boundaries, realtime behavior and legacy monitoring behavior.
+
+**Decision:** Apply the existing Wave 1–2 contract to the Wave 3 routes using
+semantic statuses, compact entity-first hierarchy, contextual overflow actions,
+shared realtime badges, partial dashboard loading and a deliberate mobile
+report-job fallback. Preserve all current request paths, mutation payloads,
+filters, query behavior, occurrence-count/count-interval semantics and settings
+protections. Do not invent metrics, business rules or new mutations.
+
+**Consequences:** Wave 3 is presentation-only across the requested Admin and
+Company surfaces. Targeted authenticated screenshots and the web Vitest suite
+remain follow-up evidence because the current browser is unauthenticated and
+the focused Vitest runner hung before producing results. Repository-wide visual
+QA and Wave 4 remain deferred.
+
+**Files affected:** `apps/web/src/features/dashboard/`,
+`apps/web/src/features/monitoring/`, `apps/web/src/features/alarms/`,
+`apps/web/src/features/reports/`, `apps/web/src/features/settings/`,
+`packages/ui/src/status-badge.tsx`, `apps/web/src/app/i18n.ts` and the Wave 3
+planning handoff entries.

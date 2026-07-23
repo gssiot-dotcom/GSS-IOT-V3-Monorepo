@@ -208,3 +208,21 @@ captures pass at 1440x900, 1280x800 and 390x844 for the seven review routes and
 are stored under
 `test-results/ui-redesign.visual-capture-51391--at-the-requested-viewports`.
 Wave 3 remains intentionally unstarted.
+
+## Wave 3 UI redesign handoff — 2026-07-23
+
+Wave 3 is implemented for the requested Dashboard, Monitoring, Alarms, Reports
+and Settings surfaces. The pass reuses the Wave 1–2 GSS visual contract with
+semantic status badges, compact entity/table hierarchy, overflow actions,
+shared realtime status presentation, partial dashboard loading and an explicit
+mobile report-job fallback. Existing routes, API paths, permission keys,
+Company scope behavior, Socket.IO monitoring joins/events, alarm occurrence and
+count-interval evidence, report lifecycle/export authorization and protected
+settings behavior remain unchanged.
+
+Targeted authenticated screenshots were not produced in this run because the
+available local browser session was unauthenticated. Repository-wide visual QA
+and Wave 4 were intentionally not started. `pnpm typecheck`, Prettier on the
+changed files, targeted ESLint and `git diff --check` passed. The web Vitest
+runner hung before emitting test results when run against the dashboard and
+focused Wave 3 specs; this remains a verification risk for the next wave.

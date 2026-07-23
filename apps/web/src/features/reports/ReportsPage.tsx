@@ -12,7 +12,7 @@ import type {
 } from "@gss-iot/contracts";
 import {
   Alert,
-  Badge,
+  Box,
   Button,
   Group,
   NativeSelect,
@@ -36,7 +36,7 @@ import { t, tf } from "../../app/i18n";
 import { ApiError, apiDownload, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { hasPermission } from "../../shared/rbac/has-permission";
-import { EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
+import { EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from "@gss-iot/ui";
 import {
   COMPANY_REPORT_TYPES,
   GSS_REPORT_TYPE_PERMISSIONS,
@@ -148,9 +148,18 @@ export function dateRangeError(reportType: ReportType, filters: ReportFilters): 
 
 function reportStatusBadge(status: ReportJobStatus): ReactElement {
   return (
-    <Badge aria-label={`${t("reports.statusLabel")}: ${statusLabel(status)}`} variant="light">
-      {statusLabel(status)}
-    </Badge>
+    <StatusBadge
+      label={statusLabel(status)}
+      status={
+        status === "PENDING"
+          ? "pending"
+          : status === "PROCESSING"
+            ? "processing"
+            : status === "COMPLETED"
+              ? "completed"
+              : "failed"
+      }
+    />
   );
 }
 
@@ -176,85 +185,130 @@ function ReportJobsTable({
   onDownload: (job: ReportJobRecord) => void;
   downloadingId: string | null;
 }) {
+  const mobileJobs = jobs.map((job) => {
+    const exportRecord = job.exports[0];
+    const expired = exportRecord ? isExpired(exportRecord.expiresAt) : false;
+    return (
+      <Paper key={job.id} p="md" withBorder>
+        <Stack gap="xs">
+          <Group justify="space-between" wrap="nowrap">
+            <Text fw={700}>{reportLabel(job.reportType)}</Text>
+            {reportStatusBadge(job.status)}
+          </Group>
+          <Text c="dimmed" size="sm">
+            {reportScope(job)}
+          </Text>
+          <Text c="dimmed" size="xs">
+            {dateText(job.createdAt)}
+          </Text>
+          {job.status === "FAILED" && displayFailure(job.errorMessage) ? (
+            <Text c="red" size="xs">
+              {displayFailure(job.errorMessage)}
+            </Text>
+          ) : null}
+          {job.status === "COMPLETED" && exportRecord && !expired && canExport ? (
+            <Button
+              aria-label={`${t("reports.download")} ${exportRecord.fileName}`}
+              disabled={downloadingId === exportRecord.id}
+              leftSection={<IconDownload size={16} />}
+              loading={downloadingId === exportRecord.id}
+              onClick={() => onDownload(job)}
+              size="xs"
+              variant="light"
+            >
+              {t("reports.download")}
+            </Button>
+          ) : null}
+        </Stack>
+      </Paper>
+    );
+  });
   return (
-    <Table.ScrollContainer minWidth={980}>
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>{t("reports.reportType")}</Table.Th>
-            <Table.Th>{t("reports.scope")}</Table.Th>
-            <Table.Th>{t("reports.statusLabel")}</Table.Th>
-            <Table.Th>{t("reports.progress")}</Table.Th>
-            <Table.Th>{t("reports.createdAt")}</Table.Th>
-            <Table.Th>{t("reports.completedAt")}</Table.Th>
-            <Table.Th>{t("reports.expiration")}</Table.Th>
-            <Table.Th>{t("reports.actions")}</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {jobs.map((job) => {
-            const exportRecord = job.exports[0];
-            const expired = exportRecord ? isExpired(exportRecord.expiresAt) : false;
-            return (
-              <Table.Tr key={job.id}>
-                <Table.Td>{reportLabel(job.reportType)}</Table.Td>
-                <Table.Td>{reportScope(job)}</Table.Td>
-                <Table.Td>
-                  <Stack gap={3}>
-                    {reportStatusBadge(job.status)}
-                    {job.status === "FAILED" && displayFailure(job.errorMessage) ? (
-                      <Text c="red" size="xs">
-                        {displayFailure(job.errorMessage)}
-                      </Text>
-                    ) : null}
-                  </Stack>
-                </Table.Td>
-                <Table.Td>
-                  {job.status === "PENDING" || job.status === "PROCESSING"
-                    ? `${job.progress}%`
-                    : t("reports.notAvailable")}
-                </Table.Td>
-                <Table.Td>{dateText(job.createdAt)}</Table.Td>
-                <Table.Td>{dateText(job.completedAt)}</Table.Td>
-                <Table.Td>
-                  {exportRecord ? (
-                    <Stack gap={3}>
-                      <Text size="sm">{formatLabel(exportRecord.format)}</Text>
-                      <Text c={expired ? "red" : undefined} size="xs">
-                        {expired
-                          ? t("reports.expired")
-                          : tf("reports.expiresAt", { date: dateText(exportRecord.expiresAt) })}
-                      </Text>
-                    </Stack>
-                  ) : (
-                    t("reports.notAvailable")
-                  )}
-                </Table.Td>
-                <Table.Td>
-                  {job.status === "COMPLETED" && exportRecord && !expired && canExport ? (
-                    <Button
-                      aria-label={`${t("reports.download")} ${exportRecord.fileName}`}
-                      disabled={downloadingId === exportRecord.id}
-                      leftSection={<IconDownload size={16} />}
-                      loading={downloadingId === exportRecord.id}
-                      onClick={() => onDownload(job)}
-                      size="xs"
-                      variant="light"
-                    >
-                      {t("reports.download")}
-                    </Button>
-                  ) : job.status === "COMPLETED" && exportRecord && expired ? (
-                    <Text c="red" size="sm">
-                      {t("reports.expired")}
-                    </Text>
-                  ) : null}
-                </Table.Td>
+    <>
+      <Stack gap="sm" hiddenFrom="sm">
+        {mobileJobs}
+      </Stack>
+      <Box visibleFrom="sm">
+        <Table.ScrollContainer minWidth={980}>
+          <Table striped highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>{t("reports.reportType")}</Table.Th>
+                <Table.Th>{t("reports.scope")}</Table.Th>
+                <Table.Th>{t("reports.statusLabel")}</Table.Th>
+                <Table.Th>{t("reports.progress")}</Table.Th>
+                <Table.Th>{t("reports.createdAt")}</Table.Th>
+                <Table.Th>{t("reports.completedAt")}</Table.Th>
+                <Table.Th>{t("reports.expiration")}</Table.Th>
+                <Table.Th>{t("reports.actions")}</Table.Th>
               </Table.Tr>
-            );
-          })}
-        </Table.Tbody>
-      </Table>
-    </Table.ScrollContainer>
+            </Table.Thead>
+            <Table.Tbody>
+              {jobs.map((job) => {
+                const exportRecord = job.exports[0];
+                const expired = exportRecord ? isExpired(exportRecord.expiresAt) : false;
+                return (
+                  <Table.Tr key={job.id}>
+                    <Table.Td>{reportLabel(job.reportType)}</Table.Td>
+                    <Table.Td>{reportScope(job)}</Table.Td>
+                    <Table.Td>
+                      <Stack gap={3}>
+                        {reportStatusBadge(job.status)}
+                        {job.status === "FAILED" && displayFailure(job.errorMessage) ? (
+                          <Text c="red" size="xs">
+                            {displayFailure(job.errorMessage)}
+                          </Text>
+                        ) : null}
+                      </Stack>
+                    </Table.Td>
+                    <Table.Td>
+                      {job.status === "PENDING" || job.status === "PROCESSING"
+                        ? `${job.progress}%`
+                        : t("reports.notAvailable")}
+                    </Table.Td>
+                    <Table.Td>{dateText(job.createdAt)}</Table.Td>
+                    <Table.Td>{dateText(job.completedAt)}</Table.Td>
+                    <Table.Td>
+                      {exportRecord ? (
+                        <Stack gap={3}>
+                          <Text size="sm">{formatLabel(exportRecord.format)}</Text>
+                          <Text c={expired ? "red" : undefined} size="xs">
+                            {expired
+                              ? t("reports.expired")
+                              : tf("reports.expiresAt", { date: dateText(exportRecord.expiresAt) })}
+                          </Text>
+                        </Stack>
+                      ) : (
+                        t("reports.notAvailable")
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      {job.status === "COMPLETED" && exportRecord && !expired && canExport ? (
+                        <Button
+                          aria-label={`${t("reports.download")} ${exportRecord.fileName}`}
+                          disabled={downloadingId === exportRecord.id}
+                          leftSection={<IconDownload size={16} />}
+                          loading={downloadingId === exportRecord.id}
+                          onClick={() => onDownload(job)}
+                          size="xs"
+                          variant="light"
+                        >
+                          {t("reports.download")}
+                        </Button>
+                      ) : job.status === "COMPLETED" && exportRecord && expired ? (
+                        <Text c="red" size="sm">
+                          {t("reports.expired")}
+                        </Text>
+                      ) : null}
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      </Box>
+    </>
   );
 }
 

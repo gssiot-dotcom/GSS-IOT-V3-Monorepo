@@ -1,5 +1,12 @@
 import type { CompanyRecord, GssRoleRecord, SystemSettingsRecord } from "@gss-iot/contracts";
-import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  StatusBadge,
+} from "@gss-iot/ui";
 import {
   Alert,
   Badge,
@@ -309,15 +316,20 @@ export function AdminSystemSettingsPage() {
         <StatusCard title={t("settings.mqttCard")}>
           <SettingRow
             label={t("settings.enabled")}
-            value={settings!.mqtt.enabled ? t("settings.yes") : t("settings.no")}
+            value={<BooleanStatus value={settings!.mqtt.enabled} />}
           />
           <SettingRow
             label={t("settings.connected")}
-            value={settings!.mqtt.connected ? t("settings.yes") : t("settings.no")}
+            value={<BooleanStatus value={settings!.mqtt.connected} />}
           />
           <SettingRow
             label={t("settings.readiness")}
-            value={settings!.mqtt.ready ? t("settings.ready") : t("settings.notReady")}
+            value={
+              <StatusBadge
+                label={settings!.mqtt.ready ? t("settings.ready") : t("settings.notReady")}
+                status={settings!.mqtt.ready ? "online" : "offline"}
+              />
+            }
           />
           <SettingRow
             label={t("settings.subscribedFilters")}
@@ -369,7 +381,7 @@ function StatusCard({ children, title }: { children: React.ReactNode; title: str
   );
 }
 
-function SettingRow({ label, value }: { label: string; value: string }) {
+function SettingRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <Group justify="space-between" wrap="nowrap">
       <Text c="dimmed" size="sm">
@@ -379,6 +391,15 @@ function SettingRow({ label, value }: { label: string; value: string }) {
         {value}
       </Text>
     </Group>
+  );
+}
+
+function BooleanStatus({ value }: { value: boolean }) {
+  return (
+    <StatusBadge
+      label={value ? t("status.online") : t("status.offline")}
+      status={value ? "online" : "offline"}
+    />
   );
 }
 

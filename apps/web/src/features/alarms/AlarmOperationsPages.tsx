@@ -12,6 +12,7 @@ import type {
 } from "@gss-iot/contracts";
 import {
   DataTable,
+  EntityActionMenu,
   EmptyState,
   ErrorState,
   FormFieldGrid,
@@ -19,10 +20,10 @@ import {
   FormWorkspace,
   LoadingState,
   PageHeader,
+  StatusBadge,
   StickyFormActions,
 } from "@gss-iot/ui";
 import {
-  Badge,
   Button,
   Group,
   Modal,
@@ -106,19 +107,51 @@ function formatDate(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString() : "-";
 }
 
-function statusColor(status: string) {
-  if (status === "OPEN" || status === "FAILED" || status === "DANGER") return "red";
-  if (
-    status === "ACKNOWLEDGED" ||
-    status === "PROCESSING" ||
-    status === "PENDING" ||
-    status === "WARNING"
-  ) {
-    return "yellow";
-  }
-  if (status === "CAUTION") return "orange";
-  if (status === "SENT" || status === "RESOLVED") return "green";
-  return "gray";
+function semanticStatus(status: string) {
+  const normalized = status.toLowerCase();
+  const supported = new Set([
+    "acknowledged",
+    "active",
+    "available",
+    "cancelled",
+    "caution",
+    "completed",
+    "connecting",
+    "danger",
+    "expired",
+    "failed",
+    "inactive",
+    "maintenance",
+    "offline",
+    "online",
+    "open",
+    "pending",
+    "processing",
+    "read",
+    "reconnecting",
+    "resolved",
+    "retired",
+    "safe",
+    "sent",
+    "skipped",
+    "stale",
+    "unassigned",
+    "unconfigured",
+    "unread",
+    "warning",
+  ]);
+  return (supported.has(normalized) ? normalized : "inactive") as Parameters<
+    typeof StatusBadge
+  >[0]["status"];
+}
+
+function StatusValue({ value }: { value: string }) {
+  return (
+    <StatusBadge
+      label={t(`status.${value.toLowerCase()}` as never)}
+      status={semanticStatus(value)}
+    />
+  );
 }
 
 function endpoint(basePath: BasePath, path: string) {
@@ -205,12 +238,12 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
             {
               key: "severity",
               label: t("alarms.severity"),
-              render: (row) => <Badge color={statusColor(row.severity)}>{row.severity}</Badge>,
+              render: (row) => <StatusValue value={row.severity} />,
             },
             {
               key: "status",
               label: t("gatewayCommands.status"),
-              render: (row) => <Badge color={statusColor(row.status)}>{row.status}</Badge>,
+              render: (row) => <StatusValue value={row.status} />,
             },
             {
               key: "opened",
@@ -221,14 +254,17 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
               key: "actions",
               label: t("organizations.actions"),
               render: (row) => (
-                <Button
-                  leftSection={<IconEye size={16} />}
-                  onClick={() => navigate(`${basePath}/alarms/${row.id}`)}
-                  size="xs"
-                  variant="light"
-                >
-                  {t("organizations.open")}
-                </Button>
+                <EntityActionMenu
+                  ariaLabel={`${t("common.moreActions")}: ${row.node?.number ?? row.nodeId}`}
+                  items={[
+                    {
+                      icon: <IconEye size={16} />,
+                      key: "open",
+                      label: t("organizations.open"),
+                      onClick: () => navigate(`${basePath}/alarms/${row.id}`),
+                    },
+                  ]}
+                />
               ),
             },
           ]}
@@ -318,8 +354,8 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
     <Stack gap="lg">
       <PageHeader title={t("alarms.detailTitle")} subtitle={alarm.building?.title ?? ""} />
       <Group>
-        <Badge color={statusColor(alarm.severity)}>{alarm.severity}</Badge>
-        <Badge color={statusColor(alarm.status)}>{alarm.status}</Badge>
+        <StatusValue value={alarm.severity} />
+        <StatusValue value={alarm.status} />
         <Text size="sm">{alarm.node?.number}</Text>
         <Text size="sm">{formatDate(alarm.openedAt)}</Text>
       </Group>
@@ -382,7 +418,7 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
               {
                 key: "status",
                 label: t("gatewayCommands.status"),
-                render: (row) => <Badge color={statusColor(row.status)}>{row.status}</Badge>,
+                render: (row) => <StatusValue value={row.status} />,
               },
               { key: "channel", label: t("alarms.channel"), render: (row) => row.channel },
               {
@@ -555,7 +591,7 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
             {
               key: "severity",
               label: t("alarms.severity"),
-              render: (row) => <Badge color={statusColor(row.severity)}>{row.severity}</Badge>,
+              render: (row) => <StatusValue value={row.severity} />,
             },
             {
               key: "policies",
@@ -567,16 +603,23 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
               label: t("organizations.actions"),
               render: (row) => (
                 <Can permission="alarm-rules.manage">
-                  <Button
-                    onClick={() => {
-                      setPolicyDraft({ ...createEmptyPolicyDraft(), buildingId: row.buildingId });
-                      setPolicyRule(row);
-                    }}
-                    size="xs"
-                    variant="light"
-                  >
-                    {t("alarms.addPolicy")}
-                  </Button>
+                  <EntityActionMenu
+                    ariaLabel={`${t("common.moreActions")}: ${row.name ?? row.id}`}
+                    items={[
+                      {
+                        icon: <IconPlus size={16} />,
+                        key: "add-policy",
+                        label: t("alarms.addPolicy"),
+                        onClick: () => {
+                          setPolicyDraft({
+                            ...createEmptyPolicyDraft(),
+                            buildingId: row.buildingId,
+                          });
+                          setPolicyRule(row);
+                        },
+                      },
+                    ]}
+                  />
                 </Can>
               ),
             },
@@ -728,7 +771,12 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
             }
             value={policyDraft.countIntervalSeconds}
           />
-          <Button onClick={() => void createPolicy()}>{t("organizations.save")}</Button>
+          <StickyFormActions>
+            <Button variant="default" onClick={() => setPolicyRule(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={() => void createPolicy()}>{t("organizations.save")}</Button>
+          </StickyFormActions>
         </Stack>
       </Modal>
     </Stack>
@@ -806,7 +854,7 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
             {
               key: "status",
               label: t("gatewayCommands.status"),
-              render: (row) => <Badge color={statusColor(row.status)}>{row.status}</Badge>,
+              render: (row) => <StatusValue value={row.status} />,
             },
             {
               key: "created",
@@ -817,14 +865,18 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
               key: "actions",
               label: t("organizations.actions"),
               render: (row) => (
-                <Button
-                  disabled={Boolean(row.readAt)}
-                  onClick={() => void markRead(row.id)}
-                  size="xs"
-                  variant="light"
-                >
-                  {t("alarms.markRead")}
-                </Button>
+                <EntityActionMenu
+                  ariaLabel={`${t("common.moreActions")}: ${row.title}`}
+                  items={[
+                    {
+                      disabled: Boolean(row.readAt),
+                      icon: <IconCheck size={16} />,
+                      key: "read",
+                      label: t("alarms.markRead"),
+                      onClick: () => void markRead(row.id),
+                    },
+                  ]}
+                />
               ),
             },
           ]}
