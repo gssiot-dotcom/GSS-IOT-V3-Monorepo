@@ -41,4 +41,24 @@ describe("gssTheme", () => {
     expect(gssTypographyScale.pageTitle).toContain("1.875rem");
     expect(gssTheme.other.gssSemanticTokens).toBe(gssSemanticTokens);
   });
+
+  it("uses cool layered dark surfaces for shared interaction states", () => {
+    expect(gssSemanticTokens.elevatedSurface.dark).toBe("#1b3049");
+    expect(gssSemanticTokens.disabledSurface.dark).toBe("#1a2d44");
+    expect(gssSemanticTokens.popoverSurface.dark).toBe("#1b3049");
+    expect(gssSemanticTokens.tableStripe.dark).toBe("#14283e");
+    expect(gssSemanticTokens.tableHover.dark).toBe("#1d3855");
+    expect(gssSemanticTokens.tableSelected.dark).toBe("#20486c");
+    expect(gssSemanticTokens.tableStripe.dark).not.toBe("#2e2e2e");
+    expect(gssSemanticTokens.tableHover.dark).not.toBe("#3b3b3b");
+    expect(gssSemanticTokens.background.light).toBe("#f4f7fb");
+    expect(gssStatusColors).toEqual({
+      caution: "#2fa84f",
+      danger: "#dc2626",
+      offline: "#7c8797",
+      safe: "#1685b8",
+      unconfigured: "#64748b",
+      warning: "#d18a00",
+    });
+  });
 });
