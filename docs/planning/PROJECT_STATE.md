@@ -165,3 +165,46 @@ Phase 11, Phase 12 and Phase 13 are complete. Phase 13 closeout covers the appro
 The 3rd-step execution folder started on 2026-07-22 with `PHASE_13_COMPLETE` preserved and `PHASE_14_NOT_STARTED` preserved. Task 02 preflight confirmed the ten approved source-map requirements remain applicable and re-confirmed the current gaps in `apps/web/src/app/router.tsx`, `apps/web/src/features/shell/PortalLayout.tsx`, `apps/web/src/features/dashboard/DashboardPages.tsx`, `apps/web/src/features/devices/AdminDevicesPage.tsx`, `apps/api/src/modules/devices/` and `apps/api/src/modules/gateway-commands/`. The two read-only reference archives and all named legacy reference files were verified in an untracked temporary extraction directory. The execution plan and acceptance checklist are `docs/refactor/PRE_PHASE_14_REFACTOR_PLAN.md` and `docs/quality/PRE_PHASE_14_REFACTOR_ACCEPTANCE_CHECKLIST.md`.
 
 Task 02 made no product code, Prisma schema, migration, seed, Phase 13 behavior, or Phase 14 behavior change. Task 03 then added the shared GSS semantic/layout/typography tokens, dashboard/action/realtime primitives, translated grouped permission-filtered navigation, restrained shell surfaces and the accessible mobile navigation label. Task 04 added authenticated Admin/Company Welcome and view-only profile routes, safe role/company/active/phone/last-login session metadata, permission-filtered quick links, a responsive account menu and a permission-gated notification bell with truthful connecting/connected/reconnecting/offline state. Task 05 added bounded `/admin/dashboard/summary` and `/company/dashboard/summary` aggregates with authenticated Company scope filtering, permission-omitted sections, responsive KPI/chart/operational dashboard views, range selection and retained lower-priority report jobs. Task 06 adds protected GSS role management, a redacted read-only system readiness model and authenticated Company contact settings with server-derived scope. Task 07 adds permission-controlled gateway/node edit actions, server-derived pristine-delete capability, transactional historical-device deletion blockers, structured lifecycle conflict responses, audit logging and compact accessible action controls with mutation feedback. Task 08 adds shared canonical bulk node parsing, one-transaction auditable batch creation, duplicate/validation conflict responses and Mantine preview/count/permission UX; it does not assign nodes or modify MQTT provisioning. Task 09 adds explicit APPEND/REPLACE provisioning mode, durable final membership and replacement history, per-gateway/node-type nonterminal concurrency protection and current/selected/final membership UX; it preserves the existing cmd 2 requestId/ACK flow and assignment audit history. Existing RBAC/scope, assignment history, notification unread, monitoring socket, logout, MQTT requestId/ACK, alarm and report behavior remains protected. The web unit harness now runs files serially within the established threads pool because shared jsdom globals caused parallel false failures. Task 09 adds only additive migrations and no seed change. Manual responsive browser acceptance remains for the later final acceptance wave. Production S3, standalone worker deployment, deployment/rollback infrastructure, long-term sensor retention/partitioning/archival/purge, legacy migration, and production CI/CD remain deferred.
+
+## Wave 1 UI redesign handoff — 2026-07-23
+
+Wave 1 is implemented for review. The shared GSS visual foundation now includes
+the cyan semantic palette, navy responsive shell, entity-first primitives,
+semantic status badges, compact data-table behavior, contextual action menus,
+destructive confirmation modals and consistent modal footers. The living design
+gallery is available at `/admin/design-system`.
+
+The reviewed page families are Companies, Admin Company Detail, Company Areas,
+Company Buildings and Company Users. Their existing APIs, routes, DTOs,
+permission checks, company/resource scope filtering, i18n, realtime behavior
+and legacy node-monitoring behavior remain unchanged. No Prisma schema,
+migration, seed or backend business-rule change was made.
+
+Focused unit tests and the exact-viewport authenticated visual capture pass.
+Baseline captures were generated from the detached reference worktree at
+`C:\Users\stran\Desktop\gss_iot_v3_codex_baseline\test-results`; Wave 1 captures
+are under `test-results\ui-redesign.visual-capture-6fb69--at-the-requested-viewports`.
+Wave 2 surfaces are recorded below.
+
+## Wave 2 UI redesign handoff — 2026-07-23
+
+Wave 2 is implemented for review for Devices, Assignments, Gateway Commands,
+Organization Details and Company Roles. The pages reuse the Wave 1 entity-first
+hierarchy, semantic status badges, compact tables, permission-aware overflow
+menus, destructive confirmation modals and shared modal footers.
+
+The existing API paths, DTOs, query keys, mutations, route guards, permission
+keys, Company scope filtering, MQTT command endpoints/payload behavior,
+assignment history rules, self-lockout behavior and inactive-session handling
+remain unchanged. No backend, Prisma schema, migration, seed or business-rule
+change was introduced. Existing Deactivate/Retire mutations were not invented:
+the available lifecycle values are rendered semantically, while existing
+Unassign/Delete flows remain available only through their existing endpoints and
+blockers.
+
+Focused web tests pass for devices, gateway commands, company resource details,
+roles and permission-aware destructive actions. Authenticated Wave 2 visual
+captures pass at 1440x900, 1280x800 and 390x844 for the seven review routes and
+are stored under
+`test-results/ui-redesign.visual-capture-51391--at-the-requested-viewports`.
+Wave 3 remains intentionally unstarted.

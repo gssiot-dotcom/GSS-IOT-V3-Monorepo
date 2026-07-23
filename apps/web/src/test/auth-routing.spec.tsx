@@ -210,7 +210,7 @@ describe("auth routing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     fireEvent.click(await screen.findByRole("link", { name: "Companies" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Open" }));
+    fireEvent.click(await screen.findByText("Acme Safety"));
 
     expect(
       await screen.findByText("Company setup, resources, users, and assigned devices."),

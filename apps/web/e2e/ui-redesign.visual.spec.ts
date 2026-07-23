@@ -121,6 +121,124 @@ const gatewayCommands = [
     updatedAt: "2026-07-23T07:10:00.000Z",
   },
 ];
+const wave2Gateways = [
+  {
+    buildingAssignments: [
+      {
+        assignedAt: "2026-07-23T07:00:00.000Z",
+        building: { areaId: "area-1", companyId: company.id, title: buildings[0].title },
+        buildingId: buildings[0].id,
+        id: "gateway-building-1",
+      },
+    ],
+    companyAssignments: [
+      {
+        assignedAt: "2026-07-23T07:00:00.000Z",
+        company: { name: company.name },
+        companyId: company.id,
+        id: "gateway-company-1",
+      },
+    ],
+    deletion: { allowed: false, blocker: "companyAssignmentHistory" },
+    gatewayType: "NODES_GATEWAY",
+    id: "gateway-1",
+    installedLocation: "North entrance",
+    lastSeenAt: "2026-07-23T08:12:00.000Z",
+    serialNumber: "0300",
+    status: "ACTIVE",
+  },
+  {
+    buildingAssignments: [],
+    companyAssignments: [],
+    deletion: { allowed: true, blocker: null },
+    gatewayType: "GATEWAY",
+    id: "gateway-2",
+    installedLocation: null,
+    lastSeenAt: null,
+    serialNumber: "0400",
+    status: "INACTIVE",
+  },
+];
+const wave2Nodes = [
+  {
+    batteryLevel: 92,
+    companyAssignments: [
+      {
+        assignedAt: "2026-07-23T07:00:00.000Z",
+        company: { name: company.name },
+        companyId: company.id,
+        id: "node-company-1",
+      },
+    ],
+    deletion: { allowed: false, blocker: "companyAssignmentHistory" },
+    gatewayAssignments: [
+      {
+        assignedAt: "2026-07-23T07:00:00.000Z",
+        gateway: { serialNumber: "0300" },
+        gatewayId: "gateway-1",
+        id: "node-gateway-1",
+      },
+    ],
+    id: "node-1",
+    installedLocation: "North entrance",
+    lastSeenAt: "2026-07-23T08:12:00.000Z",
+    nodeType: nodeTypes[0],
+    nodeTypeId: nodeTypes[0].id,
+    number: "100",
+    status: "ACTIVE",
+  },
+  {
+    batteryLevel: null,
+    companyAssignments: [],
+    deletion: { allowed: true, blocker: null },
+    gatewayAssignments: [],
+    id: "node-2",
+    installedLocation: null,
+    lastSeenAt: null,
+    nodeType: nodeTypes[1],
+    nodeTypeId: nodeTypes[1].id,
+    number: "101",
+    status: "RETIRED",
+  },
+];
+const wave2Roles = [
+  {
+    _count: { users: 1 },
+    companyId: company.id,
+    id: "role-owner",
+    isCompanyOwnerRole: true,
+    isSystem: true,
+    key: "company_owner",
+    name: "Company owner",
+    permissions: [],
+  },
+  {
+    _count: { users: 0 },
+    companyId: company.id,
+    id: "role-safety",
+    isCompanyOwnerRole: false,
+    isSystem: false,
+    key: "safety_lead",
+    name: "Safety lead",
+    permissions: [{ permissionId: "permission-devices" }],
+  },
+];
+const wave2Permissions = [
+  {
+    action: "view",
+    id: "permission-devices",
+    key: "company-devices.view",
+    module: "company-devices",
+    scopeType: "COMPANY",
+  },
+  {
+    action: "manage",
+    id: "permission-roles",
+    key: "company-roles.manage",
+    module: "company-roles",
+    scopeType: "COMPANY",
+  },
+];
 const alarmEvents = [
   {
     acknowledgedAt: null,
@@ -244,6 +362,34 @@ async function installFixture(
       return route.fulfill({ json: { items: reportJobs, page: 1, pageSize: 25, total: 1 } });
     if (path === "/company/users") return route.fulfill({ json: companyUsers });
     if (path === "/admin/companies/company-1/users") return route.fulfill({ json: companyUsers });
+    if (path === "/admin/devices/gateways") return route.fulfill({ json: wave2Gateways });
+    if (path === "/admin/devices/nodes") return route.fulfill({ json: wave2Nodes });
+    if (path === "/admin/devices/node-types") return route.fulfill({ json: nodeTypes });
+    if (path === "/admin/devices/provisioning-options")
+      return route.fulfill({
+        json: { areas, buildings, companies: [company] },
+      });
+    if (path === "/company/devices")
+      return route.fulfill({ json: { gateways: wave2Gateways, nodes: wave2Nodes } });
+    if (path === "/company/roles") return route.fulfill({ json: wave2Roles });
+    if (path === "/company/permissions") return route.fulfill({ json: wave2Permissions });
+    if (path === "/company/areas/area-1") return route.fulfill({ json: areas[0] });
+    if (path === "/company/buildings/building-1") return route.fulfill({ json: buildings[0] });
+    if (path === "/company/buildings/building-1/plan-images")
+      return route.fulfill({
+        json: [
+          {
+            buildingId: buildings[0].id,
+            createdAt: "2026-07-23T08:00:00.000Z",
+            height: null,
+            id: "plan-1",
+            kind: "PLAN",
+            orderIndex: 0,
+            storageKey: "plans/tower-a.png",
+            width: null,
+          },
+        ],
+      });
     if (path.endsWith("/areas")) return route.fulfill({ json: areas });
     if (path.endsWith("/buildings")) return route.fulfill({ json: buildings });
     if (
@@ -672,6 +818,164 @@ test("captures no-permission shell behavior with a test-only session fixture", a
     fullPage: true,
     path: testInfo.outputPath("no-permission-admin-light-375.png"),
   });
+});
+
+test("captures Wave 1 review surfaces at the requested viewports", async ({ page }, testInfo) => {
+  test.setTimeout(180000);
+  const outputPath = (name: string) => testInfo.outputPath(name);
+  const reviewRoutes = [
+    { path: "/admin/design-system", slug: "admin-design-system", context: "gss-admin" as const },
+    { path: "/admin/companies", slug: "admin-companies", context: "gss-admin" as const },
+    {
+      path: "/admin/companies/company-1",
+      slug: "admin-company-detail",
+      context: "gss-admin" as const,
+    },
+    { path: "/company/areas", slug: "company-areas", context: "company-user" as const },
+    { path: "/company/buildings", slug: "company-buildings", context: "company-user" as const },
+    { path: "/company/users", slug: "company-users", context: "company-user" as const },
+  ];
+  const permissions = {
+    "gss-admin": [
+      "welcome.view",
+      "companies.view",
+      "companies.update",
+      "companies.delete",
+      "companies.create",
+      "areas.view",
+      "buildings.view",
+      "company-users.view",
+      "company-users.create",
+      "company-users.update",
+      "company-users.delete",
+      "company-users.manage",
+      "devices.view",
+      "gateways.view",
+      "nodes.view",
+      "settings.system.view",
+    ],
+    "company-user": [
+      "welcome.view",
+      "areas.view",
+      "areas.create",
+      "areas.delete",
+      "buildings.view",
+      "buildings.create",
+      "buildings.delete",
+      "monitoring.view",
+      "company-users.view",
+      "company-users.create",
+      "company-users.update",
+      "company-users.delete",
+      "company-users.manage",
+    ],
+  } as const;
+
+  for (const route of reviewRoutes) {
+    await installFixture(page, route.context, permissions[route.context]);
+    for (const viewport of [
+      { height: 900, width: 1440, slug: "1440x900" },
+      { height: 800, width: 1280, slug: "1280x800" },
+      { height: 844, width: 390, slug: "390x844" },
+    ]) {
+      await page.setViewportSize({ height: viewport.height, width: viewport.width });
+      await page.goto(route.path, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(300);
+      await expect(page.getByTestId("app-root")).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        fullPage: true,
+        path: outputPath(`wave1-after-${route.slug}-${viewport.slug}.png`),
+      });
+    }
+  }
+});
+
+test("captures Wave 2 review surfaces at the requested viewports", async ({ page }, testInfo) => {
+  test.setTimeout(180000);
+  const outputPath = (name: string) => testInfo.outputPath(name);
+  const viewportSizes = [
+    { height: 900, slug: "1440x900", width: 1440 },
+    { height: 800, slug: "1280x800", width: 1280 },
+    { height: 844, slug: "390x844", width: 390 },
+  ];
+  const routes = [
+    { context: "gss-admin" as const, path: "/admin/devices", slug: "admin-devices" },
+    {
+      context: "gss-admin" as const,
+      path: "/admin/gateway-commands",
+      slug: "admin-gateway-commands",
+    },
+    { context: "company-user" as const, path: "/company/devices", slug: "company-devices" },
+    {
+      context: "company-user" as const,
+      path: "/company/areas/area-1",
+      slug: "company-area-detail",
+    },
+    {
+      context: "company-user" as const,
+      path: "/company/buildings/building-1",
+      slug: "company-building-detail",
+    },
+    {
+      context: "company-user" as const,
+      path: "/company/buildings/building-1/plan",
+      slug: "company-building-plan",
+    },
+    { context: "company-user" as const, path: "/company/roles", slug: "company-roles" },
+  ];
+  const permissions = {
+    "gss-admin": [
+      "welcome.view",
+      "devices.view",
+      "gateways.view",
+      "gateways.create",
+      "gateways.update",
+      "gateways.delete",
+      "gateways.assign",
+      "nodes.view",
+      "nodes.create",
+      "nodes.update",
+      "nodes.delete",
+      "nodes.assign",
+      "mqtt-commands.view",
+      "mqtt-commands.manage",
+    ],
+    "company-user": [
+      "welcome.view",
+      "areas.view",
+      "areas.update",
+      "buildings.view",
+      "buildings.update",
+      "building-plans.view",
+      "building-plans.manage",
+      "monitoring.view",
+      "company-devices.view",
+      "company-users.view",
+      "company-roles.view",
+      "company-roles.manage",
+      "company-permissions.view",
+    ],
+  } as const;
+
+  for (const route of routes) {
+    await installFixture(page, route.context, permissions[route.context]);
+    for (const viewport of viewportSizes) {
+      await page.setViewportSize({ height: viewport.height, width: viewport.width });
+      await page.goto(route.path, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(300);
+      await expect(page.getByTestId("app-root")).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        fullPage: true,
+        path: outputPath(`wave2-after-${route.slug}-${viewport.slug}.png`),
+      });
+    }
+  }
 });
 
 test("audits dark shared surface computed styles", async ({ page }, testInfo) => {

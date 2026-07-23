@@ -224,3 +224,42 @@ Reports, exports, partitioning, archival, migration, deployment, live cmd 4/cmd 
 - [x] Task 13: final regression, manual acceptance and handoff (full automated regression green; public desktop/mobile browser smoke recorded; protected visual and live hardware evidence explicitly kept as follow-up/pending).
 
 Phase 14 remains explicitly deferred and must not be started by this wave.
+
+## Wave 1 UI redesign
+
+- [x] Audit the current UI and document the Wave 1 visual contract.
+- [x] Refresh shared GSS tokens, shell, entity primitives, status badges, data
+      tables and modal footers while retaining Mantine and Tabler.
+- [x] Refactor Companies, Admin Company Detail, Company Resources and Company
+      Users with entity-first hierarchy and permission-aware overflow actions.
+- [x] Move destructive actions behind confirmation flows and preserve API,
+      route, RBAC, scope, i18n, realtime and business behavior.
+- [x] Add focused menu, permission, confirmation, modal-footer, status and row
+      navigation tests.
+- [x] Capture baseline and Wave 1 review screenshots at 1440x900, 1280x800 and
+      390x844 for the selected review surfaces.
+- [x] Run the Wave 1 quality gates and record the implementation handoff.
+
+Wave 1 is complete for review.
+
+## Wave 2 UI redesign
+
+- [x] Refactor Admin and Company Devices with dense identity-first tables,
+      semantic lifecycle/connectivity badges, local search and permission-aware
+      assignment/delete actions.
+- [x] Refactor Gateway Commands with semantic lifecycle/status presentation,
+      compact identity-first records, sanitized detail inspection and confirmed
+      retry/cancel actions behind existing permissions.
+- [x] Refactor Company Area, Building and Building Plan detail surfaces with
+      contextual headers, relationship tables, scoped optional queries and
+      overflow navigation for secondary actions.
+- [x] Refactor Company Roles with protected system-role treatment, searchable
+      permission groups, effective-permission counts and confirmed custom-role
+      deletion.
+- [x] Preserve existing routes, API contracts, permission resolution, scope
+      enforcement, assignment rules, MQTT behavior, validation and i18n keys.
+- [x] Add focused unit coverage and authenticated exact-viewport visual captures
+      at 1440x900, 1280x800 and 390x844.
+- [x] Run Wave 2 handoff quality gates and record remaining risks.
+
+Wave 2 is complete for review. Wave 3 remains intentionally unstarted.

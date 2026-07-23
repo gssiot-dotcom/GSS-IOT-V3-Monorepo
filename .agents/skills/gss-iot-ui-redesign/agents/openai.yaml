@@ -1,0 +1,4 @@
+interface:
+  display_name: "GSS IoT UI Redesign"
+  short_description: "Modernize and visually QA the GSS IoT V3 dashboard."
+  brand_color: "#0B80B7"

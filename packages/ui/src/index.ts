@@ -6,6 +6,7 @@ export {
   SessionExpiredState,
 } from "./app-states";
 export { DataTable, TablePaginationFooter, type DataTableColumn } from "./data-table";
+export { ConfirmActionModal, ModalFormFooter } from "./modal-primitives";
 export { GssButton, GssIconButton, type GssButtonProps, type GssButtonVariant } from "./button";
 export {
   ChartPanel,
@@ -39,6 +40,8 @@ export {
   EntityCard,
   EntityCardGrid,
   EntityMetric,
+  EntityPrimaryCell,
+  EntityStatusBadge,
   EntityStatusRow,
 } from "./entity-primitives";
 export {

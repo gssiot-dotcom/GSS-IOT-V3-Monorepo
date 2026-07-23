@@ -4,27 +4,22 @@ import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
+  DataToolbar,
+  ConfirmActionModal,
   EmptyState,
+  EntityActionMenu,
+  EntityPrimaryCell,
+  EntityStatusBadge,
   ErrorState,
   FormFieldGrid,
   FormSection,
   FormWorkspace,
   LoadingState,
+  ModalFormFooter,
   PageHeader,
-  StickyFormActions,
 } from "@gss-iot/ui";
-import {
-  Badge,
-  Button,
-  Checkbox,
-  Group,
-  Modal,
-  SimpleGrid,
-  Stack,
-  Text,
-  TextInput,
-} from "@mantine/core";
-import { IconEdit, IconTrash } from "@tabler/icons-react";
+import { Button, Checkbox, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
+import { IconEdit, IconShieldLock, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { t, tf } from "../../app/i18n";
@@ -46,6 +41,11 @@ export function CompanyRolesPage() {
   const [opened, setOpened] = useState(false);
   const [editingRole, setEditingRole] = useState<CompanyRoleRecord | null>(null);
   const [form, setForm] = useState<RoleFormState>(emptyForm);
+  const [roleSearch, setRoleSearch] = useState("");
+  const [permissionSearch, setPermissionSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<CompanyRoleRecord>();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const groupedPermissions = useMemo(() => {
     return permissions.reduce<Record<string, CompanyPermissionRecord[]>>((groups, permission) => {
@@ -118,6 +118,79 @@ export function CompanyRolesPage() {
     await load();
   };
 
+  const closeEditor = () => {
+    setOpened(false);
+    setEditingRole(null);
+    setForm(emptyForm);
+    setPermissionSearch("");
+  };
+
+  const filteredRoles = roles?.filter((role) => {
+    const query = roleSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [role.name, role.key].some((value) => value.toLowerCase().includes(query));
+  });
+
+  const filteredPermissionGroups = Object.entries(groupedPermissions).reduce<
+    Record<string, CompanyPermissionRecord[]>
+  >((groups, [module, modulePermissions]) => {
+    const query = permissionSearch.trim().toLowerCase();
+    const filtered = query
+      ? modulePermissions.filter((permission) =>
+          [permission.key, permission.module, permission.action].some((value) =>
+            value.toLowerCase().includes(query),
+          ),
+        )
+      : modulePermissions;
+    if (filtered.length) groups[module] = filtered;
+    return groups;
+  }, {});
+
+  const roleActionMenu = (role: CompanyRoleRecord) => {
+    const protectedRole = role.isSystem || role.isCompanyOwnerRole;
+    const items = [
+      {
+        icon: protectedRole ? <IconShieldLock size={16} /> : <IconEdit size={16} />,
+        key: protectedRole ? "view" : "edit",
+        label: protectedRole ? t("management.viewRole") : t("management.editRole"),
+        onClick: () => openEdit(role),
+      },
+      ...(hasPermission(session, "company-roles.manage") && !protectedRole
+        ? [
+            {
+              color: "red" as const,
+              destructive: true,
+              disabled: Boolean(role._count?.users),
+              disabledReason: role._count?.users
+                ? t("management.roleDeleteBlockedUsers")
+                : undefined,
+              icon: <IconTrash size={16} />,
+              key: "delete",
+              label: t("management.deleteRole"),
+              onClick: () => setDeleteTarget(role),
+            },
+          ]
+        : []),
+    ] satisfies Parameters<typeof EntityActionMenu>[0]["items"];
+    return (
+      <EntityActionMenu ariaLabel={`${t("common.moreActions")}: ${role.name}`} items={items} />
+    );
+  };
+
+  const confirmDeleteRole = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    setActionError("");
+    try {
+      await deleteRole(deleteTarget.id);
+      setDeleteTarget(undefined);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : t("settings.actionFailed"));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const togglePermission = (permissionId: string, checked: boolean) => {
     setForm((current) => ({
       ...current,
@@ -142,68 +215,63 @@ export function CompanyRolesPage() {
           </Can>
         }
       />
-      {roles?.length ? (
-        <DataTable
-          columns={[
-            { key: "name", label: t("organizations.name"), render: (role) => role.name },
-            { key: "key", label: t("management.roleKey"), render: (role) => role.key },
-            {
-              key: "permissions",
-              label: t("management.permissions"),
-              render: (role) => String(role.permissions.length),
-            },
-            {
-              key: "users",
-              label: t("management.assignedUsers"),
-              render: (role) => String(role._count?.users ?? 0),
-            },
-            {
-              key: "system",
-              label: t("management.protection"),
-              render: (role) =>
-                role.isSystem || role.isCompanyOwnerRole ? (
-                  <Badge color="gray" variant="light">
-                    {t("management.protectedRole")}
-                  </Badge>
-                ) : (
-                  <Badge color="blue" variant="light">
-                    {t("management.customRole")}
-                  </Badge>
-                ),
-            },
-            {
-              key: "actions",
-              label: t("organizations.actions"),
-              render: (role) => (
-                <Can permission="company-roles.manage">
-                  <Group gap="xs">
-                    <Button
-                      leftSection={<IconEdit size={16} />}
-                      onClick={() => openEdit(role)}
-                      size="xs"
-                      variant="light"
-                    >
-                      {role.isSystem || role.isCompanyOwnerRole
-                        ? t("management.viewRole")
-                        : t("management.editRole")}
-                    </Button>
-                    <Button
-                      color="red"
-                      disabled={role.isSystem || role.isCompanyOwnerRole || !!role._count?.users}
-                      leftSection={<IconTrash size={16} />}
-                      onClick={() => void deleteRole(role.id)}
-                      size="xs"
-                      variant="light"
-                    >
-                      {t("management.deleteRole")}
-                    </Button>
-                  </Group>
-                </Can>
-              ),
-            },
-          ]}
-          rows={roles}
-        />
+      {actionError ? <Text c="red">{actionError}</Text> : null}
+      {filteredRoles?.length ? (
+        <>
+          <DataToolbar>
+            <TextInput
+              aria-label={t("management.roleName")}
+              onChange={(event) => setRoleSearch(event.currentTarget.value)}
+              placeholder={t("management.roleName")}
+              value={roleSearch}
+            />
+            <Text c="dimmed" size="sm">
+              {filteredRoles.length} / {roles?.length ?? 0}
+            </Text>
+          </DataToolbar>
+          <DataTable
+            ariaLabel={t("management.rolesTitle")}
+            density="compact"
+            columns={[
+              {
+                key: "identity",
+                label: t("organizations.name"),
+                render: (role) => <EntityPrimaryCell identifier={role.key} title={role.name} />,
+              },
+              {
+                key: "permissions",
+                label: t("management.permissions"),
+                render: (role) =>
+                  role.permissions.length
+                    ? tf("management.permissionCount", { count: role.permissions.length })
+                    : t("management.noPermissions"),
+              },
+              {
+                key: "users",
+                label: t("management.assignedUsers"),
+                render: (role) => String(role._count?.users ?? 0),
+              },
+              {
+                key: "system",
+                label: t("management.protection"),
+                render: (role) =>
+                  role.isSystem || role.isCompanyOwnerRole ? (
+                    <EntityStatusBadge label={t("management.protectedRole")} status="maintenance" />
+                  ) : (
+                    <EntityStatusBadge label={t("management.customRole")} status="available" />
+                  ),
+              },
+              {
+                key: "actions",
+                label: t("organizations.actions"),
+                align: "right",
+                render: (role) =>
+                  hasPermission(session, "company-roles.manage") ? roleActionMenu(role) : null,
+              },
+            ]}
+            rows={filteredRoles}
+          />
+        </>
       ) : (
         <EmptyState
           description={t("management.emptyRolesDescription")}
@@ -212,11 +280,16 @@ export function CompanyRolesPage() {
       )}
       <Modal
         opened={opened}
-        onClose={() => setOpened(false)}
+        onClose={closeEditor}
         size="xl"
         title={editingRole ? t("management.editRole") : t("management.createRole")}
       >
         <FormWorkspace>
+          {editingRole?.isSystem || editingRole?.isCompanyOwnerRole ? (
+            <Text c="dimmed" size="sm">
+              {t("management.systemRoleNotice")}
+            </Text>
+          ) : null}
           <FormSection title={t("management.role")}>
             <FormFieldGrid>
               <TextInput
@@ -234,8 +307,15 @@ export function CompanyRolesPage() {
             </FormFieldGrid>
           </FormSection>
           <FormSection title={t("management.effectiveRolePermissions")}>
+            <TextInput
+              aria-label={t("management.permissionSearch")}
+              label={t("management.permissionSearch")}
+              mb="md"
+              onChange={(event) => setPermissionSearch(event.currentTarget.value)}
+              value={permissionSearch}
+            />
             <SimpleGrid cols={{ base: 1, md: 2 }}>
-              {Object.entries(groupedPermissions).map(([module, modulePermissions]) => (
+              {Object.entries(filteredPermissionGroups).map(([module, modulePermissions]) => (
                 <Stack gap={6} key={module}>
                   <Text c="dimmed" fw={600} size="sm">
                     {module}
@@ -255,26 +335,40 @@ export function CompanyRolesPage() {
               ))}
             </SimpleGrid>
           </FormSection>
-          <StickyFormActions>
-            <Group justify="space-between" w="100%">
-              <Text c="dimmed" size="sm">
-                {tf("management.permissionCount", { count: form.permissionIds.length })}
-              </Text>
-              <Button
-                disabled={
-                  !form.key ||
-                  !form.name ||
-                  !!editingRole?.isSystem ||
-                  !!editingRole?.isCompanyOwnerRole
-                }
-                onClick={() => void save()}
-              >
-                {t("organizations.save")}
-              </Button>
-            </Group>
-          </StickyFormActions>
+          <Stack gap="xs" mt="lg">
+            <Text c="dimmed" size="sm">
+              {tf("management.permissionCount", { count: form.permissionIds.length })}
+            </Text>
+            <ModalFormFooter
+              cancelLabel={t("common.cancel")}
+              onCancel={closeEditor}
+              onSubmit={() => void save()}
+              submitDisabled={
+                !form.key ||
+                !form.name ||
+                !!editingRole?.isSystem ||
+                !!editingRole?.isCompanyOwnerRole
+              }
+              submitLabel={t("organizations.save")}
+            />
+          </Stack>
         </FormWorkspace>
       </Modal>
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("management.deleteRole")}
+        description={t("management.confirmDeleteRoleImpact")}
+        entityName={deleteTarget?.name ?? ""}
+        loading={isDeleting}
+        onClose={() => setDeleteTarget(undefined)}
+        onConfirm={() => void confirmDeleteRole()}
+        opened={Boolean(deleteTarget)}
+        title={
+          deleteTarget
+            ? t("management.confirmDeleteRole").replace("{label}", deleteTarget.name)
+            : t("management.deleteRole")
+        }
+      />
     </Stack>
   );
 }

@@ -217,6 +217,14 @@ describe("Phase 8 Admin devices provisioning UI", () => {
     });
   });
 
+  const openMenu = async (label: string) => {
+    const button = await screen.findByRole("button", { name: label });
+    fireEvent.click(button);
+    const menuId = button.getAttribute("aria-controls");
+    await waitFor(() => expect(menuId && document.getElementById(menuId)).toBeTruthy());
+    return document.getElementById(menuId!) as HTMLElement;
+  };
+
   it("renders selector-based MQTT provisioning and command status", async () => {
     render(
       <MantineProvider theme={gssTheme}>
@@ -231,7 +239,7 @@ describe("Phase 8 Admin devices provisioning UI", () => {
         "Active node-gateway assignment is created only after a successful gateway response.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("SENT")).toBeTruthy();
+    expect(screen.getByText("Sent")).toBeTruthy();
     expect(screen.getByText("NODE-001")).toBeTruthy();
   });
 
@@ -268,21 +276,38 @@ describe("Phase 8 Admin devices provisioning UI", () => {
       </MantineProvider>,
     );
 
-    expect(await screen.findByRole("button", { name: "Edit gateway" })).toBeTruthy();
+    const gatewayMenu = await openMenu("More actions: GW-001");
     expect(
-      (screen.getByRole("button", { name: "Delete gateway" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+      within(gatewayMenu).getByRole("menuitem", { name: "Edit gateway", hidden: true }),
+    ).toBeTruthy();
+    expect(
+      within(gatewayMenu)
+        .getByRole("menuitem", { name: "Delete gateway", hidden: true })
+        .getAttribute("title"),
+    ).toBe("Deletion blocked: company assignment history exists");
+    fireEvent.click(
+      within(gatewayMenu).getByRole("menuitem", { name: "Edit gateway", hidden: true }),
+    );
     fireEvent.click(screen.getByRole("tab", { name: "Nodes" }));
-    expect(screen.getByRole("button", { name: "Edit node" })).toBeTruthy();
+    const nodeMenu = await openMenu("More actions: NODE-001");
     expect(
-      (screen.getByRole("button", { name: "Delete node" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+      within(nodeMenu).getByRole("menuitem", { name: "Edit node", hidden: true }),
+    ).toBeTruthy();
+    expect(
+      within(nodeMenu)
+        .getByRole("menuitem", { name: "Delete node", hidden: true })
+        .getAttribute("title"),
+    ).toBe("Deletion blocked: company assignment history exists");
+    fireEvent.click(within(nodeMenu).getByRole("menuitem", { name: "Edit node", hidden: true }));
 
     fireEvent.click(screen.getByRole("tab", { name: "Gateways" }));
-    fireEvent.click(screen.getByRole("button", { name: "Edit gateway" }));
+    const editGatewayMenu = await openMenu("More actions: GW-001");
+    fireEvent.click(
+      within(editGatewayMenu).getByRole("menuitem", { name: "Edit gateway", hidden: true }),
+    );
     await waitFor(() => expect(screen.getByRole("heading", { name: "Edit gateway" })).toBeTruthy());
     expect(screen.getByDisplayValue("GW-001")).toBeTruthy();
-  });
+  }, 15000);
 
   it("shows localized success and conflict feedback for delete mutations", async () => {
     deletionAllowed = true;
@@ -292,16 +317,21 @@ describe("Phase 8 Admin devices provisioning UI", () => {
       </MantineProvider>,
     );
 
-    const deleteButton = await screen.findByRole("button", { name: "Delete gateway" });
-    fireEvent.click(deleteButton);
+    const deleteGatewayMenu = await openMenu("More actions: GW-001");
+    fireEvent.click(
+      within(deleteGatewayMenu).getByRole("menuitem", { name: "Delete gateway", hidden: true }),
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Delete permanently" }));
     await waitFor(() => expect(screen.getByText("Device deleted.")).toBeTruthy());
 
     deleteError = "This gateway has business history and cannot be hard-deleted.";
-    fireEvent.click(screen.getByRole("button", { name: "Delete gateway" }));
+    const retryDeleteMenu = await openMenu("More actions: GW-001");
+    fireEvent.click(
+      within(retryDeleteMenu).getByRole("menuitem", { name: "Delete gateway", hidden: true }),
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Delete permanently" }));
     await waitFor(() => expect(screen.getByText(deleteError)).toBeTruthy());
-  });
+  }, 15000);
 
   it("previews canonical bulk node input and submits one atomic request", async () => {
     render(

@@ -793,3 +793,69 @@ change is required.
 **Consequences:** The repository state is `PHASE_13_COMPLETE`, `PHASE_14_NOT_STARTED`, `PRE_PHASE_14_REFACTOR_COMPLETE`. No production S3, worker deployment, retention, migration, rollback, CI/CD, or live hardware implementation is introduced. Automated security/scope/protocol/alarm/report evidence remains the authoritative regression proof until the deferred manual checks are performed.
 
 **Files affected:** `docs/quality/PRE_PHASE_14_REFACTOR_ACCEPTANCE_CHECKLIST.md`, `docs/planning/PROJECT_STATE.md`, `docs/planning/TODO.md`, `docs/planning/IMPLEMENTATION_PLAN.md`, `docs/planning/DECISION_LOG.md`, `docs/prompts/3rd-step/EXECUTION_STATE.md`.
+
+## DEC-2026-059 — Wave 1 visual contract and action hierarchy
+
+**Status:** accepted
+
+**Context:** Wave 1 needs a coherent visual system and clearer action hierarchy
+across the highest-value organization and company-management surfaces without
+changing APIs, routes, DTOs, authorization, scope filtering, realtime behavior,
+i18n boundaries or legacy monitoring behavior.
+
+**Decision:** Adopt the Wave 1 visual contract in
+`docs/design/UI_REDESIGN_V2.md`: compact navy shell, cyan primary emphasis,
+entity-first list/card layouts, semantic status badges, one contextual overflow
+menu per entity, confirmation modals for destructive actions, and shared modal
+footers with Cancel first and the primary action on the right. Use row/entity
+navigation for primary open behavior and permission-filter every secondary
+action. Validate the contract with focused unit tests and exact-viewport
+authenticated visual captures.
+
+**Consequences:** Shared tokens, primitives, shell, gallery and the Companies,
+Admin Company Detail, Company Resources and Company Users surfaces are updated
+as one Wave 1 slice. No schema, migration, seed, API contract or business-rule
+change is introduced. Devices, monitoring, alarms, reports, settings and other
+Wave 2 surfaces remain unchanged and Wave 2 is not started.
+
+**Files affected:** `packages/ui/src/`, `apps/web/src/styles/global.css`,
+`apps/web/src/features/shell/PortalLayout.tsx`,
+`apps/web/src/features/organizations/CompaniesPage.tsx`,
+`apps/web/src/features/organizations/AdminCompanyDetailPage.tsx`,
+`apps/web/src/features/organizations/CompanyResourcesPage.tsx`,
+`apps/web/src/features/company-management/CompanyUsersPage.tsx`,
+`apps/web/e2e/ui-redesign.visual.spec.ts`,
+`docs/design/UI_REDESIGN_AUDIT.md`, `docs/design/UI_REDESIGN_V2.md`.
+
+## DEC-2026-060 — Wave 2 operational surfaces and existing-mutation boundary
+
+**Status:** accepted
+
+**Context:** Wave 2 needs clearer Devices, Assignments, Gateway Commands,
+Organization Details and Company Roles workflows while preserving the existing
+backend and authorization contracts.
+
+**Decision:** Apply the Wave 1 visual contract to the Wave 2 surfaces using
+dense entity-first tables, semantic lifecycle/connectivity/status badges, one
+contextual overflow menu per row, explicit blocker explanations and shared
+confirmation/modal-footer primitives. Keep secondary organization navigation in
+the building overflow menu and keep company scope filtering server-derived.
+Reuse only existing device assignment, unassignment, delete, gateway-command
+retry/cancel, role mutation and plan-image endpoints. Do not add Deactivate or
+Retire mutations when the current API/page contract does not expose them; render
+their existing lifecycle states and preserve current mutation availability.
+
+**Consequences:** Wave 2 improves scanability and action placement without
+changing API paths, DTOs, query keys, permission resolution, scope checks, MQTT
+topics/payloads, assignment history, validation, realtime behavior, self-lockout
+or inactive-session handling. No schema, migration, seed or backend change is
+introduced. Wave 3 remains deferred.
+
+**Files affected:** `packages/ui/src/status-badge.tsx`,
+`packages/ui/src/entity-primitives.tsx`, `apps/web/src/app/i18n.ts`,
+`apps/web/src/features/devices/`,
+`apps/web/src/features/gateway-commands/GatewayCommandsPage.tsx`,
+`apps/web/src/features/organizations/CompanyResourceDetailPages.tsx`,
+`apps/web/src/features/company-management/CompanyRolesPage.tsx`,
+`apps/web/e2e/ui-redesign.visual.spec.ts`, focused web tests and the Wave 2
+planning handoff entries.

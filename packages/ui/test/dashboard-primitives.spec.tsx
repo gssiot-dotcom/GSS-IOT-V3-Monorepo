@@ -2,15 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   CompactActionMenu,
+  ConfirmActionModal,
   ContextSectionLayout,
   DataTable,
   EntityCard,
   EntityCardGrid,
+  EntityActionMenu,
+  EntityPrimaryCell,
+  EntityStatusBadge,
   FormSection,
   PageContainer,
   DashboardKpiCard,
   DashboardSection,
   PageHeader,
+  ModalFormFooter,
   RealtimeStatusBadge,
   ResponsiveContentGrid,
   SectionHeader,
@@ -52,7 +57,10 @@ describe("dashboard primitives", () => {
     });
 
     expect(header.props.wrap).toBe("wrap");
-    expect(table.props.children.props["aria-label"]).toBe("Gateway inventory");
+    const tableChildren = Array.isArray(table.props.children)
+      ? table.props.children
+      : [table.props.children];
+    expect(tableChildren[0].props["aria-label"]).toBe("Gateway inventory");
   });
 
   it("exposes reusable redesign primitives without owning domain behavior", () => {
@@ -67,5 +75,43 @@ describe("dashboard primitives", () => {
     expect(page.props.className).toBe("gss-page-container");
     expect(layout.props.children).toHaveLength(2);
     expect(section.props.className).toBe("gss-form-section");
+  });
+
+  it("exposes the Wave 1 action and confirmation contract", () => {
+    const primary = EntityPrimaryCell({
+      identifier: "GSS-001",
+      onClick: vi.fn(),
+      title: "Acme Safety",
+    });
+    const status = EntityStatusBadge({ label: "Active", status: "active" });
+    const menu = EntityActionMenu({
+      ariaLabel: "Company actions",
+      items: [
+        { key: "open", label: "Open", onClick: vi.fn() },
+        { destructive: true, key: "deactivate", label: "Deactivate", onClick: vi.fn() },
+      ],
+    });
+    const footer = ModalFormFooter({
+      cancelLabel: "Cancel",
+      onCancel: vi.fn(),
+      onSubmit: vi.fn(),
+      submitLabel: "Save",
+    });
+    const confirmation = ConfirmActionModal({
+      cancelLabel: "Cancel",
+      confirmLabel: "Deactivate",
+      description: "Reversible",
+      entityName: "Acme Safety",
+      onClose: vi.fn(),
+      onConfirm: vi.fn(),
+      opened: true,
+      title: "Confirm deactivation",
+    });
+
+    expect(primary.props.className).toBe("gss-entity-primary-button");
+    expect(status.props.status).toBe("active");
+    expect(menu.props["aria-label"]).toBe("Company actions");
+    expect(footer.props.className).toBe("gss-modal-form-footer");
+    expect(confirmation.props.opened).toBe(true);
   });
 });

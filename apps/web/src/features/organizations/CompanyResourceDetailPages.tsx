@@ -10,19 +10,28 @@ import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
+  EntityActionMenu,
+  EntityPrimaryCell,
+  EntityStatusBadge,
   EmptyState,
   ErrorState,
   ForbiddenState,
   LoadingState,
+  ModalFormFooter,
   PageHeader,
 } from "@gss-iot/ui";
 import { Button, Group, Modal, Select, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
-import { IconChartBar, IconMap, IconUpload } from "@tabler/icons-react";
+import { IconChartBar, IconEdit, IconMap, IconUpload } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { t } from "../../app/i18n";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import {
+  deviceConnectivityBadge,
+  deviceLifecycleBadge,
+  formatDeviceDate,
+} from "../devices/device-labels";
 
 export function CompanyAreaDetailPage() {
   const { areaId } = useParams();
@@ -102,11 +111,25 @@ export function CompanyAreaDetailPage() {
   return (
     <Stack gap="lg">
       <PageHeader
+        eyebrow={t("organizations.areaDetail")}
+        meta={
+          <Text c="dimmed" size="sm">
+            {area.address ?? t("organizations.noAddress")}
+          </Text>
+        }
+        status={
+          <EntityStatusBadge
+            label={area.status === "ACTIVE" ? t("management.active") : t("management.inactive")}
+            status={area.status === "ACTIVE" ? "active" : "inactive"}
+          />
+        }
         title={area.name}
         subtitle={t("organizations.areaDetailSubtitle")}
         action={
           <Can permission="areas.update">
-            <Button onClick={() => setOpened(true)}>{t("organizations.save")}</Button>
+            <Button leftSection={<IconEdit size={16} />} onClick={() => setOpened(true)}>
+              {t("organizations.edit")}
+            </Button>
           </Can>
         }
       />
@@ -116,31 +139,35 @@ export function CompanyAreaDetailPage() {
             <Text fw={600}>{t("organizations.buildingsTitle")}</Text>
             {buildings.length ? (
               <DataTable
+                ariaLabel={t("organizations.buildingsTitle")}
                 columns={[
                   {
-                    key: "title",
+                    key: "identity",
                     label: t("organizations.name"),
-                    render: (building) => building.title,
+                    render: (building) => (
+                      <EntityPrimaryCell
+                        identifier={building.number ?? undefined}
+                        title={building.title}
+                      />
+                    ),
                   },
                   {
                     key: "status",
                     label: t("organizations.status"),
-                    render: (building) => building.status,
-                  },
-                  {
-                    key: "actions",
-                    label: t("organizations.actions"),
                     render: (building) => (
-                      <Button
-                        onClick={() => navigate(`/company/buildings/${building.id}`)}
-                        size="xs"
-                        variant="light"
-                      >
-                        {t("organizations.open")}
-                      </Button>
+                      <EntityStatusBadge
+                        label={
+                          building.status === "ACTIVE"
+                            ? t("management.active")
+                            : t("management.inactive")
+                        }
+                        status={building.status === "ACTIVE" ? "active" : "inactive"}
+                      />
                     ),
                   },
                 ]}
+                density="compact"
+                onRowClick={(building) => navigate(`/company/buildings/${building.id}`)}
                 rows={buildings}
               />
             ) : (
@@ -155,10 +182,16 @@ export function CompanyAreaDetailPage() {
           <Stack>
             <Text fw={600}>{t("management.assignedUsers")}</Text>
             <DataTable
+              ariaLabel={t("management.assignedUsers")}
               columns={[
-                { key: "name", label: t("organizations.name"), render: (user) => user.name },
+                {
+                  key: "name",
+                  label: t("organizations.name"),
+                  render: (user) => <EntityPrimaryCell identifier={user.email} title={user.name} />,
+                },
                 { key: "role", label: t("management.role"), render: (user) => user.role.name },
               ]}
+              density="compact"
               rows={users}
             />
           </Stack>
@@ -171,7 +204,12 @@ export function CompanyAreaDetailPage() {
             onChange={(event) => setName(event.currentTarget.value)}
             value={name}
           />
-          <Button onClick={() => void save()}>{t("organizations.save")}</Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => setOpened(false)}
+            onSubmit={() => void save()}
+            submitLabel={t("organizations.save")}
+          />
         </Stack>
       </Modal>
     </Stack>
@@ -272,32 +310,58 @@ export function CompanyBuildingDetailPage() {
   return (
     <Stack gap="lg">
       <PageHeader
-        title={building.title}
-        subtitle={area?.name ?? t("organizations.buildingDetailSubtitle")}
-        action={
-          <Group>
-            <Can permission="monitoring.view">
-              <Button
-                leftSection={<IconChartBar size={16} />}
-                onClick={() => navigate(`/company/buildings/${building.id}/monitoring`)}
-                variant="light"
-              >
-                {t("monitoring.open")}
-              </Button>
-            </Can>
-            <Can permission="building-plans.view">
-              <Button
-                leftSection={<IconMap size={16} />}
-                onClick={() => navigate(`/company/buildings/${building.id}/plan`)}
-                variant="light"
-              >
-                {t("organizations.buildingPlan")}
-              </Button>
-            </Can>
-            <Can permission="buildings.update">
-              <Button onClick={() => setOpened(true)}>{t("organizations.save")}</Button>
-            </Can>
+        eyebrow={area?.name ?? t("organizations.building")}
+        meta={
+          <Group gap="sm">
+            <Text c="dimmed" size="sm">
+              {building.number ?? t("organizations.noNumber")}
+            </Text>
+            <Text c="dimmed" size="sm">
+              {building.address ?? t("organizations.noAddress")}
+            </Text>
           </Group>
+        }
+        overflowAction={
+          <EntityActionMenu
+            ariaLabel={`${t("common.moreActions")}: ${building.title}`}
+            items={[
+              ...(hasPermission(session, "monitoring.view")
+                ? [
+                    {
+                      icon: <IconChartBar size={16} />,
+                      key: "monitoring",
+                      label: t("monitoring.open"),
+                      onClick: () => navigate(`/company/buildings/${building.id}/monitoring`),
+                    },
+                  ]
+                : []),
+              ...(hasPermission(session, "building-plans.view")
+                ? [
+                    {
+                      icon: <IconMap size={16} />,
+                      key: "plan",
+                      label: t("organizations.buildingPlan"),
+                      onClick: () => navigate(`/company/buildings/${building.id}/plan`),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        }
+        status={
+          <EntityStatusBadge
+            label={building.status === "ACTIVE" ? t("management.active") : t("management.inactive")}
+            status={building.status === "ACTIVE" ? "active" : "inactive"}
+          />
+        }
+        title={building.title}
+        subtitle={t("organizations.buildingDetailSubtitle")}
+        action={
+          <Can permission="buildings.update">
+            <Button leftSection={<IconEdit size={16} />} onClick={() => setOpened(true)}>
+              {t("organizations.edit")}
+            </Button>
+          </Can>
         }
       />
       <SimpleGrid cols={{ base: 1, md: 2 }}>
@@ -305,10 +369,16 @@ export function CompanyBuildingDetailPage() {
           <Stack>
             <Text fw={600}>{t("management.assignedUsers")}</Text>
             <DataTable
+              ariaLabel={t("management.assignedUsers")}
               columns={[
-                { key: "name", label: t("organizations.name"), render: (user) => user.name },
+                {
+                  key: "name",
+                  label: t("organizations.name"),
+                  render: (user) => <EntityPrimaryCell identifier={user.email} title={user.name} />,
+                },
                 { key: "role", label: t("management.role"), render: (user) => user.role.name },
               ]}
+              density="compact"
               rows={users}
             />
           </Stack>
@@ -317,14 +387,30 @@ export function CompanyBuildingDetailPage() {
           <Stack>
             <Text fw={600}>{t("devices.gatewaysTitle")}</Text>
             <DataTable
+              ariaLabel={t("devices.gatewaysTitle")}
               columns={[
                 {
-                  key: "serialNumber",
-                  label: t("devices.serialNumber"),
-                  render: (gateway) => gateway.serialNumber,
+                  key: "identity",
+                  label: t("devices.gateway"),
+                  render: (gateway) => <EntityPrimaryCell title={gateway.serialNumber} />,
                 },
-                { key: "status", label: t("devices.status"), render: (gateway) => gateway.status },
+                {
+                  key: "status",
+                  label: t("devices.status"),
+                  render: (gateway) => deviceLifecycleBadge(gateway.status),
+                },
+                {
+                  key: "connection",
+                  label: t("devices.connection"),
+                  render: (gateway) => deviceConnectivityBadge(gateway.lastSeenAt),
+                },
+                {
+                  key: "lastSeen",
+                  label: t("devices.lastSeen"),
+                  render: (gateway) => formatDeviceDate(gateway.lastSeenAt),
+                },
               ]}
+              density="compact"
               rows={assignedGateways}
             />
           </Stack>
@@ -337,7 +423,12 @@ export function CompanyBuildingDetailPage() {
             onChange={(event) => setTitle(event.currentTarget.value)}
             value={title}
           />
-          <Button onClick={() => void save()}>{t("organizations.save")}</Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => setOpened(false)}
+            onSubmit={() => void save()}
+            submitLabel={t("organizations.save")}
+          />
         </Stack>
       </Modal>
     </Stack>
@@ -437,9 +528,13 @@ export function CompanyBuildingPlanPage() {
             onChange={(event) => setStorageKey(event.currentTarget.value)}
             value={storageKey}
           />
-          <Button disabled={!storageKey} onClick={() => void addImage()}>
-            {t("organizations.addPlanImage")}
-          </Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => setOpened(false)}
+            onSubmit={() => void addImage()}
+            submitDisabled={!storageKey}
+            submitLabel={t("organizations.addPlanImage")}
+          />
         </Stack>
       </Modal>
     </Stack>

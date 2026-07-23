@@ -120,12 +120,12 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
 
   return (
     <AppShell
-      header={{ height: 60 }}
+      header={{ height: 64 }}
       navbar={{ breakpoint: "sm", collapsed: { mobile: !opened }, width: 272 }}
       padding="md"
     >
-      <AppShell.Header>
-        <Group className="gss-shell-header" h="100%" justify="space-between" px="lg" wrap="wrap">
+      <AppShell.Header className="gss-shell-header">
+        <Group h="100%" justify="space-between" px="lg" wrap="wrap">
           <Group gap="sm">
             <Burger
               aria-label={t("shell.toggleNavigation")}
@@ -256,10 +256,7 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
           </Group>
         </Group>
       </AppShell.Header>
-      <AppShell.Navbar
-        className="gss-shell-navbar"
-        style={{ backgroundColor: "var(--gss-surface)" }}
-      >
+      <AppShell.Navbar className="gss-shell-navbar">
         <ScrollArea
           className="gss-sidebar-scrollarea"
           classNames={{ viewport: "gss-sidebar-scrollarea-viewport" }}
@@ -284,7 +281,13 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
             <Divider />
             {sections.map((section) => (
               <Stack gap={4} key={section.key}>
-                <Text c="dimmed" fw={700} px="xs" size="xs" tt="uppercase">
+                <Text
+                  className="gss-sidebar-section-title"
+                  fw={700}
+                  px="xs"
+                  size="xs"
+                  tt="uppercase"
+                >
                   {t(section.titleKey)}
                 </Text>
                 {section.items.map((item) => {

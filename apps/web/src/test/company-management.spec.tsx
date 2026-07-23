@@ -1,7 +1,7 @@
 import type { AuthSession } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
@@ -226,7 +226,14 @@ describe("company management UI", () => {
     const fetchMock = mockFetch();
     renderApp("/company/roles");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit role" }));
+    const menuButton = await screen.findByRole("button", { name: "More actions: Safety Lead" });
+    fireEvent.click(menuButton);
+    await waitFor(() =>
+      expect(document.getElementById(menuButton.getAttribute("aria-controls")!)).toBeTruthy(),
+    );
+    const menu = document.getElementById(menuButton.getAttribute("aria-controls")!);
+    expect(menu).toBeTruthy();
+    fireEvent.click(within(menu!).getByRole("menuitem", { name: "Edit role", hidden: true }));
     const dialog = await screen.findByRole("dialog", { name: "Edit role" });
     fireEvent.click(within(dialog).getByLabelText("reports.view"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -348,6 +355,33 @@ describe("company management UI", () => {
     ).toBe(false);
   });
 
+  it("keeps user actions permission-aware and confirms deactivation", async () => {
+    const session = {
+      ...companySession,
+      user: {
+        ...companySession.user,
+        permissions: ["welcome.view", "company-users.view", "company-users.delete"],
+      },
+    };
+    storeCompanySession(session);
+    const fetchMock = mockFetch(session);
+    renderApp("/company/users");
+
+    expect(await screen.findByText("Worker")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "More actions: Worker" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Deactivate" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Confirm deactivation" });
+    expect(within(dialog).getByText("Worker")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Deactivate user" }));
+
+    expect(
+      fetchMock.mock.calls.some(([input, init]) => {
+        return String(input) === `${apiBaseUrl}/company/users/user-1` && init?.method === "DELETE";
+      }),
+    ).toBe(true);
+  });
+
   it("renders roles page from company-roles.view without permission catalog reads", async () => {
     const session = {
       ...companySession,
@@ -361,5 +395,51 @@ describe("company management UI", () => {
     expect(
       fetchMock.mock.calls.some(([input]) => String(input) === `${apiBaseUrl}/company/permissions`),
     ).toBe(false);
+  });
+
+  it("keeps system roles view-only and confirms custom role deletion", async () => {
+    storeCompanySession();
+    const fetchMock = mockFetch();
+    renderApp("/company/roles");
+
+    const systemMenuButton = await screen.findByRole("button", {
+      name: "More actions: Platform Manager",
+    });
+    fireEvent.click(systemMenuButton);
+    await waitFor(() =>
+      expect(document.getElementById(systemMenuButton.getAttribute("aria-controls")!)).toBeTruthy(),
+    );
+    const systemMenu = document.getElementById(systemMenuButton.getAttribute("aria-controls")!);
+    expect(systemMenu).toBeTruthy();
+    expect(
+      within(systemMenu!).getByRole("menuitem", { name: "View role", hidden: true }),
+    ).toBeTruthy();
+    expect(
+      within(systemMenu!).queryByRole("menuitem", { name: "Delete role", hidden: true }),
+    ).toBeNull();
+
+    const customMenuButton = await screen.findByRole("button", {
+      name: "More actions: Safety Lead",
+    });
+    fireEvent.click(customMenuButton);
+    await waitFor(() =>
+      expect(document.getElementById(customMenuButton.getAttribute("aria-controls")!)).toBeTruthy(),
+    );
+    const customMenu = document.getElementById(customMenuButton.getAttribute("aria-controls")!);
+    expect(customMenu).toBeTruthy();
+    fireEvent.click(
+      within(customMenu!).getByRole("menuitem", { name: "Delete role", hidden: true }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Delete role Safety Lead?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete role" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            String(input) === `${apiBaseUrl}/company/roles/role-custom` &&
+            init?.method === "DELETE",
+        ),
+      ).toBe(true),
+    );
   });
 });

@@ -7,20 +7,26 @@ import {
   DataToolbar,
   DataViewToggle,
   EmptyState,
+  EntityActionMenu,
   EntityCard,
   EntityCardGrid,
   EntityMetric,
+  EntityPrimaryCell,
+  EntityStatusBadge,
   EntityStatusRow,
   ErrorState,
   LoadingState,
+  ConfirmActionModal,
+  ModalFormFooter,
   PageHeader,
 } from "@gss-iot/ui";
 import { Button, Group, Modal, Select, Stack, Text, TextInput } from "@mantine/core";
-import { IconPlugConnected } from "@tabler/icons-react";
+import { IconArrowUpRight, IconPlayerPause, IconPlugConnected } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { t } from "../../app/i18n";
+import { hasPermission } from "../../shared/rbac/has-permission";
 
 export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildings" }) {
   const { session } = useAuth();
@@ -32,6 +38,11 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
   const [name, setName] = useState("");
   const [areaId, setAreaId] = useState<string | null>(null);
   const [view, setView] = useState("cards");
+  const [pendingDeactivate, setPendingDeactivate] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [isMutating, setIsMutating] = useState(false);
   const isAreas = resource === "areas";
   const createPermission = isAreas ? "areas.create" : "buildings.create";
 
@@ -74,11 +85,21 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
 
   const deactivate = async (id: string) => {
     if (!session) return;
-    await apiRequest(session, `/company/${isAreas ? "areas" : "buildings"}/${id}`, {
-      method: "DELETE",
-    });
-    await load();
+    setIsMutating(true);
+    try {
+      await apiRequest(session, `/company/${isAreas ? "areas" : "buildings"}/${id}`, {
+        method: "DELETE",
+      });
+      await load();
+    } finally {
+      setIsMutating(false);
+    }
   };
+
+  const openPath = (id: string) => `/company/${isAreas ? "areas" : "buildings"}/${id}`;
+  const monitoringPath = (id: string) => `/company/buildings/${id}/monitoring`;
+  const nameFor = (row: AreaRecord | BuildingRecord) => ("name" in row ? row.name : row.title);
+  const deletePermission = isAreas ? "areas.delete" : "buildings.delete";
 
   if (!rows && !error) return <LoadingState title={t("common.loading")} />;
   if (error)
@@ -123,109 +144,149 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
                 return (
                   <EntityCard
                     action={
-                      <Button
-                        onClick={() =>
-                          navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)
-                        }
-                        size="xs"
-                        variant="light"
-                      >
-                        {t("organizations.open")}
-                      </Button>
+                      <EntityActionMenu
+                        ariaLabel={`${t("common.moreActions")}: ${name}`}
+                        items={[
+                          {
+                            icon: <IconArrowUpRight size={16} />,
+                            key: "open",
+                            label: t("organizations.open"),
+                            onClick: () => navigate(openPath(row.id)),
+                          },
+                          ...(!isAreas && hasPermission(session, "monitoring.view")
+                            ? [
+                                {
+                                  icon: <IconPlugConnected size={16} />,
+                                  key: "monitoring",
+                                  label: t("monitoring.open"),
+                                  onClick: () => navigate(monitoringPath(row.id)),
+                                },
+                              ]
+                            : []),
+                          ...(hasPermission(session, deletePermission)
+                            ? [
+                                {
+                                  color: "red" as const,
+                                  destructive: true,
+                                  icon: <IconPlayerPause size={16} />,
+                                  key: "deactivate",
+                                  label: t("organizations.deactivate"),
+                                  onClick: () => setPendingDeactivate({ id: row.id, name }),
+                                },
+                              ]
+                            : []),
+                        ]}
+                      />
                     }
                     description={detail ?? undefined}
                     eyebrow={
                       isAreas ? t("organizations.areasTitle") : t("organizations.buildingsTitle")
                     }
                     key={row.id}
+                    onClick={() => navigate(openPath(row.id))}
                     title={name}
                   >
                     <EntityStatusRow
-                      color={row.status === "ACTIVE" ? "green" : "gray"}
                       label={t("organizations.status")}
-                      value={row.status}
+                      value={
+                        <EntityStatusBadge
+                          label={
+                            row.status === "ACTIVE"
+                              ? t("management.active")
+                              : t("management.inactive")
+                          }
+                          status={row.status === "ACTIVE" ? "active" : "inactive"}
+                        />
+                      }
                     />
                     <Group gap="lg">
                       <EntityMetric
                         label={isAreas ? t("organizations.code") : t("devices.nodeNumber")}
                         value={identifier}
                       />
-                      <Can permission="monitoring.view">
-                        {!isAreas ? (
-                          <Button
-                            leftSection={<IconPlugConnected size={16} />}
-                            onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)}
-                            size="xs"
-                            variant="subtle"
-                          >
-                            {t("monitoring.open")}
-                          </Button>
-                        ) : null}
-                      </Can>
                     </Group>
-                    <Can permission={isAreas ? "areas.delete" : "buildings.delete"}>
-                      <Button
-                        color="red"
-                        onClick={() => void deactivate(row.id)}
-                        size="xs"
-                        variant="subtle"
-                      >
-                        {t("organizations.deactivate")}
-                      </Button>
-                    </Can>
                   </EntityCard>
                 );
               })}
             </EntityCardGrid>
           ) : (
             <DataTable
+              ariaLabel={title}
               columns={[
                 {
                   key: "name",
                   label: t("organizations.name"),
-                  render: (row) => ("name" in row ? row.name : row.title),
+                  render: (row) => (
+                    <EntityPrimaryCell
+                      identifier={"name" in row ? row.id.slice(0, 8) : (row.number ?? "-")}
+                      onClick={() => navigate(openPath(row.id))}
+                      title={nameFor(row)}
+                    />
+                  ),
                 },
-                { key: "status", label: t("organizations.status"), render: (row) => row.status },
+                {
+                  key: "status",
+                  label: t("organizations.status"),
+                  render: (row) => (
+                    <EntityStatusBadge
+                      label={
+                        row.status === "ACTIVE" ? t("management.active") : t("management.inactive")
+                      }
+                      status={row.status === "ACTIVE" ? "active" : "inactive"}
+                    />
+                  ),
+                },
+                {
+                  key: "meta",
+                  label: isAreas ? t("organizations.address") : t("organizations.area"),
+                  render: (row) =>
+                    "name" in row
+                      ? (row.address ?? row.description ?? "-")
+                      : (row.number ?? row.address ?? "-"),
+                },
                 {
                   key: "actions",
                   label: t("organizations.actions"),
+                  align: "right",
                   render: (row) => (
-                    <Stack gap={6}>
-                      <Button
-                        onClick={() =>
-                          navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)
-                        }
-                        size="xs"
-                        variant="light"
-                      >
-                        {t("organizations.open")}
-                      </Button>
-                      {!isAreas ? (
-                        <Can permission="monitoring.view">
-                          <Button
-                            leftSection={<IconPlugConnected size={16} />}
-                            onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)}
-                            size="xs"
-                            variant="light"
-                          >
-                            {t("monitoring.open")}
-                          </Button>
-                        </Can>
-                      ) : null}
-                      <Can permission={isAreas ? "areas.delete" : "buildings.delete"}>
-                        <Button
-                          color="red"
-                          onClick={() => void deactivate(row.id)}
-                          size="xs"
-                          variant="light"
-                        >
-                          {t("organizations.deactivate")}
-                        </Button>
-                      </Can>
-                    </Stack>
+                    <EntityActionMenu
+                      ariaLabel={`${t("common.moreActions")}: ${nameFor(row)}`}
+                      items={[
+                        {
+                          icon: <IconArrowUpRight size={16} />,
+                          key: "open",
+                          label: t("organizations.open"),
+                          onClick: () => navigate(openPath(row.id)),
+                        },
+                        ...(!isAreas && hasPermission(session, "monitoring.view")
+                          ? [
+                              {
+                                icon: <IconPlugConnected size={16} />,
+                                key: "monitoring",
+                                label: t("monitoring.open"),
+                                onClick: () => navigate(monitoringPath(row.id)),
+                              },
+                            ]
+                          : []),
+                        ...(hasPermission(session, deletePermission)
+                          ? [
+                              {
+                                color: "red" as const,
+                                destructive: true,
+                                icon: <IconPlayerPause size={16} />,
+                                key: "deactivate",
+                                label: t("organizations.deactivate"),
+                                onClick: () =>
+                                  setPendingDeactivate({ id: row.id, name: nameFor(row) }),
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
                   ),
                 },
               ]}
+              onRowClick={(row) => navigate(openPath(row.id))}
               rows={rows}
             />
           )}
@@ -251,11 +312,29 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
               value={areaId}
             />
           ) : null}
-          <Button disabled={!isAreas && !areaId} onClick={() => void create()}>
-            {t("organizations.create")}
-          </Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => setOpened(false)}
+            onSubmit={() => void create()}
+            submitDisabled={!name.trim() || (!isAreas && !areaId)}
+            submitLabel={t("organizations.create")}
+          />
         </Stack>
       </Modal>
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("organizations.deactivate")}
+        description={t("organizations.confirmDeactivateImpact")}
+        entityName={pendingDeactivate?.name ?? ""}
+        loading={isMutating}
+        onClose={() => setPendingDeactivate(null)}
+        onConfirm={() => {
+          if (!pendingDeactivate) return;
+          void deactivate(pendingDeactivate.id).finally(() => setPendingDeactivate(null));
+        }}
+        opened={Boolean(pendingDeactivate)}
+        title={t("organizations.confirmDeactivateTitle")}
+      />
     </Stack>
   );
 }

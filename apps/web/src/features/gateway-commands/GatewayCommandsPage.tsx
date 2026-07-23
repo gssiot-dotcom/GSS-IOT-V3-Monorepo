@@ -1,29 +1,54 @@
 import type { GatewayCommandRecord, MqttStatusRecord } from "@gss-iot/contracts";
 import {
+  ConfirmActionModal,
   DataTable,
   DataToolbar,
   EmptyState,
+  EntityActionMenu,
+  EntityPrimaryCell,
+  EntityStatusBadge,
   ErrorState,
   LoadingState,
   PageHeader,
 } from "@gss-iot/ui";
-import { Badge, Button, Code, Drawer, Group, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Code, Drawer, Group, Paper, Select, SimpleGrid, Stack, Text } from "@mantine/core";
+import { IconEye, IconPlayerPause, IconRefresh } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { t } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
-import { Can } from "../../shared/rbac/Can";
+import { hasPermission } from "../../shared/rbac/has-permission";
 
-function statusColor(status: GatewayCommandRecord["status"]) {
-  if (status === "ACKNOWLEDGED") return "green";
-  if (status === "FAILED" || status === "EXPIRED" || status === "CANCELLED") return "red";
-  if (status === "SENT") return "blue";
-  return "gray";
+function commandStatus(
+  status: GatewayCommandRecord["status"],
+): Parameters<typeof EntityStatusBadge>[0]["status"] {
+  if (status === "ACKNOWLEDGED") return "acknowledged";
+  if (status === "FAILED") return "failed";
+  if (status === "EXPIRED" || status === "CANCELLED") return "cancelled";
+  if (status === "SENT") return "sent";
+  return "pending";
+}
+
+function commandStatusLabel(status: GatewayCommandRecord["status"]): string {
+  if (status === "ACKNOWLEDGED") return t("status.acknowledged");
+  if (status === "FAILED") return t("status.failed");
+  if (status === "EXPIRED") return t("status.expired");
+  if (status === "CANCELLED") return t("status.cancelled");
+  if (status === "SENT") return t("status.sent");
+  return t("status.pending");
+}
+
+function commandTypeLabel(commandType: GatewayCommandRecord["commandType"]): string {
+  if (commandType === "REGISTER_NODES") return t("gatewayCommands.commandTypeLabel.REGISTER_NODES");
+  if (commandType === "WAKE_SECURITY") return t("gatewayCommands.commandTypeLabel.WAKE_SECURITY");
+  if (commandType === "SET_ALARM_LEVELS")
+    return t("gatewayCommands.commandTypeLabel.SET_ALARM_LEVELS");
+  return t("gatewayCommands.commandTypeLabel.SET_FAULT_FILTER");
 }
 
 function formatDate(value: string | null) {
-  return value ? new Date(value).toLocaleString() : "-";
+  return value ? new Date(value).toLocaleString() : t("common.notAvailable");
 }
 
 function jsonRecord(value: unknown): Record<string, unknown> | null {
@@ -54,6 +79,12 @@ export function GatewayCommandsPage() {
   const [mqttStatus, setMqttStatus] = useState<MqttStatusRecord>();
   const [selected, setSelected] = useState<GatewayCommandRecord>();
   const [error, setError] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<GatewayCommandRecord["status"] | "ALL">("ALL");
+  const [pendingMutation, setPendingMutation] = useState<
+    { action: "cancel" | "retry"; command: GatewayCommandRecord } | undefined
+  >();
+  const [isMutating, setIsMutating] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -103,6 +134,65 @@ export function GatewayCommandsPage() {
     await load();
   };
 
+  const filteredCommands = commands?.filter(
+    (command) => statusFilter === "ALL" || command.status === statusFilter,
+  );
+
+  const commandActionMenu = (row: GatewayCommandRecord) => {
+    const items = [
+      {
+        icon: <IconEye size={16} />,
+        key: "inspect",
+        label: t("gatewayCommands.inspectPayload"),
+        onClick: () => setSelected(row),
+      },
+      ...(hasPermission(session, "mqtt-commands.manage") && row.status === "FAILED"
+        ? [
+            {
+              icon: <IconRefresh size={16} />,
+              key: "retry",
+              label: t("gatewayCommands.retry"),
+              onClick: () => setPendingMutation({ action: "retry", command: row }),
+            },
+          ]
+        : []),
+      ...(hasPermission(session, "mqtt-commands.manage") &&
+      (row.status === "PENDING" || row.status === "FAILED")
+        ? [
+            {
+              color: "red" as const,
+              destructive: true,
+              icon: <IconPlayerPause size={16} />,
+              key: "cancel",
+              label: t("gatewayCommands.cancel"),
+              onClick: () => setPendingMutation({ action: "cancel", command: row }),
+            },
+          ]
+        : []),
+    ] satisfies Parameters<typeof EntityActionMenu>[0]["items"];
+
+    return (
+      <EntityActionMenu
+        ariaLabel={`${t("common.moreActions")}: ${row.gateway.serialNumber} ${row.commandNumber}`}
+        items={items}
+      />
+    );
+  };
+
+  const confirmMutation = async () => {
+    if (!pendingMutation) return;
+    setIsMutating(true);
+    setActionError("");
+    try {
+      await mutate(pendingMutation.command, pendingMutation.action);
+      setPendingMutation(undefined);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : t("settings.actionFailed"));
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
   if (error)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
   if (!commands || !mqttStatus) return <LoadingState title={t("common.loading")} />;
@@ -111,81 +201,84 @@ export function GatewayCommandsPage() {
     <Stack gap="lg">
       <PageHeader title={t("gatewayCommands.title")} subtitle={t("gatewayCommands.subtitle")} />
       <MqttStatusBlock status={mqttStatus} />
+      {actionError ? <Text c="red">{actionError}</Text> : null}
       {commands.length ? (
         <Stack gap="md">
           <DataToolbar>
             <Text c="dimmed" size="sm">
-              {commands.length} {t("gatewayCommands.title")}
+              {filteredCommands?.length ?? 0} / {commands.length} {t("gatewayCommands.title")}
             </Text>
-            <Group gap="xs">
-              {(["PENDING", "SENT", "ACKNOWLEDGED", "FAILED"] as const).map((status) => {
-                const count = commands.filter((command) => command.status === status).length;
-                return count ? (
-                  <Badge color={statusColor(status)} key={status} variant="light">
-                    {status} {count}
-                  </Badge>
-                ) : null;
-              })}
-            </Group>
+            <Select
+              aria-label={t("gatewayCommands.status")}
+              data={[
+                { label: t("common.all"), value: "ALL" },
+                ...(
+                  ["PENDING", "SENT", "ACKNOWLEDGED", "FAILED", "EXPIRED", "CANCELLED"] as const
+                ).map((status) => ({ label: commandStatusLabel(status), value: status })),
+              ]}
+              onChange={(value) =>
+                setStatusFilter((value as GatewayCommandRecord["status"] | "ALL") ?? "ALL")
+              }
+              value={statusFilter}
+            />
           </DataToolbar>
-          <DataTable
-            columns={[
-              {
-                key: "gateway",
-                label: t("gatewayCommands.gateway"),
-                render: (row) => row.gateway.serialNumber,
-              },
-              {
-                key: "type",
-                label: t("gatewayCommands.commandType"),
-                render: (row) => row.commandType,
-              },
-              {
-                key: "status",
-                label: t("gatewayCommands.status"),
-                render: (row) => <Badge color={statusColor(row.status)}>{row.status}</Badge>,
-              },
-              {
-                key: "attempts",
-                label: t("gatewayCommands.attempts"),
-                render: (row) => `${row.attemptCount}/${row.maxAttempts}`,
-              },
-              {
-                key: "created",
-                label: t("gatewayCommands.createdAt"),
-                render: (row) => formatDate(row.createdAt),
-              },
-              {
-                key: "actions",
-                label: t("organizations.actions"),
-                render: (row) => (
-                  <Group gap="xs">
-                    <Button onClick={() => setSelected(row)} size="xs" variant="light">
-                      {t("organizations.open")}
-                    </Button>
-                    <Can permission="mqtt-commands.manage">
-                      {row.status === "FAILED" ? (
-                        <Button onClick={() => void mutate(row, "retry")} size="xs" variant="light">
-                          {t("gatewayCommands.retry")}
-                        </Button>
-                      ) : null}
-                      {row.status === "PENDING" || row.status === "FAILED" ? (
-                        <Button
-                          color="red"
-                          onClick={() => void mutate(row, "cancel")}
-                          size="xs"
-                          variant="light"
-                        >
-                          {t("gatewayCommands.cancel")}
-                        </Button>
-                      ) : null}
-                    </Can>
-                  </Group>
-                ),
-              },
-            ]}
-            rows={commands}
-          />
+          {filteredCommands?.length ? (
+            <DataTable
+              ariaLabel={t("gatewayCommands.title")}
+              columns={[
+                {
+                  key: "identity",
+                  label: t("gatewayCommands.gateway"),
+                  render: (row) => (
+                    <EntityPrimaryCell
+                      identifier={commandTypeLabel(row.commandType)}
+                      title={row.gateway.serialNumber}
+                    />
+                  ),
+                },
+                {
+                  key: "status",
+                  label: t("gatewayCommands.status"),
+                  render: (row) => (
+                    <EntityStatusBadge
+                      label={commandStatusLabel(row.status)}
+                      status={commandStatus(row.status)}
+                    />
+                  ),
+                },
+                {
+                  key: "attempts",
+                  label: t("gatewayCommands.attempts"),
+                  render: (row) => `${row.attemptCount}/${row.maxAttempts}`,
+                },
+                {
+                  key: "created",
+                  label: t("gatewayCommands.createdAt"),
+                  render: (row) => formatDate(row.createdAt),
+                },
+                {
+                  key: "timing",
+                  label: t("gatewayCommands.timing"),
+                  render: (row) => formatDate(row.acknowledgedAt ?? row.sentAt),
+                },
+                {
+                  key: "requester",
+                  label: t("gatewayCommands.requester"),
+                  render: (row) => row.requesterType,
+                },
+                {
+                  key: "actions",
+                  label: t("organizations.actions"),
+                  align: "right",
+                  render: commandActionMenu,
+                },
+              ]}
+              density="compact"
+              rows={filteredCommands}
+            />
+          ) : (
+            <EmptyState description={t("common.emptyDescription")} title={t("common.emptyTitle")} />
+          )}
         </Stack>
       ) : (
         <EmptyState
@@ -203,7 +296,10 @@ export function GatewayCommandsPage() {
         {selected ? (
           <Stack>
             <Text fw={600}>{selected.gateway.serialNumber}</Text>
-            <Badge color={statusColor(selected.status)}>{selected.status}</Badge>
+            <EntityStatusBadge
+              label={commandStatusLabel(selected.status)}
+              status={commandStatus(selected.status)}
+            />
             <Text size="sm">
               {t("gatewayCommands.requestId")}: {commandRequestId(selected)}
             </Text>
@@ -234,6 +330,39 @@ export function GatewayCommandsPage() {
           </Stack>
         ) : null}
       </Drawer>
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={
+          pendingMutation?.action === "retry"
+            ? t("gatewayCommands.retry")
+            : t("gatewayCommands.cancel")
+        }
+        description={
+          pendingMutation?.action === "retry"
+            ? t("gatewayCommands.retryImpact")
+            : t("gatewayCommands.cancelImpact")
+        }
+        entityName={
+          pendingMutation
+            ? `${pendingMutation.command.gateway.serialNumber} · ${pendingMutation.command.commandNumber}`
+            : ""
+        }
+        loading={isMutating}
+        onClose={() => setPendingMutation(undefined)}
+        onConfirm={() => void confirmMutation()}
+        opened={Boolean(pendingMutation)}
+        title={
+          pendingMutation?.action === "retry"
+            ? t("gatewayCommands.retryConfirm").replace(
+                "{label}",
+                pendingMutation?.command.gateway.serialNumber ?? "",
+              )
+            : t("gatewayCommands.cancelConfirm").replace(
+                "{label}",
+                pendingMutation?.command.gateway.serialNumber ?? "",
+              )
+        }
+      />
     </Stack>
   );
 }
@@ -245,14 +374,18 @@ function MqttStatusBlock({ status }: { status: MqttStatusRecord }) {
         <Group justify="space-between">
           <Text fw={600}>{t("gatewayCommands.mqttStatusTitle")}</Text>
           <Group gap="xs">
-            <Badge color={status.enabled ? "green" : "gray"} variant="light">
-              {status.enabled ? t("gatewayCommands.enabled") : t("gatewayCommands.disabled")}
-            </Badge>
-            <Badge color={status.connected ? "green" : "gray"} variant="light">
-              {status.connected
-                ? t("gatewayCommands.connected")
-                : t("gatewayCommands.disconnected")}
-            </Badge>
+            <EntityStatusBadge
+              label={status.enabled ? t("gatewayCommands.enabled") : t("gatewayCommands.disabled")}
+              status={status.enabled ? "active" : "inactive"}
+            />
+            <EntityStatusBadge
+              label={
+                status.connected
+                  ? t("gatewayCommands.connected")
+                  : t("gatewayCommands.disconnected")
+              }
+              status={status.connected ? "online" : "offline"}
+            />
           </Group>
         </Group>
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
@@ -272,6 +405,11 @@ function MqttStatusBlock({ status }: { status: MqttStatusRecord }) {
           />
           <StatusField label={t("gatewayCommands.lastError")} value={status.lastError ?? "-"} />
         </SimpleGrid>
+        {!status.connected ? (
+          <Text c="dimmed" size="sm">
+            {t("gatewayCommands.offlineExplanation")}
+          </Text>
+        ) : null}
         <Stack gap={4}>
           <Text c="dimmed" size="xs">
             {t("gatewayCommands.subscribedFilters")}

@@ -11,12 +11,12 @@ import {
 
 describe("gssTheme", () => {
   it("uses the normalized GSS primary color scale", () => {
-    expect(gssBlue[5]).toBe("#2f91f1");
+    expect(gssBlue[5]).toBe("#159fde");
     expect(gssTheme.primaryColor).toBe("gss");
   });
 
   it("exposes the required monitoring status colors", () => {
-    expect(gssStatusColors.safe).toBe("#1685b8");
+    expect(gssStatusColors.safe).toBe("#0b80b7");
     expect(gssStatusColors.danger).toBe("#dc2626");
     expect(Object.keys(gssStatusColors).sort()).toEqual([
       "caution",
@@ -31,14 +31,14 @@ describe("gssTheme", () => {
   it("freezes semantic, layout and typography tokens for shared pages", () => {
     expect(gssSemanticTokens.background.light).toBe("#f4f7fb");
     expect(gssSemanticTokens.surface.dark).toBe("#122137");
-    expect(gssSemanticTokens.primary.light).toBe("#176fca");
-    expect(gssSemanticTokens.primary.dark).toBe("#5eacff");
+    expect(gssSemanticTokens.primary.light).toBe("#0b80b7");
+    expect(gssSemanticTokens.primary.dark).toBe("#48bdea");
     for (const token of Object.values(gssSemanticTokens)) {
       expect(token.light).toBeTruthy();
       expect(token.dark).toBeTruthy();
     }
     expect(gssLayoutTokens.sectionGap).toContain("1.25rem");
-    expect(gssTypographyScale.pageTitle).toContain("1.875rem");
+    expect(gssTypographyScale.pageTitle).toContain("1.75rem");
     expect(gssTheme.other.gssSemanticTokens).toBe(gssSemanticTokens);
   });
 
@@ -53,10 +53,10 @@ describe("gssTheme", () => {
     expect(gssSemanticTokens.tableHover.dark).not.toBe("#3b3b3b");
     expect(gssSemanticTokens.background.light).toBe("#f4f7fb");
     expect(gssStatusColors).toEqual({
-      caution: "#2fa84f",
+      caution: "#16a34a",
       danger: "#dc2626",
       offline: "#7c8797",
-      safe: "#1685b8",
+      safe: "#0b80b7",
       unconfigured: "#64748b",
       warning: "#d18a00",
     });

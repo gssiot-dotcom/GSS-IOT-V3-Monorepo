@@ -12,14 +12,18 @@ import {
   DataTable,
   ContextSectionLayout,
   ContextSectionNav,
+  ConfirmActionModal,
   EmptyState,
+  EntityActionMenu,
   EntityCard,
   EntityCardGrid,
   EntityMetric,
+  EntityStatusBadge,
   EntityStatusRow,
   ErrorState,
   ForbiddenState,
   LoadingState,
+  ModalFormFooter,
   PageContainer,
   PageHeader,
 } from "@gss-iot/ui";
@@ -38,7 +42,16 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { IconEdit, IconPlayerPause } from "@tabler/icons-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   Link,
   Outlet,
@@ -113,6 +126,7 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
   const [hasError, setHasError] = useState(false);
   const [formError, setFormError] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
+  const [deactivateConfirmOpen, setDeactivateConfirmOpen] = useState(false);
   const [modal, setModal] = useState<"area" | "building" | "company" | "user" | undefined>();
   const [companyName, setCompanyName] = useState("");
   const [companyCode, setCompanyCode] = useState("");
@@ -362,26 +376,46 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
       data-workspace-instance={workspaceInstance}
     >
       <PageHeader
+        eyebrow={t("shell.admin")}
+        meta={
+          <>
+            <Text size="xs">{detail.company.code ?? t("organizations.noCode")}</Text>
+            <Text size="xs">{detail.company.email ?? "-"}</Text>
+          </>
+        }
         title={detail.company.name}
         subtitle={t("organizations.companyDetailSubtitle")}
+        status={
+          <EntityStatusBadge
+            label={
+              detail.company.status === "ACTIVE" ? t("management.active") : t("management.inactive")
+            }
+            status={detail.company.status === "ACTIVE" ? "active" : "inactive"}
+          />
+        }
         action={
-          <Group>
-            <Can permission="companies.update">
-              <Button onClick={openEditCompany} variant="light">
-                {t("organizations.editCompany")}
-              </Button>
-            </Can>
-            <Can permission="companies.delete">
-              <Button
-                color="red"
-                loading={isSaving}
-                onClick={() => void deactivateCompany()}
-                variant="light"
-              >
-                {t("organizations.deactivate")}
-              </Button>
-            </Can>
-          </Group>
+          <Can permission="companies.update">
+            <Button leftSection={<IconEdit size={16} />} onClick={openEditCompany}>
+              {t("organizations.editCompany")}
+            </Button>
+          </Can>
+        }
+        overflowAction={
+          <Can permission="companies.delete">
+            <EntityActionMenu
+              ariaLabel={`${t("common.moreActions")}: ${detail.company.name}`}
+              items={[
+                {
+                  color: "red",
+                  destructive: true,
+                  icon: <IconPlayerPause size={16} />,
+                  key: "deactivate",
+                  label: t("organizations.deactivate"),
+                  onClick: () => setDeactivateConfirmOpen(true),
+                },
+              ]}
+            />
+          </Can>
         }
       />
       <ContextSectionLayout
@@ -438,6 +472,18 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
         </Stack>
       </ContextSectionLayout>
 
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("organizations.confirmDeactivateCompany")}
+        description={t("organizations.confirmDeactivateImpact")}
+        entityName={detail.company.name}
+        loading={isSaving}
+        onClose={() => setDeactivateConfirmOpen(false)}
+        onConfirm={() => void deactivateCompany().finally(() => setDeactivateConfirmOpen(false))}
+        opened={deactivateConfirmOpen}
+        title={t("organizations.confirmDeactivateTitle")}
+      />
+
       <Modal
         opened={modal === "company"}
         onClose={closeModal}
@@ -456,9 +502,14 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
             onChange={(event) => setCompanyCode(event.currentTarget.value)}
             value={companyCode}
           />
-          <Button loading={isSaving} onClick={() => void saveCompany()}>
-            {t("organizations.save")}
-          </Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={closeModal}
+            onSubmit={() => void saveCompany()}
+            submitDisabled={!companyName.trim()}
+            submitLabel={t("organizations.save")}
+            submitLoading={isSaving}
+          />
         </Stack>
       </Modal>
       <Modal opened={modal === "area"} onClose={closeModal} title={t("organizations.createSite")}>
@@ -475,9 +526,14 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
             onChange={(event) => setAreaAddress(event.currentTarget.value)}
             value={areaAddress}
           />
-          <Button loading={isSaving} onClick={() => void createArea()}>
-            {t("organizations.create")}
-          </Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={closeModal}
+            onSubmit={() => void createArea()}
+            submitDisabled={!areaName.trim()}
+            submitLabel={t("organizations.create")}
+            submitLoading={isSaving}
+          />
         </Stack>
       </Modal>
       <Modal
@@ -500,9 +556,14 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
             required
             value={buildingTitle}
           />
-          <Button loading={isSaving} onClick={() => void createBuilding()}>
-            {t("organizations.create")}
-          </Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={closeModal}
+            onSubmit={() => void createBuilding()}
+            submitDisabled={!buildingTitle.trim() || !buildingAreaId}
+            submitLabel={t("organizations.create")}
+            submitLoading={isSaving}
+          />
         </Stack>
       </Modal>
       <Modal opened={modal === "user"} onClose={closeModal} title={t("management.createUser")}>
@@ -535,9 +596,14 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
             required
             value={userRoleId}
           />
-          <Button loading={isSaving} onClick={() => void createUser()}>
-            {t("management.createUser")}
-          </Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={closeModal}
+            onSubmit={() => void createUser()}
+            submitDisabled={!userEmail.trim() || !userName.trim() || !userPassword || !userRoleId}
+            submitLabel={t("management.createUser")}
+            submitLoading={isSaving}
+          />
         </Stack>
       </Modal>
     </PageContainer>
@@ -591,7 +657,19 @@ function OverviewSection({ detail }: { detail: DetailState }) {
   return (
     <Stack gap="md">
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
-        <SummaryCard label={t("organizations.status")} value={detail.company?.status ?? "-"} />
+        <SummaryCard
+          label={t("organizations.status")}
+          value={
+            <EntityStatusBadge
+              label={
+                detail.company?.status === "ACTIVE"
+                  ? t("management.active")
+                  : t("management.inactive")
+              }
+              status={detail.company?.status === "ACTIVE" ? "active" : "inactive"}
+            />
+          }
+        />
         <SummaryCard label={t("organizations.areasTitle")} value={detail.areas.length} />
         <SummaryCard label={t("organizations.buildingsTitle")} value={detail.buildings.length} />
         <SummaryCard
@@ -628,13 +706,13 @@ function OverviewSection({ detail }: { detail: DetailState }) {
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: number | string }) {
+function SummaryCard({ label, value }: { label: string; value: ReactNode }) {
   return (
     <Paper p="md" withBorder>
       <Text c="dimmed" size="xs" tt="uppercase">
         {label}
       </Text>
-      <Text fw={700} size="xl">
+      <Text component="div" fw={700} size="xl">
         {value}
       </Text>
     </Paper>
@@ -671,9 +749,15 @@ function SitesSection({
               title={area.name}
             >
               <EntityStatusRow
-                color={area.status === "ACTIVE" ? "green" : "gray"}
                 label={t("organizations.status")}
-                value={area.status}
+                value={
+                  <EntityStatusBadge
+                    label={
+                      area.status === "ACTIVE" ? t("management.active") : t("management.inactive")
+                    }
+                    status={area.status === "ACTIVE" ? "active" : "inactive"}
+                  />
+                }
               />
               <EntityMetric label={t("organizations.code")} value={area.id.slice(0, 8)} />
             </EntityCard>
@@ -723,9 +807,17 @@ function BuildingsSection({
               title={building.title}
             >
               <EntityStatusRow
-                color={building.status === "ACTIVE" ? "green" : "gray"}
                 label={t("organizations.status")}
-                value={building.status}
+                value={
+                  <EntityStatusBadge
+                    label={
+                      building.status === "ACTIVE"
+                        ? t("management.active")
+                        : t("management.inactive")
+                    }
+                    status={building.status === "ACTIVE" ? "active" : "inactive"}
+                  />
+                }
               />
               <EntityMetric label={t("organizations.code")} value={building.number ?? "-"} />
             </EntityCard>

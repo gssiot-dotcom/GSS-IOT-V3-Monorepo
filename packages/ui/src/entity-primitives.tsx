@@ -1,5 +1,6 @@
 import {
   ActionIcon,
+  Avatar,
   Badge,
   Card,
   Group,
@@ -8,11 +9,13 @@ import {
   Stack,
   Text,
   Tooltip,
+  UnstyledButton,
   type MantineColor,
   type SimpleGridProps,
 } from "@mantine/core";
 import { IconDotsVertical } from "@tabler/icons-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
+import { StatusBadge, type GssStatus } from "./status-badge";
 
 export function EntityCardGrid({ children, ...props }: SimpleGridProps) {
   return (
@@ -33,6 +36,50 @@ export function EntityMetric({ label, value }: { label: ReactNode; value: ReactN
       </Text>
     </Stack>
   );
+}
+
+export function EntityPrimaryCell({
+  avatar,
+  identifier,
+  onClick,
+  title,
+}: {
+  avatar?: ReactNode;
+  identifier?: ReactNode;
+  onClick?: () => void;
+  title: ReactNode;
+}) {
+  const content = (
+    <Group align="center" gap="sm" wrap="nowrap">
+      {avatar ?? (
+        <Avatar color="gss" radius="md" size="sm">
+          {String(title).slice(0, 1).toUpperCase()}
+        </Avatar>
+      )}
+      <Stack gap={2} style={{ minWidth: 0 }}>
+        <Text className="gss-entity-primary-title" fw={650} size="sm">
+          {title}
+        </Text>
+        {identifier ? (
+          <Text c="dimmed" size="xs">
+            {identifier}
+          </Text>
+        ) : null}
+      </Stack>
+    </Group>
+  );
+
+  return onClick ? (
+    <UnstyledButton className="gss-entity-primary-button" onClick={onClick}>
+      {content}
+    </UnstyledButton>
+  ) : (
+    content
+  );
+}
+
+export function EntityStatusBadge({ label, status }: { label: string; status: GssStatus }) {
+  return <StatusBadge label={label} status={status} />;
 }
 
 export function EntityStatusRow({
@@ -67,11 +114,13 @@ export function EntityActionMenu({
     onClick: () => void;
     color?: MantineColor;
     disabled?: boolean;
+    disabledReason?: string;
     icon?: ReactNode;
+    destructive?: boolean;
   }>;
 }) {
   return (
-    <Menu position="bottom-end" shadow="md" withinPortal>
+    <Menu aria-label={ariaLabel} position="bottom-end" shadow="md" withinPortal>
       <Tooltip label={ariaLabel}>
         <Menu.Target>
           <ActionIcon aria-label={ariaLabel} variant="subtle">
@@ -80,16 +129,20 @@ export function EntityActionMenu({
         </Menu.Target>
       </Tooltip>
       <Menu.Dropdown>
-        {items.map((item) => (
-          <Menu.Item
-            color={item.color}
-            disabled={item.disabled}
-            key={item.key}
-            leftSection={item.icon}
-            onClick={item.onClick}
-          >
-            {item.label}
-          </Menu.Item>
+        {items.map((item, index) => (
+          <Fragment key={item.key}>
+            {item.destructive && index > 0 ? <Menu.Divider /> : null}
+            <Menu.Item
+              color={item.color}
+              data-destructive={item.destructive || undefined}
+              disabled={item.disabled}
+              leftSection={item.icon}
+              onClick={item.onClick}
+              title={item.disabledReason}
+            >
+              {item.label}
+            </Menu.Item>
+          </Fragment>
         ))}
       </Menu.Dropdown>
     </Menu>
@@ -114,10 +167,21 @@ export function EntityCard({
   return (
     <Card
       className={onClick ? "gss-entity-card gss-entity-card-interactive" : "gss-entity-card"}
-      onClick={onClick}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("button, a, input, textarea, [role=menuitem]")) {
+          return;
+        }
+        onClick?.();
+      }}
       role={onClick ? "button" : undefined}
       shadow="md"
       tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (onClick && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onClick();
+        }
+      }}
     >
       <Group align="flex-start" justify="space-between" wrap="nowrap">
         <Stack gap={4} style={{ minWidth: 0 }}>

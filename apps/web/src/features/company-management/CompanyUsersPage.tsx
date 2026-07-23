@@ -15,11 +15,16 @@ import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
   EmptyState,
+  EntityActionMenu,
+  EntityPrimaryCell,
+  EntityStatusBadge,
   ErrorState,
   FormFieldGrid,
   FormSection,
   FormWorkspace,
   LoadingState,
+  ConfirmActionModal,
+  ModalFormFooter,
   PageHeader,
   StickyFormActions,
 } from "@gss-iot/ui";
@@ -37,7 +42,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconEdit, IconPlus, IconShield, IconTrash } from "@tabler/icons-react";
+import { IconEdit, IconPlayerPause, IconPlus, IconShield } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { t, tf } from "../../app/i18n";
@@ -98,6 +103,12 @@ export function CompanyUsersPage() {
   const [form, setForm] = useState<UserFormState>(emptyUserForm);
   const [positionKey, setPositionKey] = useState("");
   const [positionName, setPositionName] = useState("");
+  const [pendingDeactivate, setPendingDeactivate] = useState<{
+    id: string;
+    kind: "position" | "user";
+    name: string;
+  } | null>(null);
+  const [isMutating, setIsMutating] = useState(false);
 
   const permissionOptions = permissions.map((permission) => ({
     label: permission.key,
@@ -308,7 +319,7 @@ export function CompanyUsersPage() {
     await load();
   };
 
-  const deactivate = async (userId: string) => {
+  const deactivateUser = async (userId: string) => {
     if (!session) return;
     await apiRequest(session, `/company/users/${userId}`, { method: "DELETE" });
     await load();
@@ -330,6 +341,21 @@ export function CompanyUsersPage() {
     if (!session) return;
     await apiRequest(session, `/company/positions/${positionId}`, { method: "DELETE" });
     await load();
+  };
+
+  const confirmDeactivate = async () => {
+    if (!pendingDeactivate) return;
+    setIsMutating(true);
+    try {
+      if (pendingDeactivate.kind === "user") {
+        await deactivateUser(pendingDeactivate.id);
+      } else {
+        await deactivatePosition(pendingDeactivate.id);
+      }
+      setPendingDeactivate(null);
+    } finally {
+      setIsMutating(false);
+    }
   };
 
   if (!users && !error) return <LoadingState title={t("common.loading")} />;
@@ -362,55 +388,96 @@ export function CompanyUsersPage() {
       />
       {users?.length ? (
         <DataTable
+          ariaLabel={t("management.usersTitle")}
           columns={[
-            { key: "name", label: t("organizations.name"), render: (user) => user.name },
-            { key: "email", label: t("management.email"), render: (user) => user.email },
-            { key: "role", label: t("management.role"), render: (user) => user.role.name },
+            {
+              key: "name",
+              label: t("organizations.name"),
+              render: (user) => (
+                <EntityPrimaryCell
+                  identifier={user.email}
+                  onClick={() => void openEdit(user)}
+                  title={user.name}
+                />
+              ),
+            },
+            {
+              key: "role",
+              label: t("management.role"),
+              render: (user) => <Badge variant="light">{user.role.name}</Badge>,
+            },
             {
               key: "status",
               label: t("organizations.status"),
-              render: (user) => (user.isActive ? t("management.active") : t("management.inactive")),
+              render: (user) => (
+                <EntityStatusBadge
+                  label={user.isActive ? t("management.active") : t("management.inactive")}
+                  status={user.isActive ? "active" : "inactive"}
+                />
+              ),
             },
             {
               key: "scope",
               label: t("management.scope"),
-              render: (user) =>
-                tf("management.scopeSummary", {
-                  areas: user.areaAccess?.length ?? 0,
-                  buildings: user.buildingAccess?.length ?? 0,
-                }),
+              render: (user) => (
+                <Group gap={4} wrap="wrap">
+                  <Badge color="gray" size="sm" variant="light">
+                    {tf("management.scopeSummary", {
+                      areas: user.areaAccess?.length ?? 0,
+                      buildings: user.buildingAccess?.length ?? 0,
+                    })}
+                  </Badge>
+                  {user.positionAssignments?.slice(0, 2).map((assignment) => (
+                    <Badge color="gssCyan" key={assignment.id} size="sm" variant="light">
+                      {assignment.position.name}
+                    </Badge>
+                  ))}
+                </Group>
+              ),
             },
             {
               key: "action",
               label: t("organizations.actions"),
-              render: (user) => (
-                <Group gap="xs">
-                  <Can permission="company-users.update">
-                    <Button
-                      leftSection={<IconEdit size={16} />}
-                      onClick={() => void openEdit(user)}
-                      size="xs"
-                      variant="light"
-                    >
-                      {t("management.editUser")}
-                    </Button>
-                  </Can>
-                  <Can permission="company-users.delete">
-                    <Button
-                      color="red"
-                      disabled={!user.isActive}
-                      leftSection={<IconTrash size={16} />}
-                      onClick={() => void deactivate(user.id)}
-                      size="xs"
-                      variant="light"
-                    >
-                      {t("organizations.deactivate")}
-                    </Button>
-                  </Can>
-                </Group>
-              ),
+              align: "right",
+              render: (user) =>
+                hasPermission(session, "company-users.update") ||
+                (hasPermission(session, "company-users.delete") && user.isActive) ? (
+                  <EntityActionMenu
+                    ariaLabel={`${t("common.moreActions")}: ${user.name}`}
+                    items={[
+                      ...(hasPermission(session, "company-users.update")
+                        ? [
+                            {
+                              icon: <IconEdit size={16} />,
+                              key: "edit",
+                              label: t("management.editUser"),
+                              onClick: () => void openEdit(user),
+                            },
+                          ]
+                        : []),
+                      ...(hasPermission(session, "company-users.delete") && user.isActive
+                        ? [
+                            {
+                              color: "red" as const,
+                              destructive: true,
+                              icon: <IconPlayerPause size={16} />,
+                              key: "deactivate",
+                              label: t("organizations.deactivate"),
+                              onClick: () =>
+                                setPendingDeactivate({
+                                  kind: "user",
+                                  id: user.id,
+                                  name: user.name,
+                                }),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
+                ) : null,
             },
           ]}
+          onRowClick={(user) => void openEdit(user)}
           rows={users}
         />
       ) : (
@@ -628,6 +695,9 @@ export function CompanyUsersPage() {
             </Stack>
           ) : null}
           <StickyFormActions>
+            <Button onClick={() => setUserModalOpened(false)} variant="subtle">
+              {t("common.cancel")}
+            </Button>
             <Button
               disabled={!form.name || !form.email || !form.roleId}
               onClick={() => void saveUser()}
@@ -652,23 +722,38 @@ export function CompanyUsersPage() {
               {
                 key: "status",
                 label: t("organizations.status"),
-                render: (position) =>
-                  position.isActive ? t("management.active") : t("management.inactive"),
+                render: (position) => (
+                  <EntityStatusBadge
+                    label={position.isActive ? t("management.active") : t("management.inactive")}
+                    status={position.isActive ? "active" : "inactive"}
+                  />
+                ),
               },
               {
                 key: "action",
                 label: t("organizations.actions"),
-                render: (position) => (
-                  <Button
-                    color="red"
-                    disabled={!position.isActive}
-                    onClick={() => void deactivatePosition(position.id)}
-                    size="xs"
-                    variant="light"
-                  >
-                    {t("organizations.deactivate")}
-                  </Button>
-                ),
+                align: "right",
+                render: (position) =>
+                  hasPermission(session, "company-users.manage") && position.isActive ? (
+                    <EntityActionMenu
+                      ariaLabel={`${t("common.moreActions")}: ${position.name}`}
+                      items={[
+                        {
+                          color: "red",
+                          destructive: true,
+                          icon: <IconPlayerPause size={16} />,
+                          key: "deactivate",
+                          label: t("organizations.deactivate"),
+                          onClick: () =>
+                            setPendingDeactivate({
+                              kind: "position",
+                              id: position.id,
+                              name: position.name,
+                            }),
+                        },
+                      ]}
+                    />
+                  ) : null,
               },
             ]}
             rows={positions}
@@ -686,11 +771,33 @@ export function CompanyUsersPage() {
               value={positionName}
             />
           </SimpleGrid>
-          <Button disabled={!positionKey || !positionName} onClick={() => void createPosition()}>
-            {t("management.createPosition")}
-          </Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => {
+              setPositionKey("");
+              setPositionName("");
+            }}
+            onSubmit={() => void createPosition()}
+            submitDisabled={!positionKey || !positionName}
+            submitLabel={t("management.createPosition")}
+          />
         </Stack>
       </Modal>
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={
+          pendingDeactivate?.kind === "position"
+            ? t("management.confirmDeactivatePosition")
+            : t("management.confirmDeactivateUser")
+        }
+        description={t("organizations.confirmDeactivateImpact")}
+        entityName={pendingDeactivate?.name ?? ""}
+        loading={isMutating}
+        onClose={() => setPendingDeactivate(null)}
+        onConfirm={() => void confirmDeactivate()}
+        opened={Boolean(pendingDeactivate)}
+        title={t("organizations.confirmDeactivateTitle")}
+      />
     </Stack>
   );
 }

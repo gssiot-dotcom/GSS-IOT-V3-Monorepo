@@ -7,15 +7,20 @@ import {
   DataToolbar,
   DataViewToggle,
   EmptyState,
+  EntityActionMenu,
   EntityCard,
   EntityCardGrid,
   EntityMetric,
+  EntityPrimaryCell,
+  EntityStatusBadge,
   EntityStatusRow,
   ErrorState,
   LoadingState,
+  ModalFormFooter,
   PageHeader,
 } from "@gss-iot/ui";
 import { Alert, Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
+import { IconArrowUpRight } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -125,23 +130,36 @@ export function CompaniesPage() {
               {companies.map((company) => (
                 <EntityCard
                   action={
-                    <Button
-                      onClick={() => void navigate(`/admin/companies/${company.id}`)}
-                      size="xs"
-                      variant="light"
-                    >
-                      {t("organizations.open")}
-                    </Button>
+                    <EntityActionMenu
+                      ariaLabel={`${t("common.moreActions")}: ${company.name}`}
+                      items={[
+                        {
+                          icon: <IconArrowUpRight size={16} />,
+                          key: "open",
+                          label: t("organizations.open"),
+                          onClick: () => void navigate(`/admin/companies/${company.id}`),
+                        },
+                      ]}
+                    />
                   }
                   description={company.address ?? company.email ?? undefined}
                   eyebrow={company.code ?? t("organizations.companiesTitle")}
                   key={company.id}
+                  onClick={() => void navigate(`/admin/companies/${company.id}`)}
                   title={company.name}
                 >
                   <EntityStatusRow
-                    color={company.status === "ACTIVE" ? "green" : "gray"}
                     label={t("organizations.status")}
-                    value={company.status}
+                    value={
+                      <EntityStatusBadge
+                        label={
+                          company.status === "ACTIVE"
+                            ? t("management.active")
+                            : t("management.inactive")
+                        }
+                        status={company.status === "ACTIVE" ? "active" : "inactive"}
+                      />
+                    }
                   />
                   <Group gap="lg">
                     <EntityMetric
@@ -155,8 +173,19 @@ export function CompaniesPage() {
             </EntityCardGrid>
           ) : (
             <DataTable
+              ariaLabel={t("organizations.companiesTitle")}
               columns={[
-                { key: "name", label: t("organizations.name"), render: (company) => company.name },
+                {
+                  key: "name",
+                  label: t("organizations.name"),
+                  render: (company) => (
+                    <EntityPrimaryCell
+                      identifier={company.code ?? t("organizations.noCode")}
+                      onClick={() => void navigate(`/admin/companies/${company.id}`)}
+                      title={company.name}
+                    />
+                  ),
+                },
                 {
                   key: "code",
                   label: t("organizations.code"),
@@ -165,22 +194,37 @@ export function CompaniesPage() {
                 {
                   key: "status",
                   label: t("organizations.status"),
-                  render: (company) => company.status,
+                  render: (company) => (
+                    <EntityStatusBadge
+                      label={
+                        company.status === "ACTIVE"
+                          ? t("management.active")
+                          : t("management.inactive")
+                      }
+                      status={company.status === "ACTIVE" ? "active" : "inactive"}
+                    />
+                  ),
                 },
                 {
-                  key: "open",
+                  key: "actions",
                   label: t("organizations.actions"),
+                  align: "right",
                   render: (company) => (
-                    <Button
-                      onClick={() => void navigate(`/admin/companies/${company.id}`)}
-                      size="xs"
-                      variant="light"
-                    >
-                      {t("organizations.open")}
-                    </Button>
+                    <EntityActionMenu
+                      ariaLabel={`${t("common.moreActions")}: ${company.name}`}
+                      items={[
+                        {
+                          icon: <IconArrowUpRight size={16} />,
+                          key: "open",
+                          label: t("organizations.open"),
+                          onClick: () => void navigate(`/admin/companies/${company.id}`),
+                        },
+                      ]}
+                    />
                   ),
                 },
               ]}
+              onRowClick={(company) => void navigate(`/admin/companies/${company.id}`)}
               rows={companies}
             />
           )}
@@ -197,6 +241,7 @@ export function CompaniesPage() {
           setOpened(false);
           setFormError(undefined);
         }}
+        size="md"
         title={t("organizations.createCompany")}
       >
         <Stack>
@@ -227,9 +272,19 @@ export function CompaniesPage() {
             type="password"
             value={managerPassword}
           />
-          <Button loading={isSaving} onClick={() => void create()}>
-            {t("organizations.createCompany")}
-          </Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => {
+              setOpened(false);
+              setFormError(undefined);
+            }}
+            onSubmit={() => void create()}
+            submitDisabled={
+              !name.trim() || !managerName.trim() || !managerEmail.trim() || !managerPassword
+            }
+            submitLabel={t("organizations.createCompany")}
+            submitLoading={isSaving}
+          />
         </Stack>
       </Modal>
     </Stack>

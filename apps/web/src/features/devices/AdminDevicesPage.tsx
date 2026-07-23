@@ -5,31 +5,54 @@ import type {
   NodeTypeRecord,
 } from "@gss-iot/contracts";
 import { parseNodeNumberInput } from "@gss-iot/contracts";
-import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
+import {
+  ConfirmActionModal,
+  DataTable,
+  DataToolbar,
+  EmptyState,
+  EntityActionMenu,
+  EntityPrimaryCell,
+  ErrorState,
+  LoadingState,
+  ModalFormFooter,
+  PageHeader,
+} from "@gss-iot/ui";
 import {
   Alert,
-  ActionIcon,
   Badge,
   Button,
   Group,
   Modal,
   MultiSelect,
+  Paper,
   Select,
   Stack,
   Tabs,
   Text,
   Textarea,
   TextInput,
-  Tooltip,
 } from "@mantine/core";
-import { IconEdit, IconTrash } from "@tabler/icons-react";
+import {
+  IconBuilding,
+  IconBuildingCommunity,
+  IconEdit,
+  IconTrash,
+  IconUnlink,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
-import { deviceStatusLabel, gatewayTypeLabel } from "./device-labels";
+import { hasPermission } from "../../shared/rbac/has-permission";
+import {
+  deviceConnectivityBadge,
+  deviceLifecycleBadge,
+  formatDeviceDate,
+  gatewayCommandStatusBadge,
+  gatewayTypeLabel,
+} from "./device-labels";
 
 type AssignmentTarget =
   | { id: string; kind: "gateway-building" | "gateway-company" }
@@ -87,6 +110,8 @@ export function AdminDevicesPage() {
   const [provisioningMode, setProvisioningMode] = useState<ProvisioningMode>("REPLACE");
   const [provisionNodeTypeId, setProvisionNodeTypeId] = useState("");
   const [provisionNodeIds, setProvisionNodeIds] = useState<string[]>([]);
+  const [gatewaySearch, setGatewaySearch] = useState("");
+  const [nodeSearch, setNodeSearch] = useState("");
 
   const load = async () => {
     if (!session) return;
@@ -169,6 +194,26 @@ export function AdminDevicesPage() {
   const registerCommands = commands
     .filter((command) => command.commandType === "REGISTER_NODES")
     .slice(0, 5);
+  const filteredGateways = gateways?.filter((gateway) => {
+    const query = gatewaySearch.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      gateway.serialNumber,
+      gateway.gatewayType,
+      gateway.companyAssignments[0]?.company?.name,
+      gateway.buildingAssignments[0]?.building.title,
+    ].some((value) => value?.toLowerCase().includes(query));
+  });
+  const filteredNodes = nodes?.filter((node) => {
+    const query = nodeSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      node.number,
+      node.nodeType.displayName,
+      node.companyAssignments[0]?.company?.name,
+      node.gatewayAssignments[0]?.gateway.serialNumber,
+    ].some((value) => value?.toLowerCase().includes(query));
+  });
   const nodeNumberParse = parseNodeNumberInput(nodeNumber);
 
   const createGateway = async () => {
@@ -324,6 +369,131 @@ export function AdminDevicesPage() {
     await load();
   };
 
+  const gatewayActionMenu = (row: GatewayRecord) => {
+    const items = [
+      ...(hasPermission(session, "gateways.update")
+        ? [
+            {
+              icon: <IconEdit size={16} />,
+              key: "edit",
+              label: t("devices.editGateway"),
+              onClick: () => openEditGateway(row),
+            },
+          ]
+        : []),
+      ...(hasPermission(session, "gateways.assign")
+        ? [
+            {
+              icon: <IconBuildingCommunity size={16} />,
+              key: "assign-company",
+              label: t("devices.assignCompany"),
+              onClick: () => setAssignmentTarget({ id: row.id, kind: "gateway-company" }),
+            },
+            {
+              disabled: !row.companyAssignments.length,
+              disabledReason: t("devices.companyAssignmentRequired"),
+              icon: <IconBuilding size={16} />,
+              key: "assign-building",
+              label: t("devices.assignBuilding"),
+              onClick: () => setAssignmentTarget({ id: row.id, kind: "gateway-building" }),
+            },
+            {
+              disabled: !row.buildingAssignments.length,
+              disabledReason: t("devices.noBuildingAssignment"),
+              icon: <IconUnlink size={16} />,
+              key: "unassign-building",
+              label: t("devices.unassignBuilding"),
+              onClick: () => void unassign(`/admin/devices/gateways/${row.id}/building-assignment`),
+            },
+          ]
+        : []),
+      ...(hasPermission(session, "gateways.delete")
+        ? [
+            {
+              color: "red" as const,
+              destructive: true,
+              disabled: !row.deletion?.allowed,
+              disabledReason: deleteBlockerLabel(row.deletion?.blocker ?? null),
+              icon: <IconTrash size={16} />,
+              key: "delete",
+              label: t("devices.deleteGateway"),
+              onClick: () =>
+                setDeleteTarget({
+                  blocker: row.deletion?.blocker ?? null,
+                  id: row.id,
+                  kind: "gateway",
+                  label: row.serialNumber,
+                }),
+            },
+          ]
+        : []),
+    ] satisfies Parameters<typeof EntityActionMenu>[0]["items"];
+
+    return items.length ? (
+      <EntityActionMenu
+        ariaLabel={`${t("common.moreActions")}: ${row.serialNumber}`}
+        items={items}
+      />
+    ) : null;
+  };
+
+  const nodeActionMenu = (row: NodeRecord) => {
+    const items = [
+      ...(hasPermission(session, "nodes.update")
+        ? [
+            {
+              icon: <IconEdit size={16} />,
+              key: "edit",
+              label: t("devices.editNode"),
+              onClick: () => openEditNode(row),
+            },
+          ]
+        : []),
+      ...(hasPermission(session, "nodes.assign")
+        ? [
+            {
+              icon: <IconBuildingCommunity size={16} />,
+              key: "assign-company",
+              label: t("devices.assignCompany"),
+              onClick: () => setAssignmentTarget({ id: row.id, kind: "node-company" }),
+            },
+            {
+              disabled: !row.gatewayAssignments.length,
+              disabledReason: t("devices.noGatewayAssignment"),
+              icon: <IconUnlink size={16} />,
+              key: "unassign-gateway",
+              label: t("devices.unassignGateway"),
+              onClick: () => void unassign(`/admin/devices/nodes/${row.id}/gateway-assignment`),
+            },
+          ]
+        : []),
+      ...(hasPermission(session, "nodes.delete")
+        ? [
+            {
+              color: "red" as const,
+              destructive: true,
+              disabled: !row.deletion?.allowed,
+              disabledReason: deleteBlockerLabel(row.deletion?.blocker ?? null),
+              icon: <IconTrash size={16} />,
+              key: "delete",
+              label: t("devices.deleteNode"),
+              onClick: () =>
+                setDeleteTarget({
+                  blocker: row.deletion?.blocker ?? null,
+                  id: row.id,
+                  kind: "node",
+                  label: row.number,
+                }),
+            },
+          ]
+        : []),
+    ] satisfies Parameters<typeof EntityActionMenu>[0]["items"];
+
+    return items.length ? (
+      <EntityActionMenu ariaLabel={`${t("common.moreActions")}: ${row.number}`} items={items} />
+    ) : null;
+  };
+
   if (!gateways || !nodes) return <LoadingState title={t("common.loading")} />;
   if (error)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
@@ -349,145 +519,149 @@ export function AdminDevicesPage() {
       {successMessage ? <Alert color="green">{successMessage}</Alert> : null}
       {formError ? <Alert color="red">{formError}</Alert> : null}
       <Can permission="mqtt-commands.manage">
-        <Stack gap="sm">
-          <Text fw={600}>{t("devices.provisioningTitle")}</Text>
-          <Group align="flex-end">
-            <Select
-              data={companyOptions}
-              label={t("devices.company")}
-              onChange={(value) => {
-                setCompanyId(value ?? "");
-                setBuildingId("");
-                setGatewayId("");
-                setProvisionNodeIds([]);
-              }}
-              value={companyId}
-            />
-            <Select
-              data={buildingOptions}
-              disabled={!companyId}
-              label={t("devices.building")}
-              onChange={(value) => {
-                setBuildingId(value ?? "");
-                setGatewayId("");
-                setProvisionNodeIds([]);
-              }}
-              value={buildingId}
-            />
-            <Select
-              data={gatewayOptions}
-              disabled={!buildingId}
-              label={t("devices.gateway")}
-              onChange={(value) => {
-                setGatewayId(value ?? "");
-                setProvisionNodeIds([]);
-              }}
-              value={gatewayId}
-            />
-            <Select
-              data={[
-                { label: t("devices.provisioningModeAppend"), value: "APPEND" },
-                { label: t("devices.provisioningModeReplace"), value: "REPLACE" },
-              ]}
-              label={t("devices.provisioningMode")}
-              onChange={(value) => {
-                setProvisioningMode((value as ProvisioningMode | null) ?? "REPLACE");
-                setProvisionNodeIds([]);
-              }}
-              value={provisioningMode}
-            />
-            <Select
-              data={nodeTypes.map((nodeType) => ({
-                label: nodeType.displayName,
-                value: nodeType.id,
-              }))}
-              label={t("devices.nodeType")}
-              onChange={(value) => {
-                setProvisionNodeTypeId(value ?? "");
-                setProvisionNodeIds([]);
-              }}
-              value={provisionNodeTypeId}
-            />
-          </Group>
-          <MultiSelect
-            data={selectableNodeOptions}
-            disabled={!companyId || !provisionNodeTypeId}
-            label={t("devices.eligibleNodes")}
-            onChange={setProvisionNodeIds}
-            searchable
-            value={provisionNodeIds}
-          />
-          <Stack gap={2}>
-            <Text c="dimmed" size="sm">
-              {t(
-                provisioningMode === "APPEND"
-                  ? "devices.provisioningAppendHint"
-                  : "devices.provisioningReplaceHint",
-              )}
-            </Text>
-            <Group gap="xs">
-              <Badge variant="light">
-                {tf("devices.provisioningCurrentCount", { count: currentProvisionNodes.length })}
-              </Badge>
-              <Badge variant="light">
-                {tf("devices.provisioningSelectedCount", { count: provisionNodeIds.length })}
-              </Badge>
-              <Badge color="blue" variant="light">
-                {tf("devices.provisioningFinalCount", { count: finalProvisionNodeIds.length })}
-              </Badge>
+        <Paper p="md" withBorder>
+          <Stack gap="sm">
+            <Text fw={600}>{t("devices.provisioningTitle")}</Text>
+            <Group align="flex-end">
+              <Select
+                data={companyOptions}
+                label={t("devices.company")}
+                onChange={(value) => {
+                  setCompanyId(value ?? "");
+                  setBuildingId("");
+                  setGatewayId("");
+                  setProvisionNodeIds([]);
+                }}
+                value={companyId}
+              />
+              <Select
+                data={buildingOptions}
+                disabled={!companyId}
+                label={t("devices.building")}
+                onChange={(value) => {
+                  setBuildingId(value ?? "");
+                  setGatewayId("");
+                  setProvisionNodeIds([]);
+                }}
+                value={buildingId}
+              />
+              <Select
+                data={gatewayOptions}
+                disabled={!buildingId}
+                label={t("devices.gateway")}
+                onChange={(value) => {
+                  setGatewayId(value ?? "");
+                  setProvisionNodeIds([]);
+                }}
+                value={gatewayId}
+              />
+              <Select
+                data={[
+                  { label: t("devices.provisioningModeAppend"), value: "APPEND" },
+                  { label: t("devices.provisioningModeReplace"), value: "REPLACE" },
+                ]}
+                label={t("devices.provisioningMode")}
+                onChange={(value) => {
+                  setProvisioningMode((value as ProvisioningMode | null) ?? "REPLACE");
+                  setProvisionNodeIds([]);
+                }}
+                value={provisioningMode}
+              />
+              <Select
+                data={nodeTypes.map((nodeType) => ({
+                  label: nodeType.displayName,
+                  value: nodeType.id,
+                }))}
+                label={t("devices.nodeType")}
+                onChange={(value) => {
+                  setProvisionNodeTypeId(value ?? "");
+                  setProvisionNodeIds([]);
+                }}
+                value={provisionNodeTypeId}
+              />
             </Group>
-            {removedProvisionNodeCount ? (
-              <Alert color="yellow" variant="light">
-                {tf("devices.provisioningRemovalWarning", { count: removedProvisionNodeCount })}
-              </Alert>
+            <MultiSelect
+              data={selectableNodeOptions}
+              disabled={!companyId || !provisionNodeTypeId}
+              label={t("devices.eligibleNodes")}
+              onChange={setProvisionNodeIds}
+              searchable
+              value={provisionNodeIds}
+            />
+            <Stack gap={2}>
+              <Text c="dimmed" size="sm">
+                {t(
+                  provisioningMode === "APPEND"
+                    ? "devices.provisioningAppendHint"
+                    : "devices.provisioningReplaceHint",
+                )}
+              </Text>
+              <Group gap="xs">
+                <Badge variant="light">
+                  {tf("devices.provisioningCurrentCount", { count: currentProvisionNodes.length })}
+                </Badge>
+                <Badge variant="light">
+                  {tf("devices.provisioningSelectedCount", { count: provisionNodeIds.length })}
+                </Badge>
+                <Badge color="blue" variant="light">
+                  {tf("devices.provisioningFinalCount", { count: finalProvisionNodeIds.length })}
+                </Badge>
+              </Group>
+              {removedProvisionNodeCount ? (
+                <Alert color="yellow" variant="light">
+                  {tf("devices.provisioningRemovalWarning", { count: removedProvisionNodeCount })}
+                </Alert>
+              ) : null}
+            </Stack>
+            <Group justify="space-between">
+              <Text c="dimmed" size="sm">
+                {t("devices.provisioningHint")}
+              </Text>
+              <Button
+                disabled={
+                  !buildingId || !gatewayId || !provisionNodeTypeId || !provisionNodeIds.length
+                }
+                onClick={() =>
+                  void createProvisioning().catch((err: Error) => setFormError(err.message))
+                }
+              >
+                {t("devices.provisionNodes")}
+              </Button>
+            </Group>
+            {registerCommands.length ? (
+              <DataTable
+                columns={[
+                  {
+                    key: "gateway",
+                    label: t("devices.gateway"),
+                    render: (row) => row.gateway.serialNumber,
+                  },
+                  {
+                    key: "status",
+                    label: t("devices.commandStatus"),
+                    render: (row) => gatewayCommandStatusBadge(row.status),
+                  },
+                  {
+                    key: "nodes",
+                    label: t("devices.nodesTitle"),
+                    render: (row) =>
+                      row.provisioningRequest?.items.map((item) => item.node.number).join(", ") ??
+                      "-",
+                  },
+                  {
+                    key: "reason",
+                    label: t("devices.failureReason"),
+                    render: (row) =>
+                      row.failureReason ?? row.provisioningRequest?.failureReason ?? "-",
+                  },
+                ]}
+                ariaLabel={t("devices.provisioningTitle")}
+                density="compact"
+                rows={registerCommands}
+              />
             ) : null}
           </Stack>
-          <Group justify="space-between">
-            <Text c="dimmed" size="sm">
-              {t("devices.provisioningHint")}
-            </Text>
-            <Button
-              disabled={
-                !buildingId || !gatewayId || !provisionNodeTypeId || !provisionNodeIds.length
-              }
-              onClick={() =>
-                void createProvisioning().catch((err: Error) => setFormError(err.message))
-              }
-            >
-              {t("devices.provisionNodes")}
-            </Button>
-          </Group>
-          {registerCommands.length ? (
-            <DataTable
-              columns={[
-                {
-                  key: "gateway",
-                  label: t("devices.gateway"),
-                  render: (row) => row.gateway.serialNumber,
-                },
-                {
-                  key: "status",
-                  label: t("devices.commandStatus"),
-                  render: (row) => <Badge>{row.status}</Badge>,
-                },
-                {
-                  key: "nodes",
-                  label: t("devices.nodesTitle"),
-                  render: (row) =>
-                    row.provisioningRequest?.items.map((item) => item.node.number).join(", ") ??
-                    "-",
-                },
-                {
-                  key: "reason",
-                  label: t("devices.failureReason"),
-                  render: (row) =>
-                    row.failureReason ?? row.provisioningRequest?.failureReason ?? "-",
-                },
-              ]}
-              rows={registerCommands}
-            />
-          ) : null}
-        </Stack>
+        </Paper>
       </Can>
       <Tabs defaultValue="gateways">
         <Tabs.List>
@@ -495,203 +669,152 @@ export function AdminDevicesPage() {
           <Tabs.Tab value="nodes">{t("devices.nodesTitle")}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel pt="md" value="gateways">
-          {gateways.length ? (
+          <DataToolbar>
+            <TextInput
+              aria-label={t("devices.searchGateways")}
+              onChange={(event) => setGatewaySearch(event.currentTarget.value)}
+              placeholder={t("devices.searchGateways")}
+              value={gatewaySearch}
+            />
+            <Text c="dimmed" size="sm">
+              {filteredGateways?.length ?? 0} / {gateways.length}
+            </Text>
+          </DataToolbar>
+          {filteredGateways?.length ? (
             <DataTable
+              ariaLabel={t("devices.gatewaysTitle")}
               columns={[
                 {
-                  key: "serial",
-                  label: t("devices.serialNumber"),
-                  render: (row) => row.serialNumber,
-                },
-                {
-                  key: "type",
-                  label: t("devices.gatewayType"),
-                  render: (row) => gatewayTypeLabel(row.gatewayType),
+                  key: "identity",
+                  label: t("devices.gateway"),
+                  render: (row) => (
+                    <EntityPrimaryCell
+                      identifier={gatewayTypeLabel(row.gatewayType)}
+                      title={row.serialNumber}
+                    />
+                  ),
                 },
                 {
                   key: "status",
                   label: t("devices.status"),
-                  render: (row) => deviceStatusLabel(row.status),
+                  render: (row) => deviceLifecycleBadge(row.status),
+                },
+                {
+                  key: "connection",
+                  label: t("devices.connection"),
+                  render: (row) => deviceConnectivityBadge(row.lastSeenAt),
                 },
                 {
                   key: "company",
                   label: t("devices.company"),
-                  render: (row) => row.companyAssignments[0]?.company?.name ?? "-",
+                  render: (row) =>
+                    row.companyAssignments[0]?.company?.name ?? t("devices.unassigned"),
                 },
                 {
                   key: "building",
                   label: t("devices.building"),
-                  render: (row) => row.buildingAssignments[0]?.building.title ?? "-",
+                  render: (row) =>
+                    row.buildingAssignments[0]?.building.title ?? t("devices.unassigned"),
+                },
+                {
+                  key: "lastSeen",
+                  label: t("devices.lastSeen"),
+                  render: (row) => formatDeviceDate(row.lastSeenAt),
                 },
                 {
                   key: "actions",
                   label: t("organizations.actions"),
-                  render: (row) => (
-                    <Group gap="xs">
-                      <Can permission="gateways.update">
-                        <Tooltip label={t("devices.editGateway")}>
-                          <ActionIcon
-                            aria-label={t("devices.editGateway")}
-                            onClick={() => openEditGateway(row)}
-                            variant="light"
-                          >
-                            <IconEdit size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                      </Can>
-                      <Can permission="gateways.delete">
-                        <Tooltip label={deleteBlockerLabel(row.deletion?.blocker ?? null)}>
-                          <ActionIcon
-                            aria-label={t("devices.deleteGateway")}
-                            color="red"
-                            disabled={!row.deletion?.allowed}
-                            onClick={() =>
-                              setDeleteTarget({
-                                blocker: row.deletion?.blocker ?? null,
-                                id: row.id,
-                                kind: "gateway",
-                                label: row.serialNumber,
-                              })
-                            }
-                            variant="light"
-                          >
-                            <IconTrash size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                      </Can>
-                      <Can permission="gateways.assign">
-                        <Button
-                          onClick={() =>
-                            setAssignmentTarget({ id: row.id, kind: "gateway-company" })
-                          }
-                          size="xs"
-                          variant="light"
-                        >
-                          {t("devices.assignCompany")}
-                        </Button>
-                        <Button
-                          disabled={!row.companyAssignments.length}
-                          onClick={() =>
-                            setAssignmentTarget({ id: row.id, kind: "gateway-building" })
-                          }
-                          size="xs"
-                          variant="light"
-                        >
-                          {t("devices.assignBuilding")}
-                        </Button>
-                        <Button
-                          disabled={!row.buildingAssignments.length}
-                          onClick={() =>
-                            void unassign(`/admin/devices/gateways/${row.id}/building-assignment`)
-                          }
-                          size="xs"
-                          variant="subtle"
-                        >
-                          {t("devices.unassignBuilding")}
-                        </Button>
-                      </Can>
-                    </Group>
-                  ),
+                  align: "right",
+                  render: gatewayActionMenu,
                 },
               ]}
-              rows={gateways}
+              density="compact"
+              rows={filteredGateways}
+            />
+          ) : gateways.length ? (
+            <EmptyState
+              description={t(
+                gatewaySearch ? "devices.noResultsDescription" : "devices.emptyDescription",
+              )}
+              title={t("common.emptyTitle")}
             />
           ) : (
             <EmptyState
-              description={t("devices.emptyDescription")}
+              description={t("devices.emptyGatewaysDescription")}
               title={t("common.emptyTitle")}
             />
           )}
         </Tabs.Panel>
         <Tabs.Panel pt="md" value="nodes">
-          {nodes.length ? (
+          <DataToolbar>
+            <TextInput
+              aria-label={t("devices.searchNodes")}
+              onChange={(event) => setNodeSearch(event.currentTarget.value)}
+              placeholder={t("devices.searchNodes")}
+              value={nodeSearch}
+            />
+            <Text c="dimmed" size="sm">
+              {filteredNodes?.length ?? 0} / {nodes.length}
+            </Text>
+          </DataToolbar>
+          {filteredNodes?.length ? (
             <DataTable
+              ariaLabel={t("devices.nodesTitle")}
               columns={[
-                { key: "number", label: t("devices.nodeNumber"), render: (row) => row.number },
                 {
-                  key: "type",
-                  label: t("devices.nodeType"),
-                  render: (row) => row.nodeType.displayName,
+                  key: "identity",
+                  label: t("devices.node"),
+                  render: (row) => (
+                    <EntityPrimaryCell identifier={row.nodeType.displayName} title={row.number} />
+                  ),
                 },
                 {
                   key: "status",
                   label: t("devices.status"),
-                  render: (row) => deviceStatusLabel(row.status),
+                  render: (row) => deviceLifecycleBadge(row.status),
+                },
+                {
+                  key: "connection",
+                  label: t("devices.connection"),
+                  render: (row) => deviceConnectivityBadge(row.lastSeenAt),
                 },
                 {
                   key: "company",
                   label: t("devices.company"),
-                  render: (row) => row.companyAssignments[0]?.company?.name ?? "-",
+                  render: (row) =>
+                    row.companyAssignments[0]?.company?.name ?? t("devices.unassigned"),
                 },
                 {
                   key: "gateway",
                   label: t("devices.gateway"),
-                  render: (row) => row.gatewayAssignments[0]?.gateway.serialNumber ?? "-",
+                  render: (row) =>
+                    row.gatewayAssignments[0]?.gateway.serialNumber ?? t("devices.unassigned"),
+                },
+                {
+                  key: "lastSeen",
+                  label: t("devices.lastSeen"),
+                  render: (row) => formatDeviceDate(row.lastSeenAt),
                 },
                 {
                   key: "actions",
                   label: t("organizations.actions"),
-                  render: (row) => (
-                    <Group gap="xs">
-                      <Can permission="nodes.update">
-                        <Tooltip label={t("devices.editNode")}>
-                          <ActionIcon
-                            aria-label={t("devices.editNode")}
-                            onClick={() => openEditNode(row)}
-                            variant="light"
-                          >
-                            <IconEdit size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                      </Can>
-                      <Can permission="nodes.delete">
-                        <Tooltip label={deleteBlockerLabel(row.deletion?.blocker ?? null)}>
-                          <ActionIcon
-                            aria-label={t("devices.deleteNode")}
-                            color="red"
-                            disabled={!row.deletion?.allowed}
-                            onClick={() =>
-                              setDeleteTarget({
-                                blocker: row.deletion?.blocker ?? null,
-                                id: row.id,
-                                kind: "node",
-                                label: row.number,
-                              })
-                            }
-                            variant="light"
-                          >
-                            <IconTrash size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                      </Can>
-                      <Can permission="nodes.assign">
-                        <Button
-                          onClick={() => setAssignmentTarget({ id: row.id, kind: "node-company" })}
-                          size="xs"
-                          variant="light"
-                        >
-                          {t("devices.assignCompany")}
-                        </Button>
-                        <Button
-                          disabled={!row.gatewayAssignments.length}
-                          onClick={() =>
-                            void unassign(`/admin/devices/nodes/${row.id}/gateway-assignment`)
-                          }
-                          size="xs"
-                          variant="subtle"
-                        >
-                          {t("devices.unassignGateway")}
-                        </Button>
-                      </Can>
-                    </Group>
-                  ),
+                  align: "right",
+                  render: nodeActionMenu,
                 },
               ]}
-              rows={nodes}
+              density="compact"
+              rows={filteredNodes}
+            />
+          ) : nodes.length ? (
+            <EmptyState
+              description={t(
+                nodeSearch ? "devices.noResultsDescription" : "devices.emptyDescription",
+              )}
+              title={t("common.emptyTitle")}
             />
           ) : (
             <EmptyState
-              description={t("devices.emptyDescription")}
+              description={t("devices.emptyNodesDescription")}
               title={t("common.emptyTitle")}
             />
           )}
@@ -722,11 +845,12 @@ export function AdminDevicesPage() {
             onChange={(value) => setGatewayType(value ?? "NODES_GATEWAY")}
             value={gatewayType}
           />
-          <Button
-            onClick={() => void createGateway().catch((err: Error) => setFormError(err.message))}
-          >
-            {t(editingGateway ? "organizations.save" : "devices.createGateway")}
-          </Button>
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => setGatewayOpened(false)}
+            onSubmit={() => void createGateway().catch((err: Error) => setFormError(err.message))}
+            submitLabel={t(editingGateway ? "organizations.save" : "devices.createGateway")}
+          />
         </Stack>
       </Modal>
       <Modal
@@ -798,42 +922,27 @@ export function AdminDevicesPage() {
             onChange={(value) => setNodeTypeId(value ?? "")}
             value={nodeTypeId}
           />
-          <Button
-            disabled={
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => setNodeOpened(false)}
+            onSubmit={() => void createNode().catch((err: Error) => setFormError(err.message))}
+            submitDisabled={
               !editingNode && (nodeNumberParse.errors.length > 0 || !nodeNumberParse.numbers.length)
             }
-            onClick={() => void createNode().catch((err: Error) => setFormError(err.message))}
-          >
-            {t(editingNode ? "organizations.save" : "devices.createNode")}
-          </Button>
+            submitLabel={t(editingNode ? "organizations.save" : "devices.createNode")}
+          />
         </Stack>
       </Modal>
-      <Modal
-        opened={Boolean(deleteTarget)}
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("devices.confirmDelete")}
+        description={t("devices.confirmDeleteImpact")}
+        entityName={deleteTarget?.label ?? ""}
         onClose={() => setDeleteTarget(undefined)}
+        onConfirm={() => void deleteDevice()}
+        opened={Boolean(deleteTarget)}
         title={t("devices.confirmDeleteTitle")}
-      >
-        <Stack>
-          <Text>
-            {t(
-              deleteTarget?.kind === "gateway"
-                ? "devices.confirmDeleteGateway"
-                : "devices.confirmDeleteNode",
-            ).replace("{label}", deleteTarget?.label ?? "")}
-          </Text>
-          <Text c="dimmed" size="sm">
-            {t("devices.confirmDeleteImpact")}
-          </Text>
-          <Group justify="flex-end">
-            <Button onClick={() => setDeleteTarget(undefined)} variant="default">
-              {t("common.cancel")}
-            </Button>
-            <Button color="red" onClick={() => void deleteDevice()}>
-              {t("devices.confirmDelete")}
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      />
       <Modal
         opened={Boolean(assignmentTarget)}
         onClose={() => {
@@ -862,16 +971,20 @@ export function AdminDevicesPage() {
             searchable
             value={assignmentValue}
           />
-          <Button
-            disabled={!assignmentValue}
-            onClick={() => void assign().catch((err: Error) => setFormError(err.message))}
-          >
-            {t(
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => {
+              setAssignmentTarget(undefined);
+              setAssignmentValue("");
+            }}
+            onSubmit={() => void assign().catch((err: Error) => setFormError(err.message))}
+            submitDisabled={!assignmentValue}
+            submitLabel={t(
               assignmentTarget?.kind === "gateway-building"
                 ? "devices.assignBuilding"
                 : "devices.assignCompany",
             )}
-          </Button>
+          />
         </Stack>
       </Modal>
     </Stack>

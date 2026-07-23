@@ -1,17 +1,32 @@
 import type { CompanyDeviceSnapshot } from "@gss-iot/contracts";
-import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
-import { Stack, Tabs } from "@mantine/core";
-import { useEffect, useState } from "react";
+import {
+  DataTable,
+  DataToolbar,
+  EmptyState,
+  ErrorState,
+  EntityPrimaryCell,
+  LoadingState,
+  PageHeader,
+} from "@gss-iot/ui";
+import { Stack, Tabs, Text, TextInput } from "@mantine/core";
+import { useEffect, useMemo, useState } from "react";
 
 import { t } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
-import { deviceStatusLabel, gatewayTypeLabel } from "./device-labels";
+import {
+  deviceConnectivityBadge,
+  deviceLifecycleBadge,
+  formatDeviceDate,
+  gatewayTypeLabel,
+} from "./device-labels";
 
 export function CompanyDevicesPage() {
   const { session } = useAuth();
   const [snapshot, setSnapshot] = useState<CompanyDeviceSnapshot>();
   const [error, setError] = useState(false);
+  const [gatewaySearch, setGatewaySearch] = useState("");
+  const [nodeSearch, setNodeSearch] = useState("");
 
   useEffect(() => {
     if (!session) return;
@@ -20,6 +35,29 @@ export function CompanyDevicesPage() {
       .then(setSnapshot)
       .catch(() => setError(true));
   }, [session]);
+
+  const gateways = useMemo(() => {
+    const query = gatewaySearch.trim().toLowerCase();
+    return (snapshot?.gateways ?? []).filter((gateway) => {
+      if (!query) return true;
+      return [
+        gateway.serialNumber,
+        gateway.gatewayType,
+        gateway.buildingAssignments[0]?.building.title,
+      ].some((value) => value?.toLowerCase().includes(query));
+    });
+  }, [gatewaySearch, snapshot?.gateways]);
+  const nodes = useMemo(() => {
+    const query = nodeSearch.trim().toLowerCase();
+    return (snapshot?.nodes ?? []).filter((node) => {
+      if (!query) return true;
+      return [
+        node.number,
+        node.nodeType.displayName,
+        node.gatewayAssignments[0]?.gateway.serialNumber,
+      ].some((value) => value?.toLowerCase().includes(query));
+    });
+  }, [nodeSearch, snapshot?.nodes]);
 
   if (error)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
@@ -37,65 +75,118 @@ export function CompanyDevicesPage() {
           <Tabs.Tab value="nodes">{t("devices.nodesTitle")}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel pt="md" value="gateways">
-          {snapshot.gateways.length ? (
+          <DataToolbar>
+            <TextInput
+              aria-label={t("devices.searchGateways")}
+              onChange={(event) => setGatewaySearch(event.currentTarget.value)}
+              placeholder={t("devices.searchGateways")}
+              value={gatewaySearch}
+            />
+            <Text c="dimmed" size="sm">
+              {gateways.length} / {snapshot.gateways.length}
+            </Text>
+          </DataToolbar>
+          {gateways.length ? (
             <DataTable
+              ariaLabel={t("devices.gatewaysTitle")}
               columns={[
                 {
-                  key: "serial",
-                  label: t("devices.serialNumber"),
-                  render: (row) => row.serialNumber,
-                },
-                {
-                  key: "type",
-                  label: t("devices.gatewayType"),
-                  render: (row) => gatewayTypeLabel(row.gatewayType),
+                  key: "identity",
+                  label: t("devices.gateway"),
+                  render: (row) => (
+                    <EntityPrimaryCell
+                      identifier={gatewayTypeLabel(row.gatewayType)}
+                      title={row.serialNumber}
+                    />
+                  ),
                 },
                 {
                   key: "status",
                   label: t("devices.status"),
-                  render: (row) => deviceStatusLabel(row.status),
+                  render: (row) => deviceLifecycleBadge(row.status),
+                },
+                {
+                  key: "connection",
+                  label: t("devices.connection"),
+                  render: (row) => deviceConnectivityBadge(row.lastSeenAt),
                 },
                 {
                   key: "building",
                   label: t("devices.building"),
-                  render: (row) => row.buildingAssignments[0]?.building.title ?? "-",
+                  render: (row) =>
+                    row.buildingAssignments[0]?.building.title ?? t("devices.unassigned"),
+                },
+                {
+                  key: "lastSeen",
+                  label: t("devices.lastSeen"),
+                  render: (row) => formatDeviceDate(row.lastSeenAt),
                 },
               ]}
-              rows={snapshot.gateways}
+              density="compact"
+              rows={gateways}
             />
           ) : (
             <EmptyState
-              description={t("devices.emptyDescription")}
+              description={t(
+                gatewaySearch ? "devices.noResultsDescription" : "devices.emptyGatewaysDescription",
+              )}
               title={t("common.emptyTitle")}
             />
           )}
         </Tabs.Panel>
         <Tabs.Panel pt="md" value="nodes">
-          {snapshot.nodes.length ? (
+          <DataToolbar>
+            <TextInput
+              aria-label={t("devices.searchNodes")}
+              onChange={(event) => setNodeSearch(event.currentTarget.value)}
+              placeholder={t("devices.searchNodes")}
+              value={nodeSearch}
+            />
+            <Text c="dimmed" size="sm">
+              {nodes.length} / {snapshot.nodes.length}
+            </Text>
+          </DataToolbar>
+          {nodes.length ? (
             <DataTable
+              ariaLabel={t("devices.nodesTitle")}
               columns={[
-                { key: "number", label: t("devices.nodeNumber"), render: (row) => row.number },
                 {
-                  key: "type",
-                  label: t("devices.nodeType"),
-                  render: (row) => row.nodeType.displayName,
+                  key: "identity",
+                  label: t("devices.node"),
+                  render: (row) => (
+                    <EntityPrimaryCell identifier={row.nodeType.displayName} title={row.number} />
+                  ),
                 },
                 {
                   key: "status",
                   label: t("devices.status"),
-                  render: (row) => deviceStatusLabel(row.status),
+                  render: (row) => deviceLifecycleBadge(row.status),
+                },
+                {
+                  key: "connection",
+                  label: t("devices.connection"),
+                  render: (row) => deviceConnectivityBadge(row.lastSeenAt),
                 },
                 {
                   key: "gateway",
                   label: t("devices.gateway"),
-                  render: (row) => row.gatewayAssignments[0]?.gateway.serialNumber ?? "-",
+                  render: (row) =>
+                    row.gatewayAssignments[0]?.gateway.serialNumber ?? t("devices.unassigned"),
+                },
+                {
+                  key: "lastSeen",
+                  label: t("devices.lastSeen"),
+                  render: (row) => formatDeviceDate(row.lastSeenAt),
                 },
               ]}
-              rows={snapshot.nodes}
+              density="compact"
+              rows={nodes}
             />
           ) : (
             <EmptyState
-              description={t("devices.emptyDescription")}
+              description={t(
+                nodeSearch ? "devices.noResultsDescription" : "devices.emptyNodesDescription",
+              )}
               title={t("common.emptyTitle")}
             />
           )}
