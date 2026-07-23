@@ -10,7 +10,17 @@ import type {
   CompanyUserRecord,
   NodeTypeRecord,
 } from "@gss-iot/contracts";
-import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FormFieldGrid,
+  FormSection,
+  FormWorkspace,
+  LoadingState,
+  PageHeader,
+  StickyFormActions,
+} from "@gss-iot/ui";
 import {
   Badge,
   Button,
@@ -576,7 +586,9 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
         <EmptyState description={t("alarms.emptyRules")} title={t("common.emptyTitle")} />
       )}
       <Modal opened={opened} onClose={closeCreateRule} title={t("alarms.createRule")}>
-        <Stack>
+        <FormWorkspace>
+          <FormSection title={t("alarms.rulesTitle")}>
+          <FormFieldGrid>
           <Select
             allowDeselect={false}
             data={options.buildings.map((item) => ({
@@ -622,18 +634,22 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
             }}
             value={ruleDraft.name}
           />
+          </FormFieldGrid>
+          </FormSection>
           {ruleFormError ? (
             <Text c="red" size="sm">
               {ruleFormError}
             </Text>
           ) : null}
-          <Button
-            disabled={!ruleDraft.buildingId || !ruleDraft.nodeTypeId}
-            onClick={() => void createRule()}
-          >
-            {t("organizations.save")}
-          </Button>
-        </Stack>
+          <StickyFormActions>
+            <Button
+              disabled={!ruleDraft.buildingId || !ruleDraft.nodeTypeId}
+              onClick={() => void createRule()}
+            >
+              {t("organizations.save")}
+            </Button>
+          </StickyFormActions>
+        </FormWorkspace>
       </Modal>
       <Modal
         opened={Boolean(policyRule)}

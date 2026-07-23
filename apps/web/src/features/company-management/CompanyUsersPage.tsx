@@ -12,7 +12,17 @@ import type {
 import { Can } from "../../shared/rbac/Can";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
-import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FormFieldGrid,
+  FormSection,
+  FormWorkspace,
+  LoadingState,
+  PageHeader,
+  StickyFormActions,
+} from "@gss-iot/ui";
 import {
   Badge,
   Button,
@@ -416,8 +426,9 @@ export function CompanyUsersPage() {
         size="xl"
         title={editingUser ? t("management.editUser") : t("management.createUser")}
       >
-        <Stack>
-          <SimpleGrid cols={{ base: 1, md: 2 }}>
+        <FormWorkspace>
+          <FormSection title={t("management.role")}>
+          <FormFieldGrid>
             <TextInput
               label={t("organizations.name")}
               onChange={(event) => setForm({ ...form, name: event.currentTarget.value })}
@@ -450,8 +461,9 @@ export function CompanyUsersPage() {
               label={t("management.active")}
               onChange={(event) => setForm({ ...form, isActive: event.currentTarget.checked })}
             />
-          </SimpleGrid>
-          <Divider label={t("management.directPermissions")} />
+          </FormFieldGrid>
+          </FormSection>
+          <FormSection title={t("management.directPermissions")}>
           <SimpleGrid cols={{ base: 1, md: 2 }}>
             <MultiSelect
               data={permissionOptions.filter(
@@ -472,7 +484,8 @@ export function CompanyUsersPage() {
               value={form.directDenyIds}
             />
           </SimpleGrid>
-          <Divider label={t("management.resourceScope")} />
+          </FormSection>
+          <FormSection title={t("management.resourceScope")}>
           <MultiSelect
             data={areaOptions}
             label={t("management.siteAccess")}
@@ -526,7 +539,8 @@ export function CompanyUsersPage() {
               value={access.accessLevel}
             />
           ))}
-          <Divider label={t("management.positionAssignments")} />
+          </FormSection>
+          <FormSection title={t("management.positionAssignments")}>
           {form.positionAssignments.map((assignment, index) => (
             <SimpleGrid cols={{ base: 1, md: 3 }} key={`${assignment.positionId}-${index}`}>
               <Select
@@ -589,6 +603,7 @@ export function CompanyUsersPage() {
           >
             {t("management.addPositionAssignment")}
           </Button>
+          </FormSection>
           {preview ? (
             <Stack gap="xs">
               <Divider label={t("management.effectiveAccessPreview")} />
@@ -612,15 +627,15 @@ export function CompanyUsersPage() {
               </Text>
             </Stack>
           ) : null}
-          <Group justify="flex-end">
+          <StickyFormActions>
             <Button
               disabled={!form.name || !form.email || !form.roleId}
               onClick={() => void saveUser()}
             >
               {t("organizations.save")}
             </Button>
-          </Group>
-        </Stack>
+          </StickyFormActions>
+        </FormWorkspace>
       </Modal>
 
       <Modal

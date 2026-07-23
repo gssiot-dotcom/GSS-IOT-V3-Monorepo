@@ -14,6 +14,10 @@ import type {
 } from "@gss-iot/contracts";
 import {
   DataTable,
+  EntityCard,
+  EntityCardGrid,
+  EntityMetric,
+  EntityStatusRow,
   EmptyState,
   ErrorState,
   LoadingState,
@@ -102,27 +106,20 @@ export function CompanyMonitoringIndexPage() {
     <Stack gap="lg">
       <PageHeader title={t("monitoring.title")} subtitle={t("monitoring.indexSubtitle")} />
       {buildings.length ? (
-        <DataTable
-          columns={[
-            { key: "title", label: t("organizations.building"), render: (row) => row.title },
-            { key: "status", label: t("organizations.status"), render: (row) => row.status },
-            {
-              key: "open",
-              label: t("organizations.actions"),
-              render: (row) => (
-                <Button
-                  leftSection={<IconPlugConnected size={16} />}
-                  onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)}
-                  size="xs"
-                  variant="light"
-                >
-                  {t("monitoring.open")}
-                </Button>
-              ),
-            },
-          ]}
-          rows={buildings}
-        />
+        <EntityCardGrid>
+          {buildings.map((building) => (
+            <EntityCard
+              action={<Button leftSection={<IconPlugConnected size={16} />} onClick={() => navigate(`/company/buildings/${building.id}/monitoring`)} size="xs" variant="light">{t("monitoring.open")}</Button>}
+              description={building.address ?? building.buildingType ?? undefined}
+              eyebrow={t("organizations.buildingsTitle")}
+              key={building.id}
+              title={building.title}
+            >
+              <EntityStatusRow color={building.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={building.status} />
+              <EntityMetric label={t("organizations.code")} value={building.number ?? "-"} />
+            </EntityCard>
+          ))}
+        </EntityCardGrid>
       ) : (
         <EmptyState description={t("monitoring.emptyBuildings")} title={t("common.emptyTitle")} />
       )}

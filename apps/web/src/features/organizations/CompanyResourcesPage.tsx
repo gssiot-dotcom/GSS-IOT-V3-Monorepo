@@ -2,8 +2,20 @@ import type { AreaRecord, BuildingRecord } from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
-import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
-import { Button, Modal, Select, Stack, TextInput } from "@mantine/core";
+import {
+  DataTable,
+  DataToolbar,
+  DataViewToggle,
+  EmptyState,
+  EntityCard,
+  EntityCardGrid,
+  EntityMetric,
+  EntityStatusRow,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+} from "@gss-iot/ui";
+import { Button, Group, Modal, Select, Stack, Text, TextInput } from "@mantine/core";
 import { IconPlugConnected } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -19,6 +31,7 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
   const [opened, setOpened] = useState(false);
   const [name, setName] = useState("");
   const [areaId, setAreaId] = useState<string | null>(null);
+  const [view, setView] = useState("cards");
   const isAreas = resource === "areas";
   const createPermission = isAreas ? "areas.create" : "buildings.create";
 
@@ -84,56 +97,57 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
         }
       />
       {rows?.length ? (
-        <DataTable
-          columns={[
-            {
-              key: "name",
-              label: t("organizations.name"),
-              render: (row) => ("name" in row ? row.name : row.title),
-            },
-            { key: "status", label: t("organizations.status"), render: (row) => row.status },
-            {
-              key: "actions",
-              label: t("organizations.actions"),
-              render: (row) => (
-                <Stack gap={6}>
-                  <Button
-                    onClick={() =>
-                      navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)
-                    }
-                    size="xs"
-                    variant="light"
+        <Stack gap="md">
+          <DataToolbar>
+            <Text c="dimmed" size="sm">{rows.length} {title}</Text>
+            <DataViewToggle
+              data={[
+                { label: t("common.cardView"), value: "cards" },
+                { label: t("common.tableView"), value: "table" },
+              ]}
+              onChange={setView}
+              value={view}
+            />
+          </DataToolbar>
+          {view === "cards" ? (
+            <EntityCardGrid>
+              {rows.map((row) => {
+                const name = "name" in row ? row.name : row.title;
+                const detail = "name" in row ? row.address ?? row.description : row.address ?? row.buildingType;
+                const identifier = "name" in row ? row.id.slice(0, 8) : (row.number ?? "-");
+                return (
+                  <EntityCard
+                    action={<Button onClick={() => navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)} size="xs" variant="light">{t("organizations.open")}</Button>}
+                    description={detail ?? undefined}
+                    eyebrow={isAreas ? t("organizations.areasTitle") : t("organizations.buildingsTitle")}
+                    key={row.id}
+                    title={name}
                   >
-                    {t("organizations.open")}
-                  </Button>
-                  {!isAreas ? (
-                    <Can permission="monitoring.view">
-                      <Button
-                        leftSection={<IconPlugConnected size={16} />}
-                        onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)}
-                        size="xs"
-                        variant="light"
-                      >
-                        {t("monitoring.open")}
-                      </Button>
+                    <EntityStatusRow color={row.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={row.status} />
+                    <Group gap="lg">
+                      <EntityMetric label={isAreas ? t("organizations.code") : t("devices.nodeNumber")} value={identifier} />
+                      <Can permission="monitoring.view">
+                        {!isAreas ? <Button leftSection={<IconPlugConnected size={16} />} onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)} size="xs" variant="subtle">{t("monitoring.open")}</Button> : null}
+                      </Can>
+                    </Group>
+                    <Can permission={isAreas ? "areas.delete" : "buildings.delete"}>
+                      <Button color="red" onClick={() => void deactivate(row.id)} size="xs" variant="subtle">{t("organizations.deactivate")}</Button>
                     </Can>
-                  ) : null}
-                  <Can permission={isAreas ? "areas.delete" : "buildings.delete"}>
-                    <Button
-                      color="red"
-                      onClick={() => void deactivate(row.id)}
-                      size="xs"
-                      variant="light"
-                    >
-                      {t("organizations.deactivate")}
-                    </Button>
-                  </Can>
-                </Stack>
-              ),
-            },
-          ]}
-          rows={rows}
-        />
+                  </EntityCard>
+                );
+              })}
+            </EntityCardGrid>
+          ) : (
+            <DataTable
+              columns={[
+                { key: "name", label: t("organizations.name"), render: (row) => ("name" in row ? row.name : row.title) },
+                { key: "status", label: t("organizations.status"), render: (row) => row.status },
+                { key: "actions", label: t("organizations.actions"), render: (row) => <Stack gap={6}><Button onClick={() => navigate(`/company/${isAreas ? "areas" : "buildings"}/${row.id}`)} size="xs" variant="light">{t("organizations.open")}</Button>{!isAreas ? <Can permission="monitoring.view"><Button leftSection={<IconPlugConnected size={16} />} onClick={() => navigate(`/company/buildings/${row.id}/monitoring`)} size="xs" variant="light">{t("monitoring.open")}</Button></Can> : null}<Can permission={isAreas ? "areas.delete" : "buildings.delete"}><Button color="red" onClick={() => void deactivate(row.id)} size="xs" variant="light">{t("organizations.deactivate")}</Button></Can></Stack> },
+              ]}
+              rows={rows}
+            />
+          )}
+        </Stack>
       ) : (
         <EmptyState
           description={t("organizations.emptyScopedDescription")}

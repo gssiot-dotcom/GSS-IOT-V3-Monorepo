@@ -2,7 +2,17 @@ import type { CompanyPermissionRecord, CompanyRoleRecord } from "@gss-iot/contra
 import { Can } from "../../shared/rbac/Can";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
-import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FormFieldGrid,
+  FormSection,
+  FormWorkspace,
+  LoadingState,
+  PageHeader,
+  StickyFormActions,
+} from "@gss-iot/ui";
 import {
   Badge,
   Button,
@@ -206,8 +216,9 @@ export function CompanyRolesPage() {
         size="xl"
         title={editingRole ? t("management.editRole") : t("management.createRole")}
       >
-        <Stack>
-          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <FormWorkspace>
+          <FormSection title={t("management.role") }>
+          <FormFieldGrid>
             <TextInput
               disabled={!!editingRole?.isSystem || !!editingRole?.isCompanyOwnerRole}
               label={t("management.roleKey")}
@@ -220,8 +231,9 @@ export function CompanyRolesPage() {
               onChange={(event) => setForm({ ...form, name: event.currentTarget.value })}
               value={form.name}
             />
-          </SimpleGrid>
-          <Text fw={600}>{t("management.effectiveRolePermissions")}</Text>
+          </FormFieldGrid>
+          </FormSection>
+          <FormSection title={t("management.effectiveRolePermissions")}>
           <SimpleGrid cols={{ base: 1, md: 2 }}>
             {Object.entries(groupedPermissions).map(([module, modulePermissions]) => (
               <Stack gap={6} key={module}>
@@ -242,7 +254,9 @@ export function CompanyRolesPage() {
               </Stack>
             ))}
           </SimpleGrid>
-          <Group justify="space-between">
+          </FormSection>
+          <StickyFormActions>
+          <Group justify="space-between" w="100%">
             <Text c="dimmed" size="sm">
               {tf("management.permissionCount", { count: form.permissionIds.length })}
             </Text>
@@ -258,7 +272,8 @@ export function CompanyRolesPage() {
               {t("organizations.save")}
             </Button>
           </Group>
-        </Stack>
+          </StickyFormActions>
+        </FormWorkspace>
       </Modal>
     </Stack>
   );

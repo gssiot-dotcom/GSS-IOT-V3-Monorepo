@@ -19,8 +19,8 @@ This document tracks the UI redesign requested in the attached task. It is inten
 | 1 — foundations | Complete | Semantic light/dark tokens, focus/interaction tokens, status parity, and global responsive/reduced-motion CSS are implemented. |
 | 2 — application shell | Complete | Redesigned Admin/Company shell with branded portal context, breadcrumb-like page context, responsive drawer behavior, preserved hidden-scrollbar viewport, active states, notification gating, account menu, and permission-filtered navigation. |
 | 3 — shared primitives | Complete | Reusable layout, entity, form, data, chart, and status primitives are exported from `@gss-iot/ui`; package tests cover their public shape. |
-| 4 — entity collections | Pending | Companies, sites, buildings, and building-selection collections are card-first candidates. |
-| 5 — contextual workspaces/forms | Pending | Admin company workspace and complex editors are the primary candidates. |
+| 4 — entity collections | Complete | Companies, company sites, company buildings, Admin company-detail site/building sections, and Company monitoring building selection are card-first; same records and permission-gated actions are preserved. |
+| 5 — contextual workspaces/forms | Complete | Admin company detail uses route-backed inner navigation; user, role, and alarm-rule editors use shared structured form sections and sticky actions while retaining current routes and modal contracts. |
 | 6 — devices/commands | Pending | Dense inventories and command histories remain tables. |
 | 7 — monitoring | Pending | Latest/history/alarm-level/fault-filter tabs remain unchanged. |
 | 8 — alarms/notifications/reports | Pending | Histories remain dense tables; complex editors use structured workspace patterns. |
@@ -61,6 +61,17 @@ The exact page files are recorded before each phase is implemented and updated h
 - `apps/web/src/features/shell/PortalLayout.tsx`
 
 Monitoring feature files are protected from interaction-model changes; only visual/shared primitive integration is permitted there.
+
+Implemented in Phases 4–5:
+
+- `apps/web/src/app/i18n.ts`
+- `apps/web/src/features/organizations/CompaniesPage.tsx`
+- `apps/web/src/features/organizations/CompanyResourcesPage.tsx`
+- `apps/web/src/features/organizations/AdminCompanyDetailPage.tsx`
+- `apps/web/src/features/monitoring/CompanyMonitoringPage.tsx`
+- `apps/web/src/features/company-management/CompanyUsersPage.tsx`
+- `apps/web/src/features/company-management/CompanyRolesPage.tsx`
+- `apps/web/src/features/alarms/AlarmOperationsPages.tsx`
 
 ## Verification log
 

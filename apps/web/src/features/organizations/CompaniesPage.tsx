@@ -2,8 +2,20 @@ import type { CompanyRecord } from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
-import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
-import { Alert, Button, Modal, Stack, TextInput } from "@mantine/core";
+import {
+  DataTable,
+  DataToolbar,
+  DataViewToggle,
+  EmptyState,
+  EntityCard,
+  EntityCardGrid,
+  EntityMetric,
+  EntityStatusRow,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+} from "@gss-iot/ui";
+import { Alert, Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -21,6 +33,7 @@ export function CompaniesPage() {
   const [managerPassword, setManagerPassword] = useState("");
   const [formError, setFormError] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
+  const [view, setView] = useState("cards");
 
   const load = async () => {
     if (!session) return;
@@ -93,35 +106,48 @@ export function CompaniesPage() {
         }
       />
       {companies?.length ? (
-        <DataTable
-          columns={[
-            { key: "name", label: t("organizations.name"), render: (company) => company.name },
-            {
-              key: "code",
-              label: t("organizations.code"),
-              render: (company) => company.code ?? "-",
-            },
-            {
-              key: "status",
-              label: t("organizations.status"),
-              render: (company) => company.status,
-            },
-            {
-              key: "open",
-              label: t("organizations.actions"),
-              render: (company) => (
-                <Button
-                  onClick={() => void navigate(`/admin/companies/${company.id}`)}
-                  size="xs"
-                  variant="light"
+        <Stack gap="md">
+          <DataToolbar>
+            <Text c="dimmed" size="sm">{companies.length} {t("organizations.companiesTitle")}</Text>
+            <DataViewToggle
+              data={[
+                { label: t("common.cardView"), value: "cards" },
+                { label: t("common.tableView"), value: "table" },
+              ]}
+              onChange={setView}
+              value={view}
+            />
+          </DataToolbar>
+          {view === "cards" ? (
+            <EntityCardGrid>
+              {companies.map((company) => (
+                <EntityCard
+                  action={<Button onClick={() => void navigate(`/admin/companies/${company.id}`)} size="xs" variant="light">{t("organizations.open")}</Button>}
+                  description={company.address ?? company.email ?? undefined}
+                  eyebrow={company.code ?? t("organizations.companiesTitle")}
+                  key={company.id}
+                  title={company.name}
                 >
-                  {t("organizations.open")}
-                </Button>
-              ),
-            },
-          ]}
-          rows={companies}
-        />
+                  <EntityStatusRow color={company.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={company.status} />
+                  <Group gap="lg">
+                    <EntityMetric label={t("organizations.managerEmail")} value={company.email ?? "-"} />
+                    <EntityMetric label={t("organizations.phone")} value={company.phone ?? "-"} />
+                  </Group>
+                </EntityCard>
+              ))}
+            </EntityCardGrid>
+          ) : (
+            <DataTable
+              columns={[
+                { key: "name", label: t("organizations.name"), render: (company) => company.name },
+                { key: "code", label: t("organizations.code"), render: (company) => company.code ?? "-" },
+                { key: "status", label: t("organizations.status"), render: (company) => company.status },
+                { key: "open", label: t("organizations.actions"), render: (company) => <Button onClick={() => void navigate(`/admin/companies/${company.id}`)} size="xs" variant="light">{t("organizations.open")}</Button> },
+              ]}
+              rows={companies}
+            />
+          )}
+        </Stack>
       ) : (
         <EmptyState
           description={t("organizations.emptyCompaniesDescription")}

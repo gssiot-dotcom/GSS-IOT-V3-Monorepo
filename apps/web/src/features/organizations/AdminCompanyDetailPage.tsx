@@ -10,10 +10,17 @@ import type {
 } from "@gss-iot/contracts";
 import {
   DataTable,
+  ContextSectionLayout,
+  ContextSectionNav,
   EmptyState,
+  EntityCard,
+  EntityCardGrid,
+  EntityMetric,
+  EntityStatusRow,
   ErrorState,
   ForbiddenState,
   LoadingState,
+  PageContainer,
   PageHeader,
 } from "@gss-iot/ui";
 import {
@@ -27,11 +34,12 @@ import {
   SimpleGrid,
   Stack,
   Tabs,
+  NavLink,
   Text,
   TextInput,
 } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { t } from "../../app/i18n";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
@@ -321,7 +329,7 @@ export function AdminCompanyDetailPage(): ReactElement {
   }
 
   return (
-    <Stack gap="lg">
+    <PageContainer>
       <PageHeader
         title={detail.company.name}
         subtitle={t("organizations.companyDetailSubtitle")}
@@ -345,25 +353,18 @@ export function AdminCompanyDetailPage(): ReactElement {
           </Group>
         }
       />
-      <Tabs value={section}>
-        <Tabs.List>
-          <Tabs.Tab onClick={() => void navigate(routeBase)} value="overview">
-            {t("organizations.overview")}
-          </Tabs.Tab>
-          <Tabs.Tab onClick={() => void navigate(`${routeBase}/sites`)} value="sites">
-            {t("organizations.areasTitle")}
-          </Tabs.Tab>
-          <Tabs.Tab onClick={() => void navigate(`${routeBase}/buildings`)} value="buildings">
-            {t("organizations.buildingsTitle")}
-          </Tabs.Tab>
-          <Tabs.Tab onClick={() => void navigate(`${routeBase}/users`)} value="users">
-            {t("management.usersTitle")}
-          </Tabs.Tab>
-          <Tabs.Tab onClick={() => void navigate(`${routeBase}/devices`)} value="devices">
-            {t("devices.companyDevicesTitle")}
-          </Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel pt="md" value={section}>
+      <ContextSectionLayout
+        navigation={
+          <ContextSectionNav>
+            <NavLink active={section === "overview"} component={Link} label={t("organizations.overview")} to={routeBase} />
+            <NavLink active={section === "sites"} component={Link} label={t("organizations.areasTitle")} to={`${routeBase}/sites`} />
+            <NavLink active={section === "buildings"} component={Link} label={t("organizations.buildingsTitle")} to={`${routeBase}/buildings`} />
+            <NavLink active={section === "users"} component={Link} label={t("management.usersTitle")} to={`${routeBase}/users`} />
+            <NavLink active={section === "devices"} component={Link} label={t("devices.companyDevicesTitle")} to={`${routeBase}/devices`} />
+          </ContextSectionNav>
+        }
+      >
+        <Stack gap="md">
           {section === "overview" ? <OverviewSection detail={detail} /> : null}
           {section === "sites" ? (
             <SitesSection
@@ -394,8 +395,8 @@ export function AdminCompanyDetailPage(): ReactElement {
               nodes={detail.nodes}
             />
           ) : null}
-        </Tabs.Panel>
-      </Tabs>
+        </Stack>
+      </ContextSectionLayout>
 
       <Modal
         opened={modal === "company"}
@@ -499,7 +500,7 @@ export function AdminCompanyDetailPage(): ReactElement {
           </Button>
         </Stack>
       </Modal>
-    </Stack>
+    </PageContainer>
   );
 }
 
@@ -579,18 +580,14 @@ function SitesSection({
         </Can>
       </Group>
       {areas.length ? (
-        <DataTable
-          columns={[
-            { key: "name", label: t("organizations.name"), render: (area) => area.name },
-            {
-              key: "address",
-              label: t("organizations.address"),
-              render: (area) => area.address ?? "-",
-            },
-            { key: "status", label: t("organizations.status"), render: (area) => area.status },
-          ]}
-          rows={areas}
-        />
+        <EntityCardGrid>
+          {areas.map((area) => (
+            <EntityCard description={area.address ?? area.description ?? undefined} eyebrow={t("organizations.areasTitle")} key={area.id} title={area.name}>
+              <EntityStatusRow color={area.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={area.status} />
+              <EntityMetric label={t("organizations.code")} value={area.id.slice(0, 8)} />
+            </EntityCard>
+          ))}
+        </EntityCardGrid>
       ) : (
         <EmptyState
           description={t("organizations.emptyScopedDescription")}
@@ -626,26 +623,14 @@ function BuildingsSection({
         </Can>
       </Group>
       {buildings.length ? (
-        <DataTable
-          columns={[
-            {
-              key: "title",
-              label: t("organizations.building"),
-              render: (building) => building.title,
-            },
-            {
-              key: "number",
-              label: t("organizations.code"),
-              render: (building) => building.number ?? "-",
-            },
-            {
-              key: "status",
-              label: t("organizations.status"),
-              render: (building) => building.status,
-            },
-          ]}
-          rows={buildings}
-        />
+        <EntityCardGrid>
+          {buildings.map((building) => (
+            <EntityCard description={building.address ?? building.buildingType ?? undefined} eyebrow={t("organizations.buildingsTitle")} key={building.id} title={building.title}>
+              <EntityStatusRow color={building.status === "ACTIVE" ? "green" : "gray"} label={t("organizations.status")} value={building.status} />
+              <EntityMetric label={t("organizations.code")} value={building.number ?? "-"} />
+            </EntityCard>
+          ))}
+        </EntityCardGrid>
       ) : (
         <EmptyState
           description={t("organizations.emptyScopedDescription")}
