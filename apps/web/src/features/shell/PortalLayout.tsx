@@ -16,9 +16,19 @@ import {
   Title,
   Tooltip,
   UnstyledButton,
+  useComputedColorScheme,
+  useMantineColorScheme,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconBell, IconBuilding, IconKey, IconLogout, IconUserCircle } from "@tabler/icons-react";
+import {
+  IconBell,
+  IconBuilding,
+  IconKey,
+  IconLogout,
+  IconMoonStars,
+  IconSun,
+  IconUserCircle,
+} from "@tabler/icons-react";
 import type { AuthContext } from "@gss-iot/contracts";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -30,7 +40,7 @@ import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { filterSidebarItems } from "../../shared/rbac/filter-sidebar-items";
 import { hasPermission } from "../../shared/rbac/has-permission";
-import { RealtimeStatusBadge, type RealtimeConnectionState } from "@gss-iot/ui";
+import { GssIconButton, RealtimeStatusBadge, type RealtimeConnectionState } from "@gss-iot/ui";
 import { adminNavItems, companyNavItems, routeTitles, type ShellNavItem } from "./navigation";
 
 export function PortalLayout({ children, context }: { children: ReactNode; context: AuthContext }) {
@@ -38,6 +48,10 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
   const [unreadCount, setUnreadCount] = useState(0);
   const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("idle");
   const { logout, session } = useAuth();
+  const { setColorScheme } = useMantineColorScheme({ keepTransitions: true });
+  const computedColorScheme = useComputedColorScheme("light", {
+    getInitialValueInEffect: false,
+  });
   const location = useLocation();
   const navigate = useNavigate();
   const allItems = context === "gss-admin" ? adminNavItems : companyNavItems;
@@ -164,6 +178,29 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
                 </Indicator>
               </Tooltip>
             ) : null}
+            <Tooltip
+              label={
+                computedColorScheme === "dark"
+                  ? t("shell.themeSwitchToLight")
+                  : t("shell.themeSwitchToDark")
+              }
+            >
+              <GssIconButton
+                aria-label={
+                  computedColorScheme === "dark"
+                    ? t("shell.themeSwitchToLight")
+                    : t("shell.themeSwitchToDark")
+                }
+                data-testid="theme-toggle"
+                onClick={() => setColorScheme(computedColorScheme === "dark" ? "light" : "dark")}
+              >
+                {computedColorScheme === "dark" ? (
+                  <IconSun size={18} />
+                ) : (
+                  <IconMoonStars size={18} />
+                )}
+              </GssIconButton>
+            </Tooltip>
             <Menu position="bottom-end" shadow="md" withinPortal>
               <Menu.Target>
                 <UnstyledButton aria-label={t("shell.accountMenu")}>
@@ -221,7 +258,7 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
       </AppShell.Header>
       <AppShell.Navbar
         className="gss-shell-navbar"
-        style={{ backgroundColor: "var(--mantine-color-body)" }}
+        style={{ backgroundColor: "var(--gss-surface)" }}
       >
         <ScrollArea
           className="gss-sidebar-scrollarea"
@@ -274,7 +311,7 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
       </AppShell.Navbar>
       <AppShell.Main
         className="gss-shell-main"
-        style={{ backgroundColor: "var(--mantine-color-body)" }}
+        style={{ backgroundColor: "var(--gss-app-background)" }}
       >
         <Box className="gss-main-content">{children}</Box>
       </AppShell.Main>

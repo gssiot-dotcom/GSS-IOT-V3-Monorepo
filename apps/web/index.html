@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GSS IoT V3</title>
+    <script>
+      try {
+        var gssStoredColorScheme = window.localStorage.getItem("mantine-color-scheme-value");
+        var gssColorScheme = ["light", "dark", "auto"].includes(gssStoredColorScheme)
+          ? gssStoredColorScheme
+          : "auto";
+        var gssComputedColorScheme =
+          gssColorScheme !== "auto"
+            ? gssColorScheme
+            : window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        document.documentElement.setAttribute("data-mantine-color-scheme", gssComputedColorScheme);
+      } catch (error) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -10,7 +10,7 @@ import { App } from "./App";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <MantineProvider theme={gssTheme}>
+    <MantineProvider defaultColorScheme="auto" theme={gssTheme}>
       <App />
     </MantineProvider>
   </React.StrictMode>,
