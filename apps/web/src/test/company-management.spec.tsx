@@ -16,6 +16,7 @@ const companySession: AuthSession = {
     companyId: "company-1",
     email: "manager@example.com",
     id: "user-manager",
+    isActive: true,
     isSuperAdmin: false,
     name: "Manager",
     permissions: [

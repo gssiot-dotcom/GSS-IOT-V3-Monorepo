@@ -15,6 +15,7 @@ const adminSession: AuthSession = {
   user: {
     email: "admin@example.com",
     id: "admin-1",
+    isActive: true,
     isSuperAdmin: false,
     name: "Admin",
     permissions: [
@@ -45,6 +46,7 @@ const companySession: AuthSession = {
     companyId: "company-1",
     email: "company@example.com",
     id: "company-user-1",
+    isActive: true,
     isSuperAdmin: false,
     name: "Company User",
     permissions: ["dashboard.view", "welcome.view"],
@@ -236,7 +238,9 @@ describe("auth routing", () => {
     const dialog = await screen.findByRole("dialog", { name: "Create user" });
     expect(await within(dialog).findByText("Role")).toBeTruthy();
     const inputs = within(dialog).getAllByRole("textbox");
-    fireEvent.click(inputs[inputs.length - 1]);
+    const lastInput = inputs.at(-1);
+    if (!lastInput) throw new Error("Create user dialog inputs are missing");
+    fireEvent.click(lastInput);
 
     expect(await screen.findByText("Site Manager")).toBeTruthy();
     expect(

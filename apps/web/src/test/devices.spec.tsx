@@ -14,6 +14,7 @@ vi.mock("../shared/auth/auth-context", () => ({
       user: {
         email: "admin@example.com",
         id: "admin-1",
+        isActive: true,
         isSuperAdmin: false,
         name: "Admin",
         permissions: ((globalThis as Record<string, unknown>).__deviceTestPermissions as

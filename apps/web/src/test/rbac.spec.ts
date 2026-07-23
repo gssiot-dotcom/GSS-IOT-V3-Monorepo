@@ -11,6 +11,7 @@ const session: AuthSession = {
   user: {
     email: "viewer@example.com",
     id: "user-1",
+    isActive: true,
     isSuperAdmin: false,
     name: "Viewer",
     permissions: ["buildings.view"],

@@ -32,6 +32,43 @@ body {
   min-width: 320px;
 }
 
+.gss-shell-header {
+  background: var(--gss-surface);
+  border-bottom-color: var(--gss-border);
+}
+
+.gss-shell-navbar {
+  background: var(--gss-surface) !important;
+  border-right-color: var(--gss-border);
+}
+
+.gss-shell-brand {
+  min-height: 48px;
+}
+
+.gss-shell-navbar .mantine-NavLink-root {
+  border-radius: var(--mantine-radius-md);
+  min-height: 40px;
+}
+
+.gss-shell-navbar .mantine-NavLink-root[data-active='true'] {
+  background: color-mix(in srgb, var(--gss-accent) 13%, transparent);
+  color: var(--gss-accent);
+  font-weight: 700;
+}
+
+.gss-shell-main {
+  min-width: 0;
+}
+
+.gss-main-content {
+  margin: 0 auto;
+  max-width: 1680px;
+  min-width: 0;
+  padding: 24px;
+  width: 100%;
+}
+
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--mantine-color-gss-6);
   outline-offset: 2px;
@@ -115,6 +152,10 @@ body {
   .gss-sticky-actions,
   .gss-sticky-form-actions {
     padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .gss-main-content {
+    padding: 16px;
   }
 }
 

@@ -14,6 +14,7 @@ const mockAuth = vi.hoisted(() => ({
     user: {
       email: "admin@example.com",
       id: "admin-1",
+      isActive: true,
       isSuperAdmin: false,
       name: "Admin",
       permissions: ["mqtt-commands.manage", "mqtt-commands.view"],

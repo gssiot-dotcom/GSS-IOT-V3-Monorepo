@@ -2,7 +2,10 @@ import {
   ActionIcon,
   AppShell,
   Avatar,
+  Badge,
+  Box,
   Burger,
+  Divider,
   Group,
   Menu,
   Indicator,
@@ -108,7 +111,7 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
       padding="md"
     >
       <AppShell.Header>
-        <Group h="100%" justify="space-between" px="md" wrap="wrap">
+        <Group className="gss-shell-header" h="100%" justify="space-between" px="lg" wrap="wrap">
           <Group gap="sm">
             <Burger
               aria-label={t("shell.toggleNavigation")}
@@ -119,9 +122,11 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
             />
             <Stack gap={0}>
               <Title order={3}>{shellTitle}</Title>
-              <Text c="dimmed" size="xs">
-                {titleKey ? t(titleKey) : t("app.name")}
-              </Text>
+              <Group gap="xs">
+                <Text c="dimmed" size="xs">{t("app.name")}</Text>
+                <Text c="dimmed" size="xs">/</Text>
+                <Text fw={600} size="xs">{titleKey ? t(titleKey) : t("app.name")}</Text>
+              </Group>
             </Stack>
           </Group>
           <Group gap="xs">
@@ -208,7 +213,7 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
           </Group>
         </Group>
       </AppShell.Header>
-      <AppShell.Navbar style={{ backgroundColor: "var(--mantine-color-body)" }}>
+      <AppShell.Navbar className="gss-shell-navbar" style={{ backgroundColor: "var(--mantine-color-body)" }}>
         <ScrollArea
           className="gss-sidebar-scrollarea"
           classNames={{ viewport: "gss-sidebar-scrollarea-viewport" }}
@@ -217,6 +222,14 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
           type="auto"
         >
           <Stack gap="lg">
+            <Group className="gss-shell-brand" gap="sm" px="xs" py="xs" wrap="nowrap">
+              <Avatar color="gss" radius="md" size="md">G</Avatar>
+              <Stack gap={0} style={{ minWidth: 0 }}>
+                <Text fw={800} size="sm">{t("app.name")}</Text>
+                <Badge color="gss" size="xs" variant="light">{shellTitle}</Badge>
+              </Stack>
+            </Group>
+            <Divider />
             {sections.map((section) => (
               <Stack gap={4} key={section.key}>
                 <Text c="dimmed" fw={700} px="xs" size="xs" tt="uppercase">
@@ -244,8 +257,8 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
           </Stack>
         </ScrollArea>
       </AppShell.Navbar>
-      <AppShell.Main style={{ backgroundColor: "var(--mantine-color-body)" }}>
-        {children}
+      <AppShell.Main className="gss-shell-main" style={{ backgroundColor: "var(--mantine-color-body)" }}>
+        <Box className="gss-main-content">{children}</Box>
       </AppShell.Main>
     </AppShell>
   );

@@ -22,6 +22,7 @@ vi.mock("../shared/auth/auth-context", () => ({
       user: {
         email: "monitor@example.com",
         id: "user-1",
+        isActive: true,
         isSuperAdmin: false,
         name: "Monitor",
         permissions: [
@@ -387,6 +388,7 @@ describe("Phase 6 monitoring UI", () => {
                 },
                 nodeTypeId: "angle",
                 receivedAt: now,
+                classificationEvidence: null,
                 status: "warning",
                 values: { angleX: 3, angleY: -1 },
               },
@@ -431,6 +433,7 @@ describe("Phase 6 monitoring UI", () => {
                 },
                 nodeTypeId: "angle",
                 receivedAt: now,
+                classificationEvidence: null,
                 status: "warning",
                 values: { angleX: 2.4, angleY: -1.1 },
               },

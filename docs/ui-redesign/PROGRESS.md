@@ -17,7 +17,7 @@ This document tracks the UI redesign requested in the attached task. It is inten
 | --- | --- | --- |
 | 0 — audit | Complete before this implementation run | Current frontend/page-pattern audit and visual baseline were captured in the preceding task. |
 | 1 — foundations | Complete | Semantic light/dark tokens, focus/interaction tokens, status parity, and global responsive/reduced-motion CSS are implemented. |
-| 2 — application shell | Pending | Permission-filtered navigation and active route contracts remain protected. |
+| 2 — application shell | Complete | Redesigned Admin/Company shell with branded portal context, breadcrumb-like page context, responsive drawer behavior, preserved hidden-scrollbar viewport, active states, notification gating, account menu, and permission-filtered navigation. |
 | 3 — shared primitives | Complete | Reusable layout, entity, form, data, chart, and status primitives are exported from `@gss-iot/ui`; package tests cover their public shape. |
 | 4 — entity collections | Pending | Companies, sites, buildings, and building-selection collections are card-first candidates. |
 | 5 — contextual workspaces/forms | Pending | Admin company workspace and complex editors are the primary candidates. |

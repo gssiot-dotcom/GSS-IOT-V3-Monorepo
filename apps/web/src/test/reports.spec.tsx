@@ -36,6 +36,7 @@ const companySession: AuthSession = {
     companyId: "company-1",
     email: "company@example.com",
     id: "user-1",
+    isActive: true,
     isSuperAdmin: false,
     name: "Company user",
     permissions: ["dashboard.view", "welcome.view", "reports.view", "areas.view", "buildings.view"],
@@ -48,6 +49,7 @@ const adminSession = (permissions: string[]): AuthSession => ({
   user: {
     email: "admin@example.com",
     id: "admin-1",
+    isActive: true,
     isSuperAdmin: false,
     name: "Admin",
     permissions,

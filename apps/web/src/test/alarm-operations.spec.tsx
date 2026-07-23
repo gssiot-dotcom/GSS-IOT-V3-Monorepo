@@ -16,6 +16,7 @@ const companySession: AuthSession = {
     companyId: "company-1",
     email: "manager@example.com",
     id: "user-manager",
+    isActive: true,
     isSuperAdmin: false,
     name: "Manager",
     permissions: ["alarms.view", "alarms.resolve"],
@@ -28,6 +29,7 @@ const adminSession: AuthSession = {
   user: {
     email: "admin@example.com",
     id: "admin-1",
+    isActive: true,
     isSuperAdmin: false,
     name: "Admin",
     permissions: ["alarms.view", "alarms.resolve"],

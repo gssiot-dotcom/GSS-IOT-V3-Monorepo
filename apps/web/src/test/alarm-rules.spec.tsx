@@ -16,6 +16,7 @@ const companySession: AuthSession = {
     companyId: "company-1",
     email: "manager@example.com",
     id: "user-manager",
+    isActive: true,
     isSuperAdmin: false,
     name: "Manager",
     permissions: ["welcome.view", "alarm-rules.view", "alarm-rules.manage", "notifications.manage"],
@@ -28,6 +29,7 @@ const adminSession: AuthSession = {
   user: {
     email: "admin@example.com",
     id: "admin-1",
+    isActive: true,
     isSuperAdmin: false,
     name: "Admin",
     permissions: ["welcome.view", "alarm-rules.view", "alarm-rules.manage"],
@@ -218,7 +220,9 @@ describe("Phase 12 alarm rule form", () => {
     expect(await within(dialog).findByText("Unable to save alarm rule.")).toBeTruthy();
     expect(screen.getByText("No records found")).toBeTruthy();
 
-    fireEvent.click(within(dialog).getAllByRole("button")[0]);
+    const closeButton = within(dialog).getAllByRole("button")[0];
+    if (!closeButton) throw new Error("Create rule dialog close button is missing");
+    fireEvent.click(closeButton);
     fireEvent.click(screen.getByRole("button", { name: "Create rule" }));
     const reopened = await screen.findByRole("dialog", { name: "Create rule" });
     expect(
