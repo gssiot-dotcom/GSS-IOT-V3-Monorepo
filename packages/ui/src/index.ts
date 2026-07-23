@@ -7,6 +7,14 @@ export {
 } from "./app-states";
 export { DataTable, TablePaginationFooter, type DataTableColumn } from "./data-table";
 export {
+  ChartPanel,
+  DataToolbar,
+  DataViewToggle,
+  FilterChipRow,
+  MetricTrend,
+  StatusDistribution,
+} from "./data-primitives";
+export {
   CompactActionMenu,
   DashboardKpiCard,
   DashboardSection,
@@ -17,6 +25,29 @@ export {
   type SectionHeaderProps,
 } from "./dashboard-primitives";
 export { NodeTypeSelectionCard, type NodeTypeCardProps, type NodeTypeKey } from "./node-type-card";
+export {
+  EntityActionMenu,
+  EntityCard,
+  EntityCardGrid,
+  EntityMetric,
+  EntityStatusRow,
+} from "./entity-primitives";
+export {
+  DestructiveActionZone,
+  FormFieldGrid,
+  FormSection,
+  FormSectionNav,
+  FormWorkspace,
+  StickyFormActions,
+} from "./form-primitives";
+export {
+  ContextSectionLayout,
+  ContextSectionNav,
+  PageContainer,
+  SectionPanel,
+  SidebarSection,
+  StickyPageActions,
+} from "./layout-primitives";
 export { PageHeader, type PageHeaderProps } from "./page-header";
 export {
   RealtimeStatusBadge,

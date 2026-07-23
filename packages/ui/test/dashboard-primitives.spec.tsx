@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   CompactActionMenu,
+  ContextSectionLayout,
   DataTable,
+  EntityCard,
+  EntityCardGrid,
+  FormSection,
+  PageContainer,
   DashboardKpiCard,
   DashboardSection,
   PageHeader,
@@ -48,5 +53,19 @@ describe("dashboard primitives", () => {
 
     expect(header.props.wrap).toBe("wrap");
     expect(table.props.children.props["aria-label"]).toBe("Gateway inventory");
+  });
+
+  it("exposes reusable redesign primitives without owning domain behavior", () => {
+    const card = EntityCard({ description: "North site", title: "Company A" });
+    const grid = EntityCardGrid({ children: card });
+    const page = PageContainer({ children: "content" });
+    const layout = ContextSectionLayout({ children: "content", navigation: "navigation" });
+    const section = FormSection({ children: "fields", title: "Identity" });
+
+    expect(card.props.className).toBe("gss-entity-card");
+    expect(grid.props.cols).toEqual({ base: 1, lg: 3, xs: 2 });
+    expect(page.props.className).toBe("gss-page-container");
+    expect(layout.props.children).toHaveLength(2);
+    expect(section.props.className).toBe("gss-form-section");
   });
 });
