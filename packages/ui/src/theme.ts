@@ -1,38 +1,120 @@
 import { createTheme, rem, type MantineColorsTuple } from "@mantine/core";
 
 export const gssBlue: MantineColorsTuple = [
-  "#e8f7fd",
-  "#d2effa",
-  "#a7dff5",
-  "#78ceef",
-  "#48bdea",
-  "#159fde",
-  "#0b80b7",
-  "#08648f",
-  "#064c6d",
-  "#03344a",
+  "#eaf6ff",
+  "#d7edff",
+  "#b8dcff",
+  "#8bc5ff",
+  "#5eacff",
+  "#2f91f1",
+  "#176fca",
+  "#12579e",
+  "#0e4076",
+  "#092b52",
+];
+
+export const gssCyan: MantineColorsTuple = [
+  "#e8fbfc",
+  "#d1f5f7",
+  "#a5e9ed",
+  "#72d9df",
+  "#42c8d0",
+  "#1db3bd",
+  "#128d98",
+  "#0e7078",
+  "#0a5359",
+  "#06373b",
+];
+
+export const gssIndigo: MantineColorsTuple = [
+  "#eef0ff",
+  "#dfe2ff",
+  "#c5caff",
+  "#a7adff",
+  "#858df5",
+  "#6670dd",
+  "#5059b9",
+  "#414898",
+  "#343b78",
+  "#252b5a",
+];
+
+export const gssViolet: MantineColorsTuple = [
+  "#f5efff",
+  "#eadfff",
+  "#d8c4ff",
+  "#c1a2ff",
+  "#a47df1",
+  "#895ce0",
+  "#7047b8",
+  "#5a3995",
+  "#482f76",
+  "#332252",
+];
+
+export const gssTeal: MantineColorsTuple = [
+  "#e7fbf6",
+  "#cef5eb",
+  "#a1e9d7",
+  "#6fd8bf",
+  "#43c3a5",
+  "#25a98d",
+  "#198773",
+  "#146b5c",
+  "#105044",
+  "#0b352e",
 ];
 
 export const gssStatusColors = {
   caution: "#2fa84f",
   danger: "#dc2626",
   offline: "#7c8797",
-  safe: "#0b80b7",
+  safe: "#1685b8",
   unconfigured: "#64748b",
   warning: "#d18a00",
 } as const;
 
+export const gssAccentColors = {
+  blue: "gss",
+  cyan: "gssCyan",
+  indigo: "gssIndigo",
+  neutral: "gray",
+  teal: "gssTeal",
+  violet: "gssViolet",
+} as const;
+
 export const gssSemanticTokens = {
-  accent: { light: "#0b80b7", dark: "#48bdea" },
-  background: { light: "#f5f8fb", dark: "#0d1524" },
-  border: { light: "#d8e0e8", dark: "#263449" },
+  accent: { light: "#176fca", dark: "#5eacff" },
+  accentCyan: { light: "#128d98", dark: "#42c8d0" },
+  accentIndigo: { light: "#5059b9", dark: "#858df5" },
+  accentTeal: { light: "#198773", dark: "#43c3a5" },
+  accentViolet: { light: "#7047b8", dark: "#a47df1" },
+  acknowledged: { light: "#128d98", dark: "#42c8d0" },
+  background: { light: "#f4f7fb", dark: "#0b1424" },
+  body: { light: "#26364d", dark: "#d8e4f1" },
+  border: { light: "#d7e0eb", dark: "#263a52" },
   caution: { light: "#2fa84f", dark: "#63d477" },
   danger: { light: "#dc2626", dark: "#f87171" },
-  foreground: { light: "#172033", dark: "#eef5fb" },
-  muted: { light: "#64748b", dark: "#9aaac0" },
+  disabled: { light: "#9aa8b8", dark: "#66788d" },
+  failed: { light: "#dc2626", dark: "#f87171" },
+  foreground: { light: "#17263d", dark: "#eef5fb" },
+  heading: { light: "#10213a", dark: "#f4f8fd" },
+  info: { light: "#176fca", dark: "#5eacff" },
+  informational: { light: "#176fca", dark: "#5eacff" },
+  muted: { light: "#6b7b91", dark: "#91a5bc" },
+  nestedSurface: { light: "#f8fafd", dark: "#16253a" },
   offline: { light: "#7c8797", dark: "#a6b3c5" },
-  panel: { light: "#ffffff", dark: "#18263b" },
-  surface: { light: "#ffffff", dark: "#131e30" },
+  online: { light: "#198773", dark: "#43c3a5" },
+  panel: { light: "#ffffff", dark: "#172941" },
+  pending: { light: "#5059b9", dark: "#858df5" },
+  primary: { light: "#176fca", dark: "#5eacff" },
+  secondaryText: { light: "#4e6179", dark: "#b4c4d6" },
+  strongBorder: { light: "#b8c8d9", dark: "#3a536f" },
+  subtleBorder: { light: "#e5ebf2", dark: "#1f3148" },
+  surface: { light: "#ffffff", dark: "#122137" },
+  surfaceTinted: { light: "#f0f7ff", dark: "#152d48" },
+  safe: { light: "#1685b8", dark: "#42b7e2" },
+  stale: { light: "#b87412", dark: "#f0b94c" },
   warning: { light: "#d18a00", dark: "#f2bd48" },
 } as const;
 
@@ -49,7 +131,7 @@ export const gssLayoutTokens = {
   shadow: {
     card: "0 1px 2px rgb(15 23 42 / 0.04)",
     elevated: "0 12px 30px rgb(15 23 42 / 0.08)",
-    focus: "0 0 0 3px rgb(21 159 222 / 0.2)",
+    focus: "0 0 0 3px rgb(47 145 241 / 0.22)",
   },
 } as const;
 
@@ -66,6 +148,10 @@ export const gssTheme = createTheme({
   black: "#172033",
   colors: {
     gss: gssBlue,
+    gssCyan,
+    gssIndigo,
+    gssTeal,
+    gssViolet,
   },
   components: {
     ActionIcon: {
@@ -82,6 +168,12 @@ export const gssTheme = createTheme({
     Button: {
       defaultProps: {
         radius: "md",
+      },
+      styles: {
+        root: {
+          transition:
+            "background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease",
+        },
       },
     },
     Card: {
@@ -108,6 +200,7 @@ export const gssTheme = createTheme({
   defaultRadius: "md",
   fontFamily: "Inter, 'Noto Sans KR', system-ui, sans-serif",
   other: {
+    gssAccentColors,
     gssLayoutTokens,
     gssSemanticTokens,
     gssTypographyScale,

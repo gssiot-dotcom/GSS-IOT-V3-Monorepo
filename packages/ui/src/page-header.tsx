@@ -9,8 +9,14 @@ export interface PageHeaderProps {
 
 export function PageHeader({ action, subtitle, title }: PageHeaderProps) {
   return (
-    <Group align="flex-start" justify="space-between" gap="md" wrap="wrap">
-      <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+    <Group
+      align="flex-start"
+      className="gss-page-header"
+      justify="space-between"
+      gap="md"
+      wrap="wrap"
+    >
+      <Stack className="gss-page-header-title" gap={4} style={{ flex: "1 1 220px", minWidth: 0 }}>
         <Title order={1} style={{ overflowWrap: "anywhere" }}>
           {title}
         </Title>
@@ -21,7 +27,11 @@ export function PageHeader({ action, subtitle, title }: PageHeaderProps) {
         ) : null}
       </Stack>
       {action ? (
-        <Group gap="xs" style={{ flexShrink: 0 }}>
+        <Group
+          className="gss-page-header-actions"
+          gap="xs"
+          style={{ flex: "0 1 auto", maxWidth: "100%" }}
+        >
           {action}
         </Group>
       ) : null}

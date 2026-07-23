@@ -6,6 +6,7 @@ export {
   SessionExpiredState,
 } from "./app-states";
 export { DataTable, TablePaginationFooter, type DataTableColumn } from "./data-table";
+export { GssButton, GssIconButton, type GssButtonProps, type GssButtonVariant } from "./button";
 export {
   ChartPanel,
   DataToolbar,
@@ -18,8 +19,16 @@ export {
   CompactActionMenu,
   DashboardKpiCard,
   DashboardSection,
+  MetricCard,
+  MetricIcon,
+  OperationalSummaryCard,
   ResponsiveContentGrid,
+  SectionAction,
+  SectionIcon,
   SectionHeader,
+  StatusMetric,
+  TintedIconBox,
+  type DashboardAccent,
   type CompactActionMenuItem,
   type DashboardKpiCardProps,
   type SectionHeaderProps,
@@ -57,9 +66,14 @@ export {
 export { StatusBadge, type GssStatus } from "./status-badge";
 export {
   gssBlue,
+  gssAccentColors,
+  gssCyan,
+  gssIndigo,
   gssLayoutTokens,
   gssSemanticTokens,
   gssStatusColors,
   gssTheme,
+  gssTeal,
   gssTypographyScale,
+  gssViolet,
 } from "./theme";
