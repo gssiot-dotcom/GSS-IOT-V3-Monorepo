@@ -1,0 +1,4 @@
+interface:
+  display_name: "GSS IoT Modern Dashboard"
+  short_description: "Modernize the GSS IoT V3 Mantine dashboard without breaking RBAC, scope, or realtime behavior."
+  brand_color: "#0B80B7"

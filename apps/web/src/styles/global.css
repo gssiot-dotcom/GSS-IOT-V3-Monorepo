@@ -15,3 +15,20 @@ body {
   outline: 2px solid var(--mantine-color-gss-6);
   outline-offset: 2px;
 }
+
+.gss-sidebar-scrollarea-viewport {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.gss-sidebar-scrollarea-viewport::-webkit-scrollbar {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+.gss-sidebar-scrollarea [data-mantine-scrollbar] {
+  display: none;
+  height: 0;
+  width: 0;
+}

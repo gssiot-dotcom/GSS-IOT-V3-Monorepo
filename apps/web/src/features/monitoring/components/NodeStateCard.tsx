@@ -15,7 +15,16 @@ import { gssStatusColors } from "@gss-iot/ui";
 import { TShapeStatusIndicator, type LedPosition } from "./TShapeStatusIndicator";
 
 function statusColor(status: MonitoringNodeStateRecord["status"]) {
-  return gssStatusColors[status];
+  return gssStatusColors[status] ?? gssStatusColors.offline;
+}
+
+function cardStatusStyle(status: MonitoringNodeStateRecord["status"]) {
+  const color = statusColor(status);
+  return {
+    backgroundColor: `${color}12`,
+    borderColor: `${color}66`,
+    boxShadow: `0 0 0 1px ${color}1f, 0 6px 16px ${color}2e`,
+  };
 }
 
 function formatAge(lastSeenAt: string) {
@@ -69,11 +78,24 @@ export function NodeStateCard({
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") onOpen(state.nodeId);
       }}
-      p="md"
-      style={{ borderColor: `${statusColor(state.status)}66`, textAlign: "left" }}
+      p="sm"
+      style={{ ...cardStatusStyle(state.status), position: "relative", textAlign: "left" }}
       type="button"
     >
-      <Stack gap="sm">
+      <div
+        aria-hidden="true"
+        data-testid="node-card-status-line"
+        style={{
+          backgroundColor: statusColor(state.status),
+          borderRadius: "var(--mantine-radius-sm)",
+          height: 4,
+          left: 0,
+          position: "absolute",
+          right: 0,
+          top: 0,
+        }}
+      />
+      <Stack gap="xs">
         <Group justify="space-between" wrap="nowrap">
           <Stack gap={2}>
             <Text fw={600}>{tf("monitoring.nodeLabel", { number: state.node.number })}</Text>

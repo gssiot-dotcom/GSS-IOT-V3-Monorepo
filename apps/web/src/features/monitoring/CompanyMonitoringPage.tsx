@@ -307,7 +307,11 @@ export function NodeTypeMonitoringPage() {
           </Group>
           <Tabs.Panel pt="md" value="states">
             {view === "CARD" ? (
-              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+              <SimpleGrid
+                cols={{ base: 1, xs: 2, sm: 3, lg: 5 }}
+                data-testid="monitoring-node-grid"
+                spacing="sm"
+              >
                 {rows.map((row) => (
                   <NodeStateCard key={row.nodeId} onOpen={setSelectedNodeId} state={row} />
                 ))}

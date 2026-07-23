@@ -1,25 +1,28 @@
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GatewayCommandsPage } from "../features/gateway-commands/GatewayCommandsPage";
 import { apiRequest } from "../shared/api/api-client";
 
-vi.mock("../shared/auth/auth-context", () => ({
-  useAuth: () => ({
-    session: {
-      accessToken: "token",
-      context: "gss-admin",
-      user: {
-        email: "admin@example.com",
-        id: "admin-1",
-        isSuperAdmin: false,
-        name: "Admin",
-        permissions: ["mqtt-commands.manage", "mqtt-commands.view"],
-      },
+const mockAuth = vi.hoisted(() => ({
+  logout: vi.fn(),
+  session: {
+    accessToken: "token",
+    context: "gss-admin",
+    user: {
+      email: "admin@example.com",
+      id: "admin-1",
+      isSuperAdmin: false,
+      name: "Admin",
+      permissions: ["mqtt-commands.manage", "mqtt-commands.view"],
     },
-  }),
+  },
+}));
+
+vi.mock("../shared/auth/auth-context", () => ({
+  useAuth: () => mockAuth,
 }));
 
 vi.mock("../shared/api/api-client", () => ({
@@ -27,6 +30,8 @@ vi.mock("../shared/api/api-client", () => ({
 }));
 
 describe("Gateway commands MQTT status UI", () => {
+  afterEach(() => cleanup());
+
   beforeEach(() => {
     vi.mocked(apiRequest).mockImplementation((_session, path) => {
       if (path === "/admin/gateway-commands") {
@@ -67,7 +72,21 @@ describe("Gateway commands MQTT status UI", () => {
     expect(screen.getByText("Connected")).toBeTruthy();
     expect(screen.getByText("GSSIOT/test/GATE_RES/+")).toBeTruthy();
     expect(screen.getByText("GSSIOT/test/GATE_FORM/+")).toBeTruthy();
+    expect(screen.getByText("No records found")).toBeTruthy();
     expect(document.body.textContent).not.toContain("username");
     expect(document.body.textContent).not.toContain("password");
+  });
+
+  it("shows the error state after a failed gateway-command request", async () => {
+    vi.mocked(apiRequest).mockRejectedValue(new Error("HTTP 500"));
+
+    render(
+      <MantineProvider theme={gssTheme}>
+        <GatewayCommandsPage />
+      </MantineProvider>,
+    );
+
+    expect(await screen.findByText("Unable to load data")).toBeTruthy();
+    expect(screen.queryByText("Loading")).toBeNull();
   });
 });

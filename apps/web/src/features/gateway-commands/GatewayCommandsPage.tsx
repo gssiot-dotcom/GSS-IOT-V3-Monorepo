@@ -96,9 +96,9 @@ export function GatewayCommandsPage() {
     await load();
   };
 
-  if (!commands || !mqttStatus) return <LoadingState title={t("common.loading")} />;
   if (error)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
+  if (!commands || !mqttStatus) return <LoadingState title={t("common.loading")} />;
 
   return (
     <Stack gap="lg">

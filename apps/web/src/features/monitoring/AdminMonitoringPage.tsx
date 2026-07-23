@@ -344,7 +344,11 @@ export function AdminMonitoringPage() {
                   />
                 </Group>
                 {view === "CARD" ? (
-                  <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+                  <SimpleGrid
+                    cols={{ base: 1, xs: 2, sm: 3, lg: 5 }}
+                    data-testid="monitoring-node-grid"
+                    spacing="sm"
+                  >
                     {states.map((state) => (
                       <NodeStateCard key={state.nodeId} onOpen={setSelectedNodeId} state={state} />
                     ))}

@@ -11,6 +11,7 @@ import {
 import { AdminMonitoringPage } from "../features/monitoring/AdminMonitoringPage";
 import { NodeStateCard } from "../features/monitoring/components/NodeStateCard";
 import { NodeHistoryChart } from "../features/monitoring/components/NodeHistoryChart";
+import { NodeDetailDrawer } from "../features/monitoring/components/NodeDetailDrawer";
 import { apiRequest } from "../shared/api/api-client";
 
 vi.mock("../shared/auth/auth-context", () => ({
@@ -400,9 +401,132 @@ describe("Phase 6 monitoring UI", () => {
       </MantineProvider>,
     );
     expect(screen.getByText("Open")).toBeTruthy();
-    expect(screen.getByText("Warning")).toBeTruthy();
+    expect(screen.getAllByText("Warning").length).toBeGreaterThan(0);
     expect(screen.getByRole("img", { name: /T-shaped status indicator/i })).toBeTruthy();
     expect(screen.getByRole("img", { name: "X/Y angle history" })).toBeTruthy();
+  });
+
+  it("explains angle deviation and direction in the node detail drawer", async () => {
+    const now = "2026-07-22T01:02:03.000Z";
+    render(
+      <MantineProvider theme={gssTheme}>
+        <NodeDetailDrawer
+          history={{
+            items: [
+              {
+                buildingId: "building-1",
+                faultFiltered: false,
+                gateway: { id: "gateway-1", serialNumber: "0300" },
+                gatewayId: "gateway-1",
+                id: "reading-1",
+                measuredAt: now,
+                node: { id: "angle-1", installedLocation: null, number: "102" },
+                nodeId: "angle-1",
+                nodeType: {
+                  displayName: "Angle Node",
+                  id: "angle",
+                  imageAssetKey: "angle.png",
+                  key: "angle_node",
+                  numericCode: 1,
+                },
+                nodeTypeId: "angle",
+                receivedAt: now,
+                status: "warning",
+                values: { angleX: 2.4, angleY: -1.1 },
+              },
+            ],
+            page: 1,
+            pageSize: 25,
+            total: 1,
+          }}
+          node={{
+            areaId: "area-1",
+            building: { id: "building-1", title: "Tower A" },
+            buildingId: "building-1",
+            classificationEvidence: null,
+            companyId: "company-1",
+            faultFiltered: false,
+            gateway: { id: "gateway-1", serialNumber: "0300" },
+            gatewayId: "gateway-1",
+            lastSeenAt: now,
+            node: { id: "angle-1", installedLocation: "Roof", number: "102" },
+            nodeId: "angle-1",
+            nodeType: {
+              displayName: "Angle Node",
+              id: "angle",
+              imageAssetKey: "angle.png",
+              key: "angle_node",
+              numericCode: 1,
+            },
+            nodeTypeId: "angle",
+            status: "warning",
+            updatedAt: now,
+            values: { angleX: 2.4, angleY: -1.1 },
+          }}
+          nodeType="angle_node"
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    expect(await screen.findByText("X deviation: 2.4°")).toBeTruthy();
+    expect(screen.getByText("Y deviation: -1.1°")).toBeTruthy();
+    expect(screen.getByText("Reference / zero line")).toBeTruthy();
+    expect(screen.getByText("Current tilt direction")).toBeTruthy();
+    expect(screen.getAllByText("Warning").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Last reading:/)).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Tilt direction plot" })).toBeTruthy();
+  });
+
+  it("applies a distinct tint, glow and top line for every live node status", () => {
+    const statuses = ["safe", "caution", "warning", "danger", "offline"] as const;
+    const common = {
+      areaId: "area-1",
+      building: { id: "building-1", title: "Tower A" },
+      buildingId: "building-1",
+      companyId: "company-1",
+      gateway: { id: "gateway-1", serialNumber: "0300" },
+      gatewayId: "gateway-1",
+      lastSeenAt: new Date().toISOString(),
+      nodeTypeId: "angle",
+      updatedAt: new Date().toISOString(),
+    } as const;
+
+    render(
+      <MantineProvider theme={gssTheme}>
+        {statuses.map((status, index) => (
+          <NodeStateCard
+            key={status}
+            onOpen={vi.fn()}
+            state={{
+              ...common,
+              classificationEvidence: null,
+              faultFiltered: false,
+              node: { id: `node-${status}`, installedLocation: null, number: String(200 + index) },
+              nodeId: `node-${status}`,
+              nodeType: {
+                displayName: "Angle Node",
+                id: "angle",
+                imageAssetKey: "angle.png",
+                key: "angle_node",
+                numericCode: 1,
+              },
+              status,
+              values: { angleX: 2.4, angleY: -1.1 },
+            }}
+          />
+        ))}
+      </MantineProvider>,
+    );
+
+    const cards = screen.getAllByRole("button");
+    expect(cards).toHaveLength(statuses.length);
+    expect(new Set(cards.map((card) => card.getAttribute("style"))).size).toBe(statuses.length);
+    for (const card of cards) {
+      expect(card.getAttribute("style")).toContain("background-color");
+      expect(card.getAttribute("style")).toContain("box-shadow");
+      expect(card.querySelector('[data-testid="node-card-status-line"]')).toBeTruthy();
+    }
   });
 
   it("renders the permission-gated Admin summary and selector cascade", async () => {

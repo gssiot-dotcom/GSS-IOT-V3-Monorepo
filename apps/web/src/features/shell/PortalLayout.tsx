@@ -209,7 +209,13 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
         </Group>
       </AppShell.Header>
       <AppShell.Navbar style={{ backgroundColor: "var(--mantine-color-body)" }}>
-        <ScrollArea px="sm" py="md" type="auto">
+        <ScrollArea
+          className="gss-sidebar-scrollarea"
+          classNames={{ viewport: "gss-sidebar-scrollarea-viewport" }}
+          px="sm"
+          py="md"
+          type="auto"
+        >
           <Stack gap="lg">
             {sections.map((section) => (
               <Stack gap={4} key={section.key}>

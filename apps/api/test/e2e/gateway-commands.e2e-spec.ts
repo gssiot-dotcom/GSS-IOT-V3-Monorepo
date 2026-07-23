@@ -311,6 +311,12 @@ describe("Phase 5 gateway command outbox e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const token = await login("p5-manager@example.com");
 
+    const emptyList = await request(server)
+      .get("/admin/gateway-commands")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(emptyList.body).toEqual([]);
+
     const created = await request(server)
       .post("/admin/gateway-commands/register-nodes")
       .set("Authorization", `Bearer ${token}`)

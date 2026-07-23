@@ -3,7 +3,7 @@ import type {
   CanonicalNodeType,
   PaginatedSensorHistory,
 } from "@gss-iot/contracts";
-import { Stack, Text } from "@mantine/core";
+import { Group, Stack, Text } from "@mantine/core";
 
 import { t } from "../../../app/i18n";
 
@@ -15,6 +15,10 @@ function points(values: number[], min: number, max: number) {
       return `${x},${y}`;
     })
     .join(" ");
+}
+
+function toChartY(value: number, min: number, max: number) {
+  return 204 - ((value - min) / Math.max(max - min, 1)) * 174;
 }
 
 export function NodeHistoryChart({
@@ -52,6 +56,151 @@ export function NodeHistoryChart({
   const chartX = isDoor ? (batteryValues.length ? batteryValues : doorValues) : xValues;
   const chartY = isDoor ? [] : yValues;
   const label = isDoor ? t("monitoring.doorHistoryChart") : t("monitoring.angleHistoryChart");
+
+  if (!isDoor) {
+    const chartWidth = 520;
+    const left = 52;
+    const right = 16;
+    const plotWidth = chartWidth - left - right;
+    const xPosition = (index: number) =>
+      left + (index / Math.max(history.items.length - 1, 1)) * plotWidth;
+    const zeroY = toChartY(0, min, max);
+    const ticks = [min, 0, max];
+
+    return (
+      <Stack gap="xs">
+        <svg aria-label={label} height="250" role="img" viewBox="0 0 520 250" width="100%">
+          <title>{label}</title>
+          <desc>{t("monitoring.historyYAxis")}</desc>
+          <line
+            stroke="var(--mantine-color-gray-5)"
+            strokeWidth="1"
+            x1={left}
+            x2={left}
+            y1="30"
+            y2="204"
+          />
+          <line
+            stroke="var(--mantine-color-gray-5)"
+            strokeWidth="1"
+            x1={left}
+            x2={chartWidth - right}
+            y1="204"
+            y2="204"
+          />
+          <line
+            stroke="var(--mantine-color-gray-4)"
+            strokeDasharray="4 3"
+            strokeWidth="1"
+            x1={left}
+            x2={chartWidth - right}
+            y1={zeroY}
+            y2={zeroY}
+          />
+          {ticks.map((tick) => {
+            const y = toChartY(tick, min, max);
+            return (
+              <g key={tick}>
+                <line
+                  stroke="var(--mantine-color-gray-3)"
+                  strokeWidth="0.5"
+                  x1={left}
+                  x2={chartWidth - right}
+                  y1={y}
+                  y2={y}
+                />
+                <text
+                  fill="var(--mantine-color-dimmed)"
+                  fontSize="11"
+                  textAnchor="end"
+                  x={left - 8}
+                  y={y + 4}
+                >
+                  {tick.toFixed(1)}°
+                </text>
+              </g>
+            );
+          })}
+          <text
+            fill="var(--mantine-color-dimmed)"
+            fontSize="11"
+            textAnchor="middle"
+            x="260"
+            y="244"
+          >
+            {t("monitoring.historyXAxis")}
+          </text>
+          <text
+            fill="var(--mantine-color-dimmed)"
+            fontSize="11"
+            textAnchor="middle"
+            transform="rotate(-90 14 117)"
+            x="14"
+            y="117"
+          >
+            {t("monitoring.historyYAxis")}
+          </text>
+          <polyline
+            fill="none"
+            points={xValues
+              .map((value, index) => `${xPosition(index)},${toChartY(value, min, max)}`)
+              .join(" ")}
+            stroke="var(--mantine-color-gss-6)"
+            strokeWidth="2.5"
+            vectorEffect="non-scaling-stroke"
+          />
+          <polyline
+            fill="none"
+            points={yValues
+              .map((value, index) => `${xPosition(index)},${toChartY(value, min, max)}`)
+              .join(" ")}
+            stroke="var(--mantine-color-teal-6)"
+            strokeWidth="2.5"
+            vectorEffect="non-scaling-stroke"
+          />
+          {history.items.map((item, index) => {
+            const values = item.values;
+            if (!("angleX" in values)) return null;
+            return (
+              <g key={item.id}>
+                <circle
+                  cx={xPosition(index)}
+                  cy={toChartY(values.angleX, min, max)}
+                  fill="var(--mantine-color-gss-6)"
+                  r="3"
+                >
+                  <title>{`${new Date(item.receivedAt).toLocaleString()} · X ${values.angleX.toFixed(1)}° · Y ${values.angleY.toFixed(1)}° · ${t(`status.${item.status}` as never)}`}</title>
+                </circle>
+                <circle
+                  cx={xPosition(index)}
+                  cy={toChartY(values.angleY, min, max)}
+                  fill="var(--mantine-color-teal-6)"
+                  r="3"
+                />
+              </g>
+            );
+          })}
+        </svg>
+        <Group gap="md">
+          <Text size="xs">
+            <span aria-hidden="true" style={{ color: "var(--mantine-color-gss-6)" }}>
+              ●
+            </span>{" "}
+            {t("monitoring.historyXLegend")}
+          </Text>
+          <Text size="xs">
+            <span aria-hidden="true" style={{ color: "var(--mantine-color-teal-6)" }}>
+              ●
+            </span>{" "}
+            {t("monitoring.historyYLegend")}
+          </Text>
+          <Text c="dimmed" size="xs">
+            {t("monitoring.tiltReference")}: 0°
+          </Text>
+        </Group>
+      </Stack>
+    );
+  }
 
   return (
     <Stack gap={4}>
