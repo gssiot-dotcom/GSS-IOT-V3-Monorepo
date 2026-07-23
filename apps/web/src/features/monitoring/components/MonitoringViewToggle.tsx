@@ -1,6 +1,5 @@
-import { SegmentedControl } from "@mantine/core";
-
 import { t } from "../../../app/i18n";
+import { DataViewToggle } from "@gss-iot/ui";
 
 export type MonitoringView = "TABLE" | "CARD";
 
@@ -12,7 +11,7 @@ export function MonitoringViewToggle({
   value: MonitoringView;
 }) {
   return (
-    <SegmentedControl
+    <DataViewToggle
       aria-label={t("monitoring.viewLabel")}
       data={[
         { label: t("monitoring.viewTable"), value: "TABLE" },

@@ -2,6 +2,8 @@
 
 This document tracks the UI redesign requested in the attached task. It is intentionally separate from `docs/planning/PROJECT_STATE.md`, `TODO.md`, and `EXECUTION_STATE.md`; those project phase statuses are not changed by this work.
 
+The durable Phase 0 reference is `docs/ui-redesign/PHASE0_AUDIT.md`.
+
 ## Baseline
 
 - Starting commit: `5b47a60cd7501e3ac1eea305029db8e7135042a8`
@@ -22,7 +24,7 @@ This document tracks the UI redesign requested in the attached task. It is inten
 | 4 — entity collections | Complete | Companies, company sites, company buildings, Admin company-detail site/building sections, and Company monitoring building selection are card-first; same records and permission-gated actions are preserved. |
 | 5 — contextual workspaces/forms | Complete | Admin company detail uses route-backed inner navigation; user, role, and alarm-rule editors use shared structured form sections and sticky actions while retaining current routes and modal contracts. |
 | 6 — devices/commands | Complete | Device inventories and gateway command history remain dense tables; shared table hierarchy, command status summary, polling behavior, requestId/cmd drawer details, and existing permission-gated retry/cancel actions are preserved. |
-| 7 — monitoring | In progress | Existing five-node-card target, status tint/top line/shadow, card/table toggle, detail drawer, Socket.IO behavior, and latest/history/alarm-level/fault-filter tabs remain protected. |
+| 7 — monitoring | Complete | Existing five-node-card target, status tint/top line/shadow, card/table toggle, detail drawer, Socket.IO behavior, and latest/history/alarm-level/fault-filter tabs remain protected; the toggle now reuses the shared data-view primitive and node cards expose semantic status data for QA. |
 | 8 — alarms/notifications/reports | In progress | Histories remain dense tables; alarm-rule editor now uses shared form workspace sections. |
 | 9 — responsive/accessibility/polish | In progress | Shared responsive/reduced-motion/focus styling and deterministic protected visual capture are implemented; final passes remain. |
 | Verification Pass 1 | Pending | |

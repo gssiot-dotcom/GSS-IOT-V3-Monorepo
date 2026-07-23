@@ -74,6 +74,7 @@ export function NodeStateCard({
     <Card
       aria-label={label}
       component="button"
+      data-status={state.status}
       onClick={() => onOpen(state.nodeId)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") onOpen(state.nodeId);
