@@ -21,10 +21,10 @@ This document tracks the UI redesign requested in the attached task. It is inten
 | 3 — shared primitives | Complete | Reusable layout, entity, form, data, chart, and status primitives are exported from `@gss-iot/ui`; package tests cover their public shape. |
 | 4 — entity collections | Complete | Companies, company sites, company buildings, Admin company-detail site/building sections, and Company monitoring building selection are card-first; same records and permission-gated actions are preserved. |
 | 5 — contextual workspaces/forms | Complete | Admin company detail uses route-backed inner navigation; user, role, and alarm-rule editors use shared structured form sections and sticky actions while retaining current routes and modal contracts. |
-| 6 — devices/commands | Pending | Dense inventories and command histories remain tables. |
-| 7 — monitoring | Pending | Latest/history/alarm-level/fault-filter tabs remain unchanged. |
-| 8 — alarms/notifications/reports | Pending | Histories remain dense tables; complex editors use structured workspace patterns. |
-| 9 — responsive/accessibility/polish | Pending | Required viewport and keyboard/contrast checks are tracked in `VERIFICATION.md`. |
+| 6 — devices/commands | Complete | Device inventories and gateway command history remain dense tables; shared table hierarchy, command status summary, polling behavior, requestId/cmd drawer details, and existing permission-gated retry/cancel actions are preserved. |
+| 7 — monitoring | In progress | Existing five-node-card target, status tint/top line/shadow, card/table toggle, detail drawer, Socket.IO behavior, and latest/history/alarm-level/fault-filter tabs remain protected. |
+| 8 — alarms/notifications/reports | In progress | Histories remain dense tables; alarm-rule editor now uses shared form workspace sections. |
+| 9 — responsive/accessibility/polish | In progress | Shared responsive/reduced-motion/focus styling and deterministic protected visual capture are implemented; final passes remain. |
 | Verification Pass 1 | Pending | |
 | Verification Pass 2 | Pending | |
 
@@ -56,6 +56,13 @@ The exact page files are recorded before each phase is implemented and updated h
 - `apps/web/src/features/devices/CompanyDevicesPage.tsx`
 - `apps/web/src/features/gateway-commands/GatewayCommandsPage.tsx`
 - `apps/web/src/features/alarms/AlarmOperationsPages.tsx`
+
+Implemented in Phase 6:
+
+- `packages/ui/src/data-table.tsx`
+- `packages/ui/src/status-badge.tsx`
+- `apps/web/src/styles/global.css`
+- `apps/web/src/features/gateway-commands/GatewayCommandsPage.tsx`
 - `apps/web/src/features/reports/ReportsPage.tsx`
 - `apps/web/src/features/settings/SettingsPages.tsx`
 - `apps/web/src/features/shell/PortalLayout.tsx`

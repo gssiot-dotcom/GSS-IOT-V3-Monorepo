@@ -139,6 +139,19 @@ body {
   padding: 12px;
 }
 
+.gss-data-table thead th {
+  background: color-mix(in srgb, var(--gss-accent) 6%, var(--gss-panel));
+  color: var(--gss-foreground);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.gss-data-table tbody td {
+  vertical-align: middle;
+}
+
 .gss-destructive-zone {
   background: color-mix(in srgb, #dc2626 5%, var(--gss-panel));
   border-color: color-mix(in srgb, #dc2626 35%, var(--gss-border));

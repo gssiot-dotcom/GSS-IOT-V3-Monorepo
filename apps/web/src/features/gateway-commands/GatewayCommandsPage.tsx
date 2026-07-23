@@ -1,5 +1,5 @@
 import type { GatewayCommandRecord, MqttStatusRecord } from "@gss-iot/contracts";
-import { DataTable, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
+import { DataTable, DataToolbar, EmptyState, ErrorState, LoadingState, PageHeader } from "@gss-iot/ui";
 import { Badge, Button, Code, Drawer, Group, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -105,8 +105,18 @@ export function GatewayCommandsPage() {
       <PageHeader title={t("gatewayCommands.title")} subtitle={t("gatewayCommands.subtitle")} />
       <MqttStatusBlock status={mqttStatus} />
       {commands.length ? (
-        <DataTable
-          columns={[
+        <Stack gap="md">
+          <DataToolbar>
+            <Text c="dimmed" size="sm">{commands.length} {t("gatewayCommands.title")}</Text>
+            <Group gap="xs">
+              {(["PENDING", "SENT", "ACKNOWLEDGED", "FAILED"] as const).map((status) => {
+                const count = commands.filter((command) => command.status === status).length;
+                return count ? <Badge color={statusColor(status)} key={status} variant="light">{status} {count}</Badge> : null;
+              })}
+            </Group>
+          </DataToolbar>
+          <DataTable
+            columns={[
             {
               key: "gateway",
               label: t("gatewayCommands.gateway"),
@@ -162,7 +172,8 @@ export function GatewayCommandsPage() {
             },
           ]}
           rows={commands}
-        />
+          />
+        </Stack>
       ) : (
         <EmptyState
           description={t("gatewayCommands.emptyDescription")}

@@ -3,18 +3,36 @@ import {
   IconAlertTriangle,
   IconCircleCheck,
   IconExclamationCircle,
+  IconClock,
+  IconCircleCheckFilled,
   IconQuestionMark,
   IconPlugConnectedX,
   IconShieldCheck,
 } from "@tabler/icons-react";
 
-export type GssStatus = "caution" | "danger" | "offline" | "safe" | "unconfigured" | "warning";
+export type GssStatus =
+  | "acknowledged"
+  | "caution"
+  | "danger"
+  | "failed"
+  | "offline"
+  | "online"
+  | "pending"
+  | "safe"
+  | "stale"
+  | "unconfigured"
+  | "warning";
 
 const statusConfig: Record<GssStatus, { color: string; icon: typeof IconCircleCheck }> = {
+  acknowledged: { color: "blue", icon: IconCircleCheckFilled },
   caution: { color: "green", icon: IconShieldCheck },
   danger: { color: "red", icon: IconAlertTriangle },
+  failed: { color: "red", icon: IconAlertTriangle },
   offline: { color: "gray", icon: IconPlugConnectedX },
+  online: { color: "green", icon: IconCircleCheck },
+  pending: { color: "yellow", icon: IconClock },
   safe: { color: "gss", icon: IconCircleCheck },
+  stale: { color: "orange", icon: IconClock },
   unconfigured: { color: "gray", icon: IconQuestionMark },
   warning: { color: "yellow", icon: IconExclamationCircle },
 };
