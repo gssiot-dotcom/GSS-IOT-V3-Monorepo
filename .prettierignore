@@ -7,3 +7,4 @@ playwright-report
 test-results
 reference/source-materials
 assets/legacy-node-types
+.agents/skills
