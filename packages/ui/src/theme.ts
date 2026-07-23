@@ -23,21 +23,33 @@ export const gssStatusColors = {
 } as const;
 
 export const gssSemanticTokens = {
+  accent: { light: "#0b80b7", dark: "#48bdea" },
   background: { light: "#f5f8fb", dark: "#0d1524" },
   border: { light: "#d8e0e8", dark: "#263449" },
+  caution: { light: "#2fa84f", dark: "#63d477" },
   danger: { light: "#dc2626", dark: "#f87171" },
   foreground: { light: "#172033", dark: "#eef5fb" },
   muted: { light: "#64748b", dark: "#9aaac0" },
+  offline: { light: "#7c8797", dark: "#a6b3c5" },
+  panel: { light: "#ffffff", dark: "#18263b" },
   surface: { light: "#ffffff", dark: "#131e30" },
+  warning: { light: "#d18a00", dark: "#f2bd48" },
 } as const;
 
 export const gssLayoutTokens = {
   controlHeight: { compact: rem(32), default: rem(38), comfortable: rem(42) },
   radius: { card: rem(12), control: rem(8), pill: rem(999) },
+  spacing: {
+    page: rem(24),
+    section: rem(20),
+    compact: rem(8),
+    control: rem(12),
+  },
   sectionGap: rem(20),
   shadow: {
     card: "0 1px 2px rgb(15 23 42 / 0.04)",
     elevated: "0 12px 30px rgb(15 23 42 / 0.08)",
+    focus: "0 0 0 3px rgb(21 159 222 / 0.2)",
   },
 } as const;
 
@@ -45,6 +57,7 @@ export const gssTypographyScale = {
   body: rem(14),
   caption: rem(12),
   cardTitle: rem(16),
+  display: rem(36),
   pageTitle: rem(30),
   sectionTitle: rem(20),
 } as const;
@@ -76,6 +89,13 @@ export const gssTheme = createTheme({
         padding: "md",
         radius: "md",
         withBorder: true,
+      },
+    },
+    Input: {
+      styles: {
+        input: {
+          transition: "border-color 120ms ease, box-shadow 120ms ease",
+        },
       },
     },
     Paper: {
