@@ -1,6 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import type { OnModuleInit } from "@nestjs/common";
 import { AssignmentStatus, DeviceLifecycleStatus, Prisma } from "@prisma/client";
 import type { CanonicalNodeType } from "@gss-iot/contracts";
@@ -68,6 +75,9 @@ const readingSelect = {
   status: true,
   values: true,
 } satisfies Prisma.SensorReadingSelect;
+
+const HISTORY_MAX_RANGE_MS = 24 * 60 * 60 * 1000;
+const HISTORY_CHART_POINT_LIMIT = 500;
 
 type AssignmentContext = {
   areaId: string;
@@ -520,7 +530,7 @@ export class MonitoringService implements OnModuleInit {
     buildingId: string,
     nodeType: string,
     nodeId: string,
-    query: { page?: number; pageSize?: number },
+    query: { from: string; page?: number; pageSize?: number; to: string },
   ) {
     const canonicalNodeType = this.assertNodeType(nodeType);
     await this.assertHttpAccess(auth, buildingId);
@@ -530,8 +540,9 @@ export class MonitoringService implements OnModuleInit {
     }
 
     const page = Math.max(1, query.page ?? 1);
-    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 25));
-    const where = { buildingId, nodeId };
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 50));
+    const range = this.historyRange(query.from, query.to);
+    const where = { buildingId, nodeId, receivedAt: { gte: range.from, lt: range.to } };
     const [items, total] = await Promise.all([
       this.prisma.sensorReading.findMany({
         orderBy: [{ receivedAt: "desc" }, { id: "asc" }],
@@ -543,6 +554,69 @@ export class MonitoringService implements OnModuleInit {
       this.prisma.sensorReading.count({ where }),
     ]);
     return { items: items.map(mapSensorReading), page, pageSize, total };
+  }
+
+  async getNodeHistoryChart(
+    auth: AuthTokenPayload,
+    buildingId: string,
+    nodeType: string,
+    nodeId: string,
+    query: { from: string; to: string },
+  ) {
+    const canonicalNodeType = this.assertNodeType(nodeType);
+    await this.assertHttpAccess(auth, buildingId);
+    const activeNode = await this.findActiveBuildingNode(buildingId, canonicalNodeType, nodeId);
+    if (!activeNode) {
+      throw new NotFoundException("The monitoring node was not found in this building.");
+    }
+    const range = this.historyRange(query.from, query.to);
+    const where = { buildingId, nodeId, receivedAt: { gte: range.from, lt: range.to } };
+    const totalRawPointCount = await this.prisma.sensorReading.count({ where });
+    let items;
+    if (totalRawPointCount <= HISTORY_CHART_POINT_LIMIT) {
+      items = await this.prisma.sensorReading.findMany({
+        orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+        select: readingSelect,
+        where,
+      });
+    } else {
+      const sampledIds = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        WITH ordered AS (
+          SELECT
+            "id",
+            ROW_NUMBER() OVER (ORDER BY "receivedAt" ASC, "id" ASC) AS "rowNumber",
+            COUNT(*) OVER () AS "total"
+          FROM "SensorReading"
+          WHERE "buildingId" = ${buildingId}::uuid
+            AND "nodeId" = ${nodeId}::uuid
+            AND "receivedAt" >= ${range.from}
+            AND "receivedAt" < ${range.to}
+        )
+        SELECT "id"
+        FROM ordered
+        WHERE "rowNumber" IN (
+          SELECT DISTINCT 1 + FLOOR(
+            "sampleIndex" * ("total" - 1)::numeric / ${HISTORY_CHART_POINT_LIMIT - 1}
+          )::bigint
+          FROM generate_series(0, ${HISTORY_CHART_POINT_LIMIT - 1}) AS "sampleIndex"
+        )
+        ORDER BY "rowNumber"
+      `);
+      items = await this.prisma.sensorReading.findMany({
+        orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+        select: readingSelect,
+        where: { id: { in: sampledIds.map(({ id }) => id) } },
+      });
+    }
+    return {
+      from: range.from.toISOString(),
+      items: items.map(mapSensorReading),
+      returnedPointCount: items.length,
+      sampled: totalRawPointCount > items.length,
+      sampleLimit: HISTORY_CHART_POINT_LIMIT,
+      to: range.to.toISOString(),
+      totalRawPointCount,
+    };
   }
 
   async assertRealtimeJoin(auth: AuthTokenPayload, buildingId: string, nodeType: string) {
@@ -558,6 +632,20 @@ export class MonitoringService implements OnModuleInit {
     await this.assertHttpAccess(auth, buildingId);
     await this.getNodeTypeOrThrow(canonicalNodeType);
     return canonicalNodeType;
+  }
+
+  private historyRange(fromValue: string, toValue: string) {
+    const from = new Date(fromValue);
+    const to = new Date(toValue);
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from >= to) {
+      throw new BadRequestException(
+        "History range requires valid ISO datetimes with from before to.",
+      );
+    }
+    if (to.getTime() - from.getTime() > HISTORY_MAX_RANGE_MS) {
+      throw new BadRequestException("History range cannot exceed 24 hours.");
+    }
+    return { from, to };
   }
 
   private async resolveAssignmentContext(

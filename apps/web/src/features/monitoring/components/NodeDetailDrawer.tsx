@@ -3,28 +3,82 @@ import type {
   CanonicalNodeType,
   MonitoringNodeStateRecord,
   PaginatedSensorHistory,
+  SensorHistoryChartResponse,
+  SensorReadingRecord,
 } from "@gss-iot/contracts";
-import { Badge, Drawer, Group, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Drawer,
+  Group,
+  NativeSelect,
+  Paper,
+  SegmentedControl,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
 
 import { t, tf } from "../../../app/i18n";
-import { DataTable, EmptyState, LoadingState, StatusBadge } from "@gss-iot/ui";
+import {
+  CollectionPagination,
+  DataTable,
+  EmptyState,
+  LoadingState,
+  StatusBadge,
+} from "@gss-iot/ui";
 import { NodeHistoryChart } from "./NodeHistoryChart";
+import type { NodeHistoryHours, NodeHistoryMode, NodeHistoryRange } from "./useNodeHistoryRange";
 
 export function NodeDetailDrawer({
+  chart,
+  date,
   history,
+  historyError,
+  hours,
+  loadingHistory,
+  maxDate,
+  mode,
   node,
   nodeType,
   onClose,
+  onDateChange,
+  onHoursChange,
+  onHistoryPageChange,
+  onHistoryPageSizeChange,
+  onModeChange,
+  range,
   thresholds,
 }: {
+  chart?: SensorHistoryChartResponse;
+  date: string;
   history?: PaginatedSensorHistory;
+  historyError?: boolean;
+  hours: NodeHistoryHours;
+  loadingHistory: boolean;
+  maxDate: string;
+  mode: NodeHistoryMode;
   node?: MonitoringNodeStateRecord;
   nodeType: CanonicalNodeType;
   onClose: () => void;
+  onDateChange: (value: string) => void;
+  onHoursChange: (value: NodeHistoryHours) => void;
+  onHistoryPageChange?: (value: number) => void;
+  onHistoryPageSizeChange?: (value: 50 | 100) => void;
+  onModeChange: (value: NodeHistoryMode) => void;
+  range: NodeHistoryRange;
   thresholds?: AlarmLevelThresholds;
 }) {
   const doorValues = node && "doorState" in node.values ? node.values : undefined;
   const angleValues = node && "angleX" in node.values ? node.values : undefined;
+  const chartItems = mergeRealtimePoint(chart?.items ?? [], node, range);
+  const chartHistory: PaginatedSensorHistory = {
+    items: chartItems,
+    page: 1,
+    pageSize: chartItems.length,
+    total: chart?.totalRawPointCount ?? chartItems.length,
+  };
   return (
     <Drawer
       onClose={onClose}
@@ -62,37 +116,105 @@ export function NodeDetailDrawer({
           {angleValues ? (
             <TiltDirectionGraphic angleX={angleValues.angleX} angleY={angleValues.angleY} />
           ) : null}
-          {!history ? (
-            <LoadingState title={t("common.loading")} />
-          ) : (
-            <>
-              <NodeHistoryChart history={history} nodeType={nodeType} thresholds={thresholds} />
-              {history.items.length ? (
-                <DataTable
-                  columns={[
-                    {
-                      key: "receivedAt",
-                      label: t("monitoring.receivedAt"),
-                      render: (row) => new Date(row.receivedAt).toLocaleString(),
-                    },
-                    {
-                      key: "value",
-                      label: t("monitoring.latestValue"),
-                      render: (row) => renderHistoryValue(row.values),
-                    },
-                    {
-                      key: "status",
-                      label: t("monitoring.latestStatus"),
-                      render: (row) => (
-                        <StatusBadge
-                          label={t(`status.${row.status}` as never)}
-                          status={row.status}
-                        />
-                      ),
-                    },
+          <Paper p="md" withBorder>
+            <Stack gap="sm">
+              <SegmentedControl
+                aria-label={t("monitoring.historyMode")}
+                data={[
+                  { label: t("monitoring.historyModeHour"), value: "HOUR" },
+                  { label: t("monitoring.historyModeDay"), value: "DAY" },
+                ]}
+                onChange={(value) => onModeChange(value as NodeHistoryMode)}
+                value={mode}
+              />
+              {mode === "HOUR" ? (
+                <NativeSelect
+                  aria-label={t("monitoring.historyHourRange")}
+                  data={[
+                    { label: t("monitoring.historyHour1"), value: "1" },
+                    { label: t("monitoring.historyHour12"), value: "12" },
+                    { label: t("monitoring.historyHour24"), value: "24" },
                   ]}
-                  rows={history.items}
+                  onChange={(event) =>
+                    onHoursChange(Number(event.currentTarget.value) as NodeHistoryHours)
+                  }
+                  value={String(hours)}
                 />
+              ) : (
+                <TextInput
+                  aria-label={t("monitoring.historyDate")}
+                  max={maxDate}
+                  onChange={(event) => onDateChange(event.currentTarget.value)}
+                  type="date"
+                  value={date}
+                />
+              )}
+            </Stack>
+          </Paper>
+          {historyError ? (
+            <Alert color="red" title={t("common.errorTitle")}>
+              {t("monitoring.historyLoadError")}
+            </Alert>
+          ) : loadingHistory ? (
+            <LoadingState title={t("common.loading")} />
+          ) : history && chart ? (
+            <>
+              {chart.sampled ? (
+                <Alert color="blue" title={t("monitoring.historySampledTitle")}>
+                  {tf("monitoring.historySampledDescription", {
+                    returned: chart.returnedPointCount,
+                    total: chart.totalRawPointCount,
+                  })}
+                </Alert>
+              ) : null}
+              <NodeHistoryChart
+                history={chartHistory}
+                nodeType={nodeType}
+                thresholds={thresholds}
+              />
+              {history.items.length ? (
+                <>
+                  <CollectionPagination
+                    onPageChange={onHistoryPageChange}
+                    onPageSizeChange={(value) =>
+                      onHistoryPageSizeChange?.(Number(value) as 50 | 100)
+                    }
+                    page={history.page}
+                    pageSize={history.pageSize as 50 | 100}
+                    pageSizeLabel={t("table.pageSize")}
+                    rangeLabel={tf("table.range", {
+                      from: history.total === 0 ? 0 : (history.page - 1) * history.pageSize + 1,
+                      to: Math.min(history.page * history.pageSize, history.total),
+                      total: history.total,
+                    })}
+                    totalPages={Math.max(1, Math.ceil(history.total / history.pageSize))}
+                  />
+                  <DataTable
+                    columns={[
+                      {
+                        key: "receivedAt",
+                        label: t("monitoring.receivedAt"),
+                        render: (row) => new Date(row.receivedAt).toLocaleString(),
+                      },
+                      {
+                        key: "value",
+                        label: t("monitoring.latestValue"),
+                        render: (row) => renderHistoryValue(row.values),
+                      },
+                      {
+                        key: "status",
+                        label: t("monitoring.latestStatus"),
+                        render: (row) => (
+                          <StatusBadge
+                            label={t(`status.${row.status}` as never)}
+                            status={row.status}
+                          />
+                        ),
+                      },
+                    ]}
+                    rows={history.items}
+                  />
+                </>
               ) : (
                 <EmptyState
                   description={t("monitoring.emptyHistory")}
@@ -100,10 +222,51 @@ export function NodeDetailDrawer({
                 />
               )}
             </>
-          )}
+          ) : null}
         </Stack>
       ) : null}
     </Drawer>
+  );
+}
+
+export function mergeRealtimePoint(
+  points: SensorReadingRecord[],
+  node: MonitoringNodeStateRecord | undefined,
+  range: NodeHistoryRange,
+): SensorReadingRecord[] {
+  if (!node) return points;
+  const timestamp = new Date(node.lastSeenAt).getTime();
+  if (timestamp < new Date(range.from).getTime() || timestamp >= new Date(range.to).getTime()) {
+    return points;
+  }
+  const valueKey = JSON.stringify(node.values);
+  if (
+    points.some(
+      (point) => point.receivedAt === node.lastSeenAt && JSON.stringify(point.values) === valueKey,
+    )
+  ) {
+    return points;
+  }
+  const realtime: SensorReadingRecord = {
+    buildingId: node.buildingId,
+    classificationEvidence: node.classificationEvidence,
+    faultFiltered: node.faultFiltered,
+    gateway: node.gateway,
+    gatewayId: node.gatewayId,
+    id: `realtime:${node.nodeId}:${node.lastSeenAt}`,
+    measuredAt: null,
+    node: node.node,
+    nodeId: node.nodeId,
+    nodeType: node.nodeType,
+    nodeTypeId: node.nodeTypeId,
+    receivedAt: node.lastSeenAt,
+    status: node.status,
+    values: node.values,
+  };
+  return [...points, realtime].sort(
+    (left, right) =>
+      new Date(left.receivedAt).getTime() - new Date(right.receivedAt).getTime() ||
+      left.id.localeCompare(right.id),
   );
 }
 

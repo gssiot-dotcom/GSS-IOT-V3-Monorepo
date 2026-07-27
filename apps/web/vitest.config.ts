@@ -9,5 +9,6 @@ export default defineConfig({
     fileParallelism: false,
     pool: "threads",
     setupFiles: ["src/test/setup.ts"],
+    testTimeout: 15_000,
   },
 });

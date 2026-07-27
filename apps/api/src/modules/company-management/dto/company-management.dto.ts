@@ -115,6 +115,11 @@ export class UpdateCompanyUserDto {
   roleId?: string;
 }
 
+export class UpdateCompanyUserStatusDto {
+  @IsBoolean()
+  isActive!: boolean;
+}
+
 export class CreateCompanyRoleDto {
   @IsString()
   key!: string;
@@ -168,6 +173,11 @@ export class UpdateCompanyPositionDto {
   @IsOptional()
   @IsString()
   name?: string;
+}
+
+export class UpdateCompanyPositionStatusDto {
+  @IsBoolean()
+  isActive!: boolean;
 }
 
 export class PositionAssignmentDto {

@@ -1,9 +1,15 @@
-import type { AreaRecord, BuildingRecord } from "@gss-iot/contracts";
+import type {
+  AreaRecord,
+  BuildingRecord,
+  CollectionPageSize,
+  PaginatedResponse,
+} from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
-import { apiRequest } from "../../shared/api/api-client";
+import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
+  CollectionPagination,
   DataToolbar,
   DataViewToggle,
   EmptyState,
@@ -20,12 +26,18 @@ import {
   ModalFormFooter,
   PageHeader,
 } from "@gss-iot/ui";
-import { Button, Group, Modal, Select, Stack, Text, TextInput } from "@mantine/core";
-import { IconArrowUpRight, IconPlayerPause, IconPlugConnected } from "@tabler/icons-react";
+import { Alert, Button, Group, Modal, Select, Stack, Text, TextInput } from "@mantine/core";
+import {
+  IconArrowUpRight,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconPlugConnected,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { t } from "../../app/i18n";
+import { t, tf } from "../../app/i18n";
 import { hasPermission } from "../../shared/rbac/has-permission";
 
 export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildings" }) {
@@ -38,11 +50,17 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
   const [name, setName] = useState("");
   const [areaId, setAreaId] = useState<string | null>(null);
   const [view, setView] = useState("cards");
-  const [pendingDeactivate, setPendingDeactivate] = useState<{
+  const [pendingMutation, setPendingMutation] = useState<{
+    action: "DELETE" | "STATUS";
     id: string;
     name: string;
+    status?: "ACTIVE" | "INACTIVE";
   } | null>(null);
   const [isMutating, setIsMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<string>();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
   const isAreas = resource === "areas";
   const createPermission = isAreas ? "areas.create" : "buildings.create";
 
@@ -51,10 +69,23 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
     setError(false);
     try {
       const records = isAreas
-        ? await apiRequest<AreaRecord[]>(session, "/company/areas")
-        : await apiRequest<BuildingRecord[]>(session, "/company/buildings");
-      setRows(records);
-      if (!isAreas) setAreas(await apiRequest<AreaRecord[]>(session, "/company/areas"));
+        ? await apiRequest<PaginatedResponse<AreaRecord>>(
+            session,
+            `/company/areas?page=${page}&pageSize=${pageSize}`,
+          )
+        : await apiRequest<PaginatedResponse<BuildingRecord>>(
+            session,
+            `/company/buildings?page=${page}&pageSize=${pageSize}`,
+          );
+      setRows(records.items);
+      setTotal(records.total);
+      if (!isAreas) {
+        const areaOptions = await apiRequest<PaginatedResponse<AreaRecord>>(
+          session,
+          "/company/areas?pageSize=100",
+        );
+        setAreas(areaOptions.items);
+      }
     } catch {
       setError(true);
     }
@@ -62,7 +93,7 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
 
   useEffect(() => {
     void load();
-  }, [session, resource]);
+  }, [session, resource, page, pageSize]);
 
   const create = async () => {
     if (!session) return;
@@ -83,14 +114,26 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
     await load();
   };
 
-  const deactivate = async (id: string) => {
-    if (!session) return;
+  const mutateLifecycle = async () => {
+    if (!session || !pendingMutation || isMutating) return;
     setIsMutating(true);
+    setMutationError(undefined);
     try {
-      await apiRequest(session, `/company/${isAreas ? "areas" : "buildings"}/${id}`, {
-        method: "DELETE",
-      });
+      const base = `/company/${isAreas ? "areas" : "buildings"}/${pendingMutation.id}`;
+      await apiRequest(
+        session,
+        pendingMutation.action === "DELETE" ? `${base}/permanent` : `${base}/status`,
+        pendingMutation.action === "DELETE"
+          ? { method: "DELETE" }
+          : {
+              body: JSON.stringify({ status: pendingMutation.status }),
+              method: "PATCH",
+            },
+      );
       await load();
+      setPendingMutation(null);
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
       setIsMutating(false);
     }
@@ -100,6 +143,7 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
   const monitoringPath = (id: string) => `/company/buildings/${id}/monitoring`;
   const nameFor = (row: AreaRecord | BuildingRecord) => ("name" in row ? row.name : row.title);
   const deletePermission = isAreas ? "areas.delete" : "buildings.delete";
+  const updatePermission = isAreas ? "areas.update" : "buildings.update";
 
   if (!rows && !error) return <LoadingState title={t("common.loading")} />;
   if (error)
@@ -117,11 +161,28 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
           </Can>
         }
       />
+      {mutationError ? <Alert color="red">{mutationError}</Alert> : null}
       {rows?.length ? (
         <Stack gap="md">
+          <CollectionPagination
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(Number(value) as CollectionPageSize);
+              setPage(1);
+            }}
+            page={page}
+            pageSize={pageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+              to: Math.min(page * pageSize, total),
+              total,
+            })}
+            totalPages={Math.max(1, Math.ceil(total / pageSize))}
+          />
           <DataToolbar>
             <Text c="dimmed" size="sm">
-              {rows.length} {title}
+              {total} {title}
             </Text>
             <DataViewToggle
               data={[
@@ -163,15 +224,43 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
                                 },
                               ]
                             : []),
+                          ...(hasPermission(session, updatePermission)
+                            ? [
+                                {
+                                  icon:
+                                    row.status === "ACTIVE" ? (
+                                      <IconPlayerPause size={16} />
+                                    ) : (
+                                      <IconPlayerPlay size={16} />
+                                    ),
+                                  key: "status",
+                                  label: t(
+                                    row.status === "ACTIVE"
+                                      ? "organizations.deactivate"
+                                      : "organizations.activate",
+                                  ),
+                                  onClick: () =>
+                                    setPendingMutation({
+                                      action: "STATUS",
+                                      id: row.id,
+                                      name,
+                                      status: row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                                    }),
+                                },
+                              ]
+                            : []),
                           ...(hasPermission(session, deletePermission)
                             ? [
                                 {
                                   color: "red" as const,
                                   destructive: true,
-                                  icon: <IconPlayerPause size={16} />,
-                                  key: "deactivate",
-                                  label: t("organizations.deactivate"),
-                                  onClick: () => setPendingDeactivate({ id: row.id, name }),
+                                  disabled: !row.deletion?.allowed,
+                                  disabledReason: row.deletion?.blocker ?? undefined,
+                                  icon: <IconTrash size={16} />,
+                                  key: "delete",
+                                  label: t("organizations.deletePermanently"),
+                                  onClick: () =>
+                                    setPendingMutation({ action: "DELETE", id: row.id, name }),
                                 },
                               ]
                             : []),
@@ -268,16 +357,47 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
                               },
                             ]
                           : []),
+                        ...(hasPermission(session, updatePermission)
+                          ? [
+                              {
+                                icon:
+                                  row.status === "ACTIVE" ? (
+                                    <IconPlayerPause size={16} />
+                                  ) : (
+                                    <IconPlayerPlay size={16} />
+                                  ),
+                                key: "status",
+                                label: t(
+                                  row.status === "ACTIVE"
+                                    ? "organizations.deactivate"
+                                    : "organizations.activate",
+                                ),
+                                onClick: () =>
+                                  setPendingMutation({
+                                    action: "STATUS",
+                                    id: row.id,
+                                    name: nameFor(row),
+                                    status: row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                                  }),
+                              },
+                            ]
+                          : []),
                         ...(hasPermission(session, deletePermission)
                           ? [
                               {
                                 color: "red" as const,
                                 destructive: true,
-                                icon: <IconPlayerPause size={16} />,
-                                key: "deactivate",
-                                label: t("organizations.deactivate"),
+                                disabled: !row.deletion?.allowed,
+                                disabledReason: row.deletion?.blocker ?? undefined,
+                                icon: <IconTrash size={16} />,
+                                key: "delete",
+                                label: t("organizations.deletePermanently"),
                                 onClick: () =>
-                                  setPendingDeactivate({ id: row.id, name: nameFor(row) }),
+                                  setPendingMutation({
+                                    action: "DELETE",
+                                    id: row.id,
+                                    name: nameFor(row),
+                                  }),
                               },
                             ]
                           : []),
@@ -323,17 +443,34 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
       </Modal>
       <ConfirmActionModal
         cancelLabel={t("common.cancel")}
-        confirmLabel={t("organizations.deactivate")}
-        description={t("organizations.confirmDeactivateImpact")}
-        entityName={pendingDeactivate?.name ?? ""}
+        confirmLabel={t(
+          pendingMutation?.action === "DELETE"
+            ? "organizations.deletePermanently"
+            : pendingMutation?.status === "ACTIVE"
+              ? "organizations.activate"
+              : "organizations.deactivate",
+        )}
+        description={t(
+          pendingMutation?.action === "DELETE"
+            ? "organizations.confirmPermanentDeleteImpact"
+            : pendingMutation?.status === "ACTIVE"
+              ? "organizations.confirmActivateImpact"
+              : "organizations.confirmDeactivateImpact",
+        )}
+        entityName={pendingMutation?.name ?? ""}
         loading={isMutating}
-        onClose={() => setPendingDeactivate(null)}
-        onConfirm={() => {
-          if (!pendingDeactivate) return;
-          void deactivate(pendingDeactivate.id).finally(() => setPendingDeactivate(null));
+        onClose={() => {
+          if (!isMutating) setPendingMutation(null);
         }}
-        opened={Boolean(pendingDeactivate)}
-        title={t("organizations.confirmDeactivateTitle")}
+        onConfirm={() => void mutateLifecycle()}
+        opened={Boolean(pendingMutation)}
+        title={t(
+          pendingMutation?.action === "DELETE"
+            ? "organizations.confirmPermanentDeleteTitle"
+            : pendingMutation?.status === "ACTIVE"
+              ? "organizations.confirmActivateTitle"
+              : "organizations.confirmDeactivateTitle",
+        )}
       />
     </Stack>
   );

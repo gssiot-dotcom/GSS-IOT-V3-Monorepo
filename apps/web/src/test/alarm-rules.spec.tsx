@@ -92,7 +92,7 @@ function mockAlarmRulesFetch(options: { createStatus?: number; session?: AuthSes
     const url = new URL(String(input));
     if (url.href === `${apiBaseUrl}/auth/company/me`) return jsonResponse(session);
     if (url.href === `${apiBaseUrl}/auth/gss/me`) return jsonResponse(session);
-    if (url.href.endsWith("/alarm-rules/options")) {
+    if (url.pathname.endsWith("/alarm-rules/options")) {
       return jsonResponse({
         buildings: [building],
         nodeTypes: [gangformNodeType],
@@ -100,12 +100,12 @@ function mockAlarmRulesFetch(options: { createStatus?: number; session?: AuthSes
         users: [],
       });
     }
-    if (url.href.endsWith("/notifications/providers/status")) {
+    if (url.pathname.endsWith("/notifications/providers/status")) {
       return jsonResponse({
         providers: [{ channel: "IN_APP", configured: true, providerKey: "in_app" }],
       });
     }
-    if (url.href.endsWith("/alarm-rules") && init.method === "POST") {
+    if (url.pathname.endsWith("/alarm-rules") && init.method === "POST") {
       if (options.createStatus) {
         return jsonResponse({ message: "Validation failed" }, options.createStatus);
       }
@@ -125,8 +125,13 @@ function mockAlarmRulesFetch(options: { createStatus?: number; session?: AuthSes
       };
       return jsonResponse(createdRule, 201);
     }
-    if (url.href.endsWith("/alarm-rules")) {
-      return jsonResponse({ items: createdRule ? [createdRule] : [] });
+    if (url.pathname.endsWith("/alarm-rules")) {
+      return jsonResponse({
+        items: createdRule ? [createdRule] : [],
+        page: 1,
+        pageSize: 50,
+        total: createdRule ? 1 : 0,
+      });
     }
     return jsonResponse({});
   });

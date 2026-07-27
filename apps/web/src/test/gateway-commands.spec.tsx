@@ -35,8 +35,8 @@ describe("Gateway commands MQTT status UI", () => {
 
   beforeEach(() => {
     vi.mocked(apiRequest).mockImplementation((_session, path) => {
-      if (path === "/admin/gateway-commands") {
-        return Promise.resolve([]);
+      if (path.startsWith("/admin/gateway-commands?")) {
+        return Promise.resolve({ items: [], page: 1, pageSize: 50, total: 0 });
       }
       if (path === "/admin/gateway-commands/mqtt-status") {
         return Promise.resolve({
@@ -121,7 +121,8 @@ describe("Gateway commands MQTT status UI", () => {
     const calls: string[] = [];
     vi.mocked(apiRequest).mockImplementation((_session, path) => {
       calls.push(String(path));
-      if (path === "/admin/gateway-commands") return Promise.resolve([command]);
+      if (path.startsWith("/admin/gateway-commands?"))
+        return Promise.resolve({ items: [command], page: 1, pageSize: 50, total: 1 });
       if (path === "/admin/gateway-commands/mqtt-status")
         return Promise.resolve({
           brokerHost: "broker.example:1883",

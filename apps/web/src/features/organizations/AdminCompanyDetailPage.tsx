@@ -7,11 +7,10 @@ import type {
   CompanyUserRecord,
   GatewayRecord,
   NodeRecord,
+  PaginatedResponse,
 } from "@gss-iot/contracts";
 import {
   DataTable,
-  ContextSectionLayout,
-  ContextSectionNav,
   ConfirmActionModal,
   EmptyState,
   EntityActionMenu,
@@ -26,6 +25,7 @@ import {
   ModalFormFooter,
   PageContainer,
   PageHeader,
+  WorkspaceTabs,
 } from "@gss-iot/ui";
 import {
   Alert,
@@ -37,12 +37,16 @@ import {
   Select,
   SimpleGrid,
   Stack,
-  Tabs,
-  NavLink,
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconEdit, IconPlayerPause } from "@tabler/icons-react";
+import {
+  IconEdit,
+  IconPhoto,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconTrash,
+} from "@tabler/icons-react";
 import {
   useCallback,
   useEffect,
@@ -52,14 +56,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import {
-  Link,
-  Outlet,
-  useLocation,
-  useNavigate,
-  useOutletContext,
-  useParams,
-} from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 
 import { t } from "../../app/i18n";
 import { ApiError, apiMultipartRequest, apiRequest } from "../../shared/api/api-client";
@@ -69,6 +66,7 @@ import { useAuthenticatedLogo } from "../../shared/branding/use-authenticated-lo
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
 import { deviceLifecycleBadge, gatewayTypeLabel } from "../devices/device-labels";
+import { BuildingImageManager } from "./BuildingImageManager";
 
 type CompanyDetailSection = "overview" | "sites" | "buildings" | "users" | "devices";
 
@@ -128,7 +126,9 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
   const [hasError, setHasError] = useState(false);
   const [formError, setFormError] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
-  const [deactivateConfirmOpen, setDeactivateConfirmOpen] = useState(false);
+  const [lifecycleConfirmOpen, setLifecycleConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState<string>();
   const [modal, setModal] = useState<"area" | "building" | "company" | "user" | undefined>();
   const [companyName, setCompanyName] = useState("");
   const [companyCode, setCompanyCode] = useState("");
@@ -149,6 +149,7 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
   const canLoadBuildings = hasPermission(session, "buildings.view");
   const canLoadUsers = hasPermission(session, "company-users.view");
   const canLoadRoles = hasPermission(session, "company-roles.view");
+  const canViewDevicesTab = hasPermission(session, "devices.view");
   const canLoadDevices =
     hasPermission(session, "gateways.view") && hasPermission(session, "nodes.view");
 
@@ -178,30 +179,48 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     setHasError(false);
     try {
       const company = await apiRequest<CompanyRecord>(session, `/admin/companies/${companyId}`);
-      const [areas, buildings, users, roles, devices] = await Promise.all([
+      const [areasPage, buildingsPage, usersPage, rolesPage, devices] = await Promise.all([
         canLoadAreas
-          ? apiRequest<AreaRecord[]>(session, `/admin/companies/${companyId}/areas`)
-          : Promise.resolve([]),
+          ? apiRequest<PaginatedResponse<AreaRecord>>(
+              session,
+              `/admin/companies/${companyId}/areas?pageSize=100`,
+            )
+          : Promise.resolve({ items: [] } as Pick<PaginatedResponse<AreaRecord>, "items">),
         canLoadBuildings
-          ? apiRequest<BuildingRecord[]>(session, `/admin/companies/${companyId}/buildings`)
-          : Promise.resolve([]),
+          ? apiRequest<PaginatedResponse<BuildingRecord>>(
+              session,
+              `/admin/companies/${companyId}/buildings?pageSize=100`,
+            )
+          : Promise.resolve({ items: [] } as Pick<PaginatedResponse<BuildingRecord>, "items">),
         canLoadUsers
-          ? apiRequest<CompanyUserRecord[]>(session, `/admin/companies/${companyId}/users`)
-          : Promise.resolve([]),
+          ? apiRequest<PaginatedResponse<CompanyUserRecord>>(
+              session,
+              `/admin/companies/${companyId}/users?pageSize=100`,
+            )
+          : Promise.resolve({ items: [] } as Pick<PaginatedResponse<CompanyUserRecord>, "items">),
         canLoadRoles
-          ? apiRequest<CompanyRoleRecord[]>(session, `/admin/companies/${companyId}/roles`)
-          : Promise.resolve([]),
+          ? apiRequest<PaginatedResponse<CompanyRoleRecord>>(
+              session,
+              `/admin/companies/${companyId}/roles?pageSize=100`,
+            )
+          : Promise.resolve({ items: [] } as Pick<PaginatedResponse<CompanyRoleRecord>, "items">),
         canLoadDevices
           ? Promise.all([
-              apiRequest<GatewayRecord[]>(session, "/admin/devices/gateways"),
-              apiRequest<NodeRecord[]>(session, "/admin/devices/nodes"),
-            ]).then(([gateways, nodes]) => ({ gateways, nodes }))
+              apiRequest<PaginatedResponse<GatewayRecord>>(
+                session,
+                "/admin/devices/gateways?pageSize=100",
+              ),
+              apiRequest<PaginatedResponse<NodeRecord>>(
+                session,
+                "/admin/devices/nodes?pageSize=100",
+              ),
+            ]).then(([gateways, nodes]) => ({ gateways: gateways.items, nodes: nodes.items }))
           : Promise.resolve<CompanyDeviceSnapshot>({ gateways: [], nodes: [] }),
       ]);
 
       setDetail({
-        areas,
-        buildings,
+        areas: areasPage.items,
+        buildings: buildingsPage.items,
         company,
         gateways: devices.gateways.filter((gateway) =>
           gateway.companyAssignments.some((assignment) => assignment.companyId === companyId),
@@ -209,8 +228,8 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
         nodes: devices.nodes.filter((node) =>
           node.companyAssignments.some((assignment) => assignment.companyId === companyId),
         ),
-        roles,
-        users,
+        roles: rolesPage.items,
+        users: usersPage.items,
       });
     } catch (error) {
       await handleApiError(error);
@@ -283,14 +302,37 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     }
   };
 
-  const deactivateCompany = async () => {
+  const updateCompanyStatus = async () => {
     if (!session || !detail.company) return;
     setIsSaving(true);
+    setLifecycleError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${detail.company.id}`, { method: "DELETE" });
+      await apiRequest(session, `/admin/companies/${detail.company.id}/status`, {
+        body: JSON.stringify({
+          status: detail.company.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+        }),
+        method: "PATCH",
+      });
       await load();
+      setLifecycleConfirmOpen(false);
     } catch (error) {
-      await handleApiError(error);
+      setLifecycleError(error instanceof ApiError ? error.message : t("common.errorDescription"));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const permanentlyDeleteCompany = async () => {
+    if (!session || !detail.company) return;
+    setIsSaving(true);
+    setLifecycleError(undefined);
+    try {
+      await apiRequest(session, `/admin/companies/${detail.company.id}/permanent`, {
+        method: "DELETE",
+      });
+      void navigate("/admin/companies", { replace: true });
+    } catch (error) {
+      setLifecycleError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
       setIsSaving(false);
     }
@@ -429,87 +471,122 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
           </Can>
         }
         overflowAction={
-          <Can permission="companies.delete">
+          hasPermission(session, "companies.update") ||
+          hasPermission(session, "companies.delete") ? (
             <EntityActionMenu
               ariaLabel={`${t("common.moreActions")}: ${detail.company.name}`}
               items={[
-                {
-                  color: "red",
-                  destructive: true,
-                  icon: <IconPlayerPause size={16} />,
-                  key: "deactivate",
-                  label: t("organizations.deactivate"),
-                  onClick: () => setDeactivateConfirmOpen(true),
-                },
+                ...(hasPermission(session, "companies.update")
+                  ? [
+                      {
+                        icon:
+                          detail.company.status === "ACTIVE" ? (
+                            <IconPlayerPause size={16} />
+                          ) : (
+                            <IconPlayerPlay size={16} />
+                          ),
+                        key: "status",
+                        label: t(
+                          detail.company.status === "ACTIVE"
+                            ? "organizations.deactivate"
+                            : "organizations.activate",
+                        ),
+                        onClick: () => setLifecycleConfirmOpen(true),
+                      },
+                    ]
+                  : []),
+                ...(hasPermission(session, "companies.delete")
+                  ? [
+                      {
+                        color: "red" as const,
+                        destructive: true,
+                        disabled: !detail.company.deletion?.allowed,
+                        disabledReason: detail.company.deletion?.blocker ?? undefined,
+                        icon: <IconTrash size={16} />,
+                        key: "delete",
+                        label: t("organizations.deleteCompany"),
+                        onClick: () => setDeleteConfirmOpen(true),
+                      },
+                    ]
+                  : []),
               ]}
             />
-          </Can>
+          ) : null
         }
       />
-      <ContextSectionLayout
-        navigation={
-          <ContextSectionNav>
-            <NavLink
-              active={section === "overview"}
-              component={Link}
-              label={t("organizations.overview")}
-              to={routeBase}
-            />
-            <NavLink
-              active={section === "sites"}
-              component={Link}
-              label={t("organizations.areasTitle")}
-              to={`${routeBase}/sites`}
-            />
-            <NavLink
-              active={section === "buildings"}
-              component={Link}
-              label={t("organizations.buildingsTitle")}
-              to={`${routeBase}/buildings`}
-            />
-            <NavLink
-              active={section === "users"}
-              component={Link}
-              label={t("management.usersTitle")}
-              to={`${routeBase}/users`}
-            />
-            <NavLink
-              active={section === "devices"}
-              component={Link}
-              label={t("devices.companyDevicesTitle")}
-              to={`${routeBase}/devices`}
-            />
-          </ContextSectionNav>
+      {lifecycleError ? <Alert color="red">{lifecycleError}</Alert> : null}
+      <WorkspaceTabs
+        ariaLabel={t("organizations.companyWorkspaceTabs")}
+        items={[
+          { label: t("organizations.overview"), value: "overview" },
+          ...(canLoadAreas ? [{ label: t("organizations.areasTitle"), value: "sites" }] : []),
+          ...(canLoadBuildings
+            ? [{ label: t("organizations.buildingsTitle"), value: "buildings" }]
+            : []),
+          ...(canLoadUsers ? [{ label: t("management.usersTitle"), value: "users" }] : []),
+          ...(canViewDevicesTab
+            ? [{ label: t("devices.companyDevicesTitle"), value: "devices" }]
+            : []),
+        ]}
+        onChange={(value) =>
+          void navigate(value === "overview" ? routeBase : `${routeBase}/${value}`)
         }
-      >
-        <Stack gap="md">
-          <Outlet
-            context={
-              {
-                canLoadAreas,
-                canLoadBuildings,
-                canLoadDevices,
-                canLoadUsers,
-                detail,
-                onCreateArea: () => setModal("area"),
-                onCreateBuilding: () => setModal("building"),
-                onCreateUser: () => setModal("user"),
-              } satisfies AdminCompanyWorkspaceContext
-            }
-          />
-        </Stack>
-      </ContextSectionLayout>
+        value={section}
+      />
+      <Stack gap="md">
+        <Outlet
+          context={
+            {
+              canLoadAreas,
+              canLoadBuildings,
+              canLoadDevices,
+              canLoadUsers,
+              detail,
+              onCreateArea: () => setModal("area"),
+              onCreateBuilding: () => setModal("building"),
+              onCreateUser: () => setModal("user"),
+            } satisfies AdminCompanyWorkspaceContext
+          }
+        />
+      </Stack>
 
       <ConfirmActionModal
         cancelLabel={t("common.cancel")}
-        confirmLabel={t("organizations.confirmDeactivateCompany")}
-        description={t("organizations.confirmDeactivateImpact")}
+        confirmLabel={t(
+          detail.company.status === "ACTIVE"
+            ? "organizations.deactivate"
+            : "organizations.activate",
+        )}
+        description={t(
+          detail.company.status === "ACTIVE"
+            ? "organizations.confirmDeactivateImpact"
+            : "organizations.confirmActivateImpact",
+        )}
         entityName={detail.company.name}
         loading={isSaving}
-        onClose={() => setDeactivateConfirmOpen(false)}
-        onConfirm={() => void deactivateCompany().finally(() => setDeactivateConfirmOpen(false))}
-        opened={deactivateConfirmOpen}
-        title={t("organizations.confirmDeactivateTitle")}
+        onClose={() => {
+          if (!isSaving) setLifecycleConfirmOpen(false);
+        }}
+        onConfirm={() => void updateCompanyStatus()}
+        opened={lifecycleConfirmOpen}
+        title={t(
+          detail.company.status === "ACTIVE"
+            ? "organizations.confirmDeactivateTitle"
+            : "organizations.confirmActivateTitle",
+        )}
+      />
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("organizations.deleteCompany")}
+        description={t("organizations.confirmDeleteCompanyImpact")}
+        entityName={detail.company.name}
+        loading={isSaving}
+        onClose={() => {
+          if (!isSaving) setDeleteConfirmOpen(false);
+        }}
+        onConfirm={() => void permanentlyDeleteCompany()}
+        opened={deleteConfirmOpen}
+        title={t("organizations.confirmDeleteCompanyTitle")}
       />
 
       <Modal
@@ -820,6 +897,7 @@ function BuildingsSection({
   canView: boolean;
   onCreate: () => void;
 }) {
+  const [imageBuilding, setImageBuilding] = useState<BuildingRecord>();
   if (!canView)
     return (
       <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />
@@ -837,6 +915,21 @@ function BuildingsSection({
         <EntityCardGrid>
           {buildings.map((building) => (
             <EntityCard
+              action={
+                <Can permission="building-plans.view">
+                  <EntityActionMenu
+                    ariaLabel={`${t("common.moreActions")}: ${building.title}`}
+                    items={[
+                      {
+                        icon: <IconPhoto size={16} />,
+                        key: "images",
+                        label: t("buildingImages.title"),
+                        onClick: () => setImageBuilding(building),
+                      },
+                    ]}
+                  />
+                </Can>
+              }
               description={building.address ?? building.buildingType ?? undefined}
               eyebrow={t("organizations.buildingsTitle")}
               key={building.id}
@@ -865,6 +958,16 @@ function BuildingsSection({
           title={t("common.emptyTitle")}
         />
       )}
+      <Modal
+        opened={Boolean(imageBuilding)}
+        onClose={() => setImageBuilding(undefined)}
+        size="xl"
+        title={imageBuilding ? `${t("buildingImages.title")} · ${imageBuilding.title}` : ""}
+      >
+        {imageBuilding ? (
+          <BuildingImageManager basePath="/admin" buildingId={imageBuilding.id} />
+        ) : null}
+      </Modal>
     </Stack>
   );
 }
@@ -926,18 +1029,24 @@ function DevicesSection({
   gateways: GatewayRecord[];
   nodes: NodeRecord[];
 }) {
+  const [tab, setTab] = useState<"gateways" | "nodes">("gateways");
   if (!canView)
     return (
       <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />
     );
   return (
-    <Tabs defaultValue="gateways">
-      <Tabs.List>
-        <Tabs.Tab value="gateways">{t("devices.gatewaysTitle")}</Tabs.Tab>
-        <Tabs.Tab value="nodes">{t("devices.nodesTitle")}</Tabs.Tab>
-      </Tabs.List>
-      <Tabs.Panel pt="md" value="gateways">
-        {gateways.length ? (
+    <Stack gap="md">
+      <WorkspaceTabs
+        ariaLabel={t("devices.companyDevicesTitle")}
+        items={[
+          { label: t("devices.gatewaysTitle"), value: "gateways" },
+          { label: t("devices.nodesTitle"), value: "nodes" },
+        ]}
+        onChange={(value) => setTab(value as "gateways" | "nodes")}
+        value={tab}
+      />
+      {tab === "gateways" ? (
+        gateways.length ? (
           <DataTable
             columns={[
               {
@@ -965,35 +1074,32 @@ function DevicesSection({
           />
         ) : (
           <EmptyState description={t("devices.emptyDescription")} title={t("common.emptyTitle")} />
-        )}
-      </Tabs.Panel>
-      <Tabs.Panel pt="md" value="nodes">
-        {nodes.length ? (
-          <DataTable
-            columns={[
-              { key: "number", label: t("devices.nodeNumber"), render: (node) => node.number },
-              {
-                key: "type",
-                label: t("devices.nodeType"),
-                render: (node) => node.nodeType.displayName,
-              },
-              {
-                key: "status",
-                label: t("devices.status"),
-                render: (node) => deviceLifecycleBadge(node.status),
-              },
-              {
-                key: "gateway",
-                label: t("devices.gateway"),
-                render: (node) => node.gatewayAssignments[0]?.gateway.serialNumber ?? "-",
-              },
-            ]}
-            rows={nodes}
-          />
-        ) : (
-          <EmptyState description={t("devices.emptyDescription")} title={t("common.emptyTitle")} />
-        )}
-      </Tabs.Panel>
-    </Tabs>
+        )
+      ) : nodes.length ? (
+        <DataTable
+          columns={[
+            { key: "number", label: t("devices.nodeNumber"), render: (node) => node.number },
+            {
+              key: "type",
+              label: t("devices.nodeType"),
+              render: (node) => node.nodeType.displayName,
+            },
+            {
+              key: "status",
+              label: t("devices.status"),
+              render: (node) => deviceLifecycleBadge(node.status),
+            },
+            {
+              key: "gateway",
+              label: t("devices.gateway"),
+              render: (node) => node.gatewayAssignments[0]?.gateway.serialNumber ?? "-",
+            },
+          ]}
+          rows={nodes}
+        />
+      ) : (
+        <EmptyState description={t("devices.emptyDescription")} title={t("common.emptyTitle")} />
+      )}
+    </Stack>
   );
 }

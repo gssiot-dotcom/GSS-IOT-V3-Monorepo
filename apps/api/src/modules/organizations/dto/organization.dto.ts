@@ -1,14 +1,5 @@
+import { IsEmail, IsEnum, IsOptional, IsString, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
-import {
-  IsArray,
-  IsEmail,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Min,
-  ValidateNested,
-} from "class-validator";
 import { BuildingImageKind, CompanyStatus } from "@prisma/client";
 
 export class InitialPlatformManagerDto {
@@ -75,6 +66,11 @@ export class UpdateCompanyDto {
   @IsOptional()
   @IsEnum(CompanyStatus)
   status?: CompanyStatus;
+}
+
+export class UpdateOrganizationStatusDto {
+  @IsEnum(CompanyStatus)
+  status!: CompanyStatus;
 }
 
 export class CreateAreaDto {
@@ -155,31 +151,7 @@ export class UpdateBuildingDto {
   status?: CompanyStatus;
 }
 
-export class CreateBuildingPlanImageDto {
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  height?: number;
-
+export class UploadBuildingImageDto {
   @IsEnum(BuildingImageKind)
   kind!: BuildingImageKind;
-
-  @IsInt()
-  @Min(0)
-  orderIndex!: number;
-
-  @IsString()
-  storageKey!: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  width?: number;
-}
-
-export class CreateImagesDto {
-  @IsArray()
-  @Type(() => CreateBuildingPlanImageDto)
-  @ValidateNested({ each: true })
-  images!: CreateBuildingPlanImageDto[];
 }

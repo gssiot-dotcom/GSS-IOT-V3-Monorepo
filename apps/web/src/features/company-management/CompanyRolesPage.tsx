@@ -1,9 +1,15 @@
-import type { CompanyPermissionRecord, CompanyRoleRecord } from "@gss-iot/contracts";
+import type {
+  CollectionPageSize,
+  CompanyPermissionRecord,
+  CompanyRoleRecord,
+  PaginatedResponse,
+} from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
+  CollectionPagination,
   DataToolbar,
   ConfirmActionModal,
   EmptyState,
@@ -46,6 +52,9 @@ export function CompanyRolesPage() {
   const [deleteTarget, setDeleteTarget] = useState<CompanyRoleRecord>();
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
 
   const groupedPermissions = useMemo(() => {
     return permissions.reduce<Record<string, CompanyPermissionRecord[]>>((groups, permission) => {
@@ -58,11 +67,16 @@ export function CompanyRolesPage() {
     if (!session) return;
     setError(false);
     try {
-      setRoles(await apiRequest<CompanyRoleRecord[]>(session, "/company/roles"));
+      const response = await apiRequest<PaginatedResponse<CompanyRoleRecord>>(
+        session,
+        `/company/roles?page=${page}&pageSize=${pageSize}`,
+      );
+      setRoles(response.items);
+      setTotal(response.total);
       if (hasPermission(session, "company-permissions.view")) {
         try {
           setPermissions(
-            await apiRequest<CompanyPermissionRecord[]>(session, "/company/permissions"),
+            await apiRequest<CompanyPermissionRecord[]>(session, "/company/permissions/options"),
           );
         } catch {
           setPermissions([]);
@@ -77,7 +91,7 @@ export function CompanyRolesPage() {
 
   useEffect(() => {
     void load();
-  }, [session]);
+  }, [session, page, pageSize]);
 
   const openCreate = () => {
     setEditingRole(null);
@@ -160,10 +174,8 @@ export function CompanyRolesPage() {
             {
               color: "red" as const,
               destructive: true,
-              disabled: Boolean(role._count?.users),
-              disabledReason: role._count?.users
-                ? t("management.roleDeleteBlockedUsers")
-                : undefined,
+              disabled: !role.deletion?.allowed,
+              disabledReason: role.deletion?.blocker ?? undefined,
               icon: <IconTrash size={16} />,
               key: "delete",
               label: t("management.deleteRole"),
@@ -218,6 +230,22 @@ export function CompanyRolesPage() {
       {actionError ? <Text c="red">{actionError}</Text> : null}
       {filteredRoles?.length ? (
         <>
+          <CollectionPagination
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(Number(value) as CollectionPageSize);
+              setPage(1);
+            }}
+            page={page}
+            pageSize={pageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+              to: Math.min(page * pageSize, total),
+              total,
+            })}
+            totalPages={Math.max(1, Math.ceil(total / pageSize))}
+          />
           <DataToolbar>
             <TextInput
               aria-label={t("management.roleName")}

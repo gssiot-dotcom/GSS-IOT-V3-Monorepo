@@ -2,7 +2,6 @@ import {
   ActionIcon,
   AppShell,
   Avatar,
-  Badge,
   Box,
   Burger,
   Divider,
@@ -289,19 +288,17 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
             {context === "company-user" ? (
               <CompanySidebarBrand companyName={session?.user.company?.name ?? shellTitle} />
             ) : (
-              <Group className="gss-shell-brand" gap="sm" px="xs" py="xs" wrap="nowrap">
-                <Avatar color="gss" radius="md" size="md">
-                  G
-                </Avatar>
+              <Stack className="gss-admin-sidebar-brand" gap="xs" px="xs" py="xs">
+                <img alt={t("branding.platformName")} src="/assets/gss-logos/GSS-logo.svg" />
                 <Stack gap={0} style={{ minWidth: 0 }}>
                   <Text fw={800} size="sm">
                     {t("app.name")}
                   </Text>
-                  <Badge color="gss" size="xs" variant="light">
+                  <Text className="gss-admin-sidebar-portal-label" size="xs">
                     {shellTitle}
-                  </Badge>
+                  </Text>
                 </Stack>
-              </Group>
+              </Stack>
             )}
             <Divider />
             {sections.map((section) => (

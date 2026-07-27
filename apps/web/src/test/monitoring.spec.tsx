@@ -13,6 +13,7 @@ import { AdminMonitoringPage } from "../features/monitoring/AdminMonitoringPage"
 import { NodeStateCard } from "../features/monitoring/components/NodeStateCard";
 import { NodeHistoryChart } from "../features/monitoring/components/NodeHistoryChart";
 import { NodeDetailDrawer } from "../features/monitoring/components/NodeDetailDrawer";
+import { hourRange, localDayRange } from "../features/monitoring/components/useNodeHistoryRange";
 import { apiRequest } from "../shared/api/api-client";
 
 vi.mock("../shared/auth/auth-context", () => ({
@@ -51,6 +52,19 @@ vi.mock("socket.io-client", () => ({
 }));
 
 describe("Phase 6 monitoring UI", () => {
+  it("builds exact rolling-hour and local-calendar half-open ranges", () => {
+    const anchor = new Date("2026-07-22T12:00:00.000Z");
+    expect(hourRange(12, anchor)).toEqual({
+      from: "2026-07-22T00:00:00.000Z",
+      to: "2026-07-22T12:00:00.000Z",
+    });
+    const localDay = localDayRange("2026-07-22");
+    expect(localDay).toEqual({
+      from: new Date(2026, 6, 22).toISOString(),
+      to: new Date(2026, 6, 23).toISOString(),
+    });
+    expect(new Date(localDay.to).getTime()).toBeGreaterThan(new Date(localDay.from).getTime());
+  });
   afterEach(() => {
     cleanup();
     window.localStorage.clear();
@@ -128,8 +142,8 @@ describe("Phase 6 monitoring UI", () => {
 
   it("renders compact semantic building entry cards and preserves monitoring navigation", async () => {
     vi.mocked(apiRequest).mockImplementation(async (_session, path) => {
-      if (path !== "/company/buildings") throw new Error(`Unexpected request: ${path}`);
-      return [
+      if (!path.startsWith("/company/buildings?")) throw new Error(`Unexpected request: ${path}`);
+      const items = [
         {
           address: "10 Safety Road",
           areaId: "area-1",
@@ -151,6 +165,7 @@ describe("Phase 6 monitoring UI", () => {
           title: "Warehouse B",
         },
       ];
+      return { items, page: 1, pageSize: 100, total: items.length };
     });
 
     render(
@@ -230,8 +245,19 @@ describe("Phase 6 monitoring UI", () => {
           ],
         };
       }
+      if (path.includes("/history/chart")) {
+        return {
+          from: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+          items: [],
+          returnedPointCount: 0,
+          sampled: false,
+          sampleLimit: 500,
+          to: new Date().toISOString(),
+          totalRawPointCount: 0,
+        };
+      }
       if (path.includes("/history")) {
-        return { items: [], page: 1, pageSize: 25, total: 0 };
+        return { items: [], page: 1, pageSize: 50, total: 0 };
       }
       if (path === "/company/buildings/building-1/alarm-levels") {
         return {
@@ -356,6 +382,54 @@ describe("Phase 6 monitoring UI", () => {
     expect(screen.getByRole("button", { name: "Node 100, Unconfigured" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Node 100, Unconfigured" }));
     expect(await screen.findByText("Node 100 detail")).toBeTruthy();
+    await waitFor(() => {
+      const tableCall = vi
+        .mocked(apiRequest)
+        .mock.calls.find(
+          ([, path]) =>
+            typeof path === "string" && path.includes("/history?") && !path.includes("/chart?"),
+        );
+      expect(tableCall).toBeTruthy();
+      const query = new URL(tableCall![1] as string, "http://local").searchParams;
+      expect(query.get("pageSize")).toBe("50");
+      expect(new Date(query.get("to")!).getTime() - new Date(query.get("from")!).getTime()).toBe(
+        12 * 60 * 60 * 1000,
+      );
+    });
+    for (const hours of [1, 24]) {
+      fireEvent.change(screen.getByLabelText("Hour range"), { target: { value: String(hours) } });
+      await waitFor(() =>
+        expect(
+          vi.mocked(apiRequest).mock.calls.some(([, path]) => {
+            if (typeof path !== "string" || !path.includes("/history?")) return false;
+            const query = new URL(path, "http://local").searchParams;
+            return (
+              new Date(query.get("to")!).getTime() - new Date(query.get("from")!).getTime() ===
+              hours * 60 * 60 * 1000
+            );
+          }),
+        ).toBe(true),
+      );
+    }
+    fireEvent.click(screen.getByText("Day"));
+    const dateInput = await screen.findByLabelText("History date");
+    const today = new Date();
+    expect(dateInput.getAttribute("max")).toBe(
+      `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`,
+    );
+    fireEvent.change(dateInput, {
+      target: { value: "2026-07-20" },
+    });
+    const selectedDay = localDayRange("2026-07-20");
+    await waitFor(() =>
+      expect(
+        vi.mocked(apiRequest).mock.calls.some(([, path]) => {
+          if (typeof path !== "string" || !path.includes("/history?")) return false;
+          const query = new URL(path, "http://local").searchParams;
+          return query.get("from") === selectedDay.from && query.get("to") === selectedDay.to;
+        }),
+      ).toBe(true),
+    );
     expect(screen.queryByRole("button", { name: /fault filter/i })).toBeNull();
     fireEvent.click(screen.getByText("Alarm levels"));
     await waitFor(() => expect(screen.getAllByText("0300").length).toBeGreaterThan(0));
@@ -522,6 +596,16 @@ describe("Phase 6 monitoring UI", () => {
     render(
       <MantineProvider theme={gssTheme}>
         <NodeDetailDrawer
+          chart={{
+            from: "2026-07-21T13:02:03.000Z",
+            items: [],
+            returnedPointCount: 0,
+            sampled: false,
+            sampleLimit: 500,
+            to: now,
+            totalRawPointCount: 0,
+          }}
+          date="2026-07-22"
           history={{
             items: [
               {
@@ -576,7 +660,15 @@ describe("Phase 6 monitoring UI", () => {
             values: { angleX: 2.4, angleY: -1.1 },
           }}
           nodeType="angle_node"
+          hours={12}
+          loadingHistory={false}
+          maxDate="2026-07-22"
+          mode="HOUR"
           onClose={vi.fn()}
+          onDateChange={vi.fn()}
+          onHoursChange={vi.fn()}
+          onModeChange={vi.fn()}
+          range={{ from: "2026-07-21T13:02:03.000Z", to: now }}
         />
       </MantineProvider>,
     );

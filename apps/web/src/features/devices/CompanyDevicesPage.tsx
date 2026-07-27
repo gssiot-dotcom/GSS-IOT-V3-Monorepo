@@ -1,5 +1,6 @@
-import type { CompanyDeviceSnapshot } from "@gss-iot/contracts";
+import type { CollectionPageSize, CompanyDeviceInventoryResponse } from "@gss-iot/contracts";
 import {
+  CollectionPagination,
   DataTable,
   DataToolbar,
   EmptyState,
@@ -7,11 +8,12 @@ import {
   EntityPrimaryCell,
   LoadingState,
   PageHeader,
+  WorkspaceTabs,
 } from "@gss-iot/ui";
-import { Stack, Tabs, Text, TextInput } from "@mantine/core";
+import { Stack, Text, TextInput } from "@mantine/core";
 import { useEffect, useMemo, useState } from "react";
 
-import { t } from "../../app/i18n";
+import { t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
@@ -23,22 +25,33 @@ import {
 
 export function CompanyDevicesPage() {
   const { session } = useAuth();
-  const [snapshot, setSnapshot] = useState<CompanyDeviceSnapshot>();
+  const [snapshot, setSnapshot] = useState<CompanyDeviceInventoryResponse>();
   const [error, setError] = useState(false);
   const [gatewaySearch, setGatewaySearch] = useState("");
   const [nodeSearch, setNodeSearch] = useState("");
+  const [tab, setTab] = useState<"gateways" | "nodes">("gateways");
+  const [gatewayPage, setGatewayPage] = useState(1);
+  const [nodePage, setNodePage] = useState(1);
+  const [gatewayPageSize, setGatewayPageSize] = useState<CollectionPageSize>(50);
+  const [nodePageSize, setNodePageSize] = useState<CollectionPageSize>(50);
 
   useEffect(() => {
     if (!session) return;
     setError(false);
-    void apiRequest<CompanyDeviceSnapshot>(session, "/company/devices")
+    const params = new URLSearchParams({
+      gatewayPage: String(gatewayPage),
+      gatewayPageSize: String(gatewayPageSize),
+      nodePage: String(nodePage),
+      nodePageSize: String(nodePageSize),
+    });
+    void apiRequest<CompanyDeviceInventoryResponse>(session, `/company/devices?${params}`)
       .then(setSnapshot)
       .catch(() => setError(true));
-  }, [session]);
+  }, [gatewayPage, gatewayPageSize, nodePage, nodePageSize, session]);
 
   const gateways = useMemo(() => {
     const query = gatewaySearch.trim().toLowerCase();
-    return (snapshot?.gateways ?? []).filter((gateway) => {
+    return (snapshot?.gateways.items ?? []).filter((gateway) => {
       if (!query) return true;
       return [
         gateway.serialNumber,
@@ -46,10 +59,10 @@ export function CompanyDevicesPage() {
         gateway.buildingAssignments[0]?.building.title,
       ].some((value) => value?.toLowerCase().includes(query));
     });
-  }, [gatewaySearch, snapshot?.gateways]);
+  }, [gatewaySearch, snapshot?.gateways.items]);
   const nodes = useMemo(() => {
     const query = nodeSearch.trim().toLowerCase();
-    return (snapshot?.nodes ?? []).filter((node) => {
+    return (snapshot?.nodes.items ?? []).filter((node) => {
       if (!query) return true;
       return [
         node.number,
@@ -57,7 +70,7 @@ export function CompanyDevicesPage() {
         node.gatewayAssignments[0]?.gateway.serialNumber,
       ].some((value) => value?.toLowerCase().includes(query));
     });
-  }, [nodeSearch, snapshot?.nodes]);
+  }, [nodeSearch, snapshot?.nodes.items]);
 
   if (error)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
@@ -69,12 +82,33 @@ export function CompanyDevicesPage() {
         title={t("devices.companyDevicesTitle")}
         subtitle={t("devices.companyDevicesSubtitle")}
       />
-      <Tabs defaultValue="gateways">
-        <Tabs.List>
-          <Tabs.Tab value="gateways">{t("devices.gatewaysTitle")}</Tabs.Tab>
-          <Tabs.Tab value="nodes">{t("devices.nodesTitle")}</Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel pt="md" value="gateways">
+      <WorkspaceTabs
+        ariaLabel={t("devices.companyDevicesTitle")}
+        items={[
+          { label: t("devices.gatewaysTitle"), value: "gateways" },
+          { label: t("devices.nodesTitle"), value: "nodes" },
+        ]}
+        onChange={(value) => setTab(value as "gateways" | "nodes")}
+        value={tab}
+      />
+      {tab === "gateways" ? (
+        <Stack gap="sm">
+          <CollectionPagination
+            onPageChange={setGatewayPage}
+            onPageSizeChange={(value) => {
+              setGatewayPageSize(Number(value) as CollectionPageSize);
+              setGatewayPage(1);
+            }}
+            page={gatewayPage}
+            pageSize={gatewayPageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: snapshot.gateways.total === 0 ? 0 : (gatewayPage - 1) * gatewayPageSize + 1,
+              to: Math.min(gatewayPage * gatewayPageSize, snapshot.gateways.total),
+              total: snapshot.gateways.total,
+            })}
+            totalPages={Math.max(1, Math.ceil(snapshot.gateways.total / gatewayPageSize))}
+          />
           <DataToolbar>
             <TextInput
               aria-label={t("devices.searchGateways")}
@@ -83,7 +117,7 @@ export function CompanyDevicesPage() {
               value={gatewaySearch}
             />
             <Text c="dimmed" size="sm">
-              {gateways.length} / {snapshot.gateways.length}
+              {gateways.length} / {snapshot.gateways.total}
             </Text>
           </DataToolbar>
           {gateways.length ? (
@@ -133,8 +167,25 @@ export function CompanyDevicesPage() {
               title={t("common.emptyTitle")}
             />
           )}
-        </Tabs.Panel>
-        <Tabs.Panel pt="md" value="nodes">
+        </Stack>
+      ) : (
+        <Stack gap="sm">
+          <CollectionPagination
+            onPageChange={setNodePage}
+            onPageSizeChange={(value) => {
+              setNodePageSize(Number(value) as CollectionPageSize);
+              setNodePage(1);
+            }}
+            page={nodePage}
+            pageSize={nodePageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: snapshot.nodes.total === 0 ? 0 : (nodePage - 1) * nodePageSize + 1,
+              to: Math.min(nodePage * nodePageSize, snapshot.nodes.total),
+              total: snapshot.nodes.total,
+            })}
+            totalPages={Math.max(1, Math.ceil(snapshot.nodes.total / nodePageSize))}
+          />
           <DataToolbar>
             <TextInput
               aria-label={t("devices.searchNodes")}
@@ -143,7 +194,7 @@ export function CompanyDevicesPage() {
               value={nodeSearch}
             />
             <Text c="dimmed" size="sm">
-              {nodes.length} / {snapshot.nodes.length}
+              {nodes.length} / {snapshot.nodes.total}
             </Text>
           </DataToolbar>
           {nodes.length ? (
@@ -190,8 +241,8 @@ export function CompanyDevicesPage() {
               title={t("common.emptyTitle")}
             />
           )}
-        </Tabs.Panel>
-      </Tabs>
+        </Stack>
+      )}
     </Stack>
   );
 }

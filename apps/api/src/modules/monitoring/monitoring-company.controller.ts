@@ -5,7 +5,7 @@ import { CompanyEndpoint } from "../../common/decorators/company-endpoint.decora
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
 import { RequireBuildingScope } from "../../common/decorators/require-scope.decorator";
-import { SensorHistoryQueryDto } from "./dto/monitoring.dto";
+import { SensorHistoryChartQueryDto, SensorHistoryQueryDto } from "./dto/monitoring.dto";
 import { MonitoringService } from "./monitoring.service";
 
 @CompanyEndpoint()
@@ -46,5 +46,25 @@ export class MonitoringCompanyController {
     query: SensorHistoryQueryDto,
   ) {
     return this.monitoring.listNodeHistory(auth!.principal, buildingId, nodeType, nodeId, query);
+  }
+
+  @RequirePermissions("monitoring.view")
+  @RequireBuildingScope("buildingId")
+  @Get(":nodeType/nodes/:nodeId/history/chart")
+  getNodeHistoryChart(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("buildingId") buildingId: string,
+    @Param("nodeId") nodeId: string,
+    @Param("nodeType") nodeType: string,
+    @Query(new ValidationPipe({ expectedType: SensorHistoryChartQueryDto, transform: true }))
+    query: SensorHistoryChartQueryDto,
+  ) {
+    return this.monitoring.getNodeHistoryChart(
+      auth!.principal,
+      buildingId,
+      nodeType,
+      nodeId,
+      query,
+    );
   }
 }

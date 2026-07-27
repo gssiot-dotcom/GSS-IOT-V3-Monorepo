@@ -1,20 +1,29 @@
 import { Transform } from "class-transformer";
-import { IsInt, IsOptional, IsUUID, Max, Min } from "class-validator";
+import { IsIn, IsInt, IsISO8601, IsOptional, IsUUID, Min } from "class-validator";
 
-export class SensorHistoryQueryDto {
-  @IsInt()
-  @IsOptional()
-  @Min(1)
-  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
-  page?: number;
+export class SensorHistoryRangeQueryDto {
+  @IsISO8601({ strict: true })
+  from!: string;
 
-  @IsInt()
-  @IsOptional()
-  @Max(100)
-  @Min(1)
-  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
-  pageSize?: number;
+  @IsISO8601({ strict: true })
+  to!: string;
 }
+
+export class SensorHistoryQueryDto extends SensorHistoryRangeQueryDto {
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  page = 1;
+
+  @IsInt()
+  @IsOptional()
+  @IsIn([50, 100])
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  pageSize: 50 | 100 = 50;
+}
+
+export class SensorHistoryChartQueryDto extends SensorHistoryRangeQueryDto {}
 
 export class AdminMonitoringQueryDto {
   @IsOptional()

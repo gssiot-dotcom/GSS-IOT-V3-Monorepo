@@ -81,6 +81,23 @@ function renderApp(
       if (url.href === `${apiBaseUrl}/auth/${context === "gss-admin" ? "gss" : "company"}/me`) {
         return jsonResponse(session);
       }
+      if (url.pathname === "/company/devices") {
+        return jsonResponse({
+          gateways: { items: [], page: 1, pageSize: 100, total: 0 },
+          nodes: { items: [], page: 1, pageSize: 100, total: 0 },
+        });
+      }
+      if (
+        [
+          "/admin/companies",
+          "/admin/devices/gateways",
+          "/admin/devices/nodes",
+          "/company/areas",
+          "/company/buildings",
+        ].includes(url.pathname)
+      ) {
+        return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
+      }
       return handler(url, init) ?? jsonResponse({});
     }),
   );
@@ -251,6 +268,7 @@ describe("reports job lifecycle and endpoints", () => {
     await vi.waitFor(() => expect(requests).toBe(1));
     await vi.advanceTimersByTimeAsync(2_000);
     await vi.waitFor(() => expect(requests).toBe(2));
+    await vi.waitFor(() => expect(screen.getAllByText("Completed").length).toBeGreaterThan(0));
     await vi.advanceTimersByTimeAsync(4_000);
     expect(requests).toBe(2);
     vi.useRealTimers();

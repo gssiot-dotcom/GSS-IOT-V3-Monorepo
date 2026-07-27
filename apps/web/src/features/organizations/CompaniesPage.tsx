@@ -1,9 +1,10 @@
-import type { CompanyRecord } from "@gss-iot/contracts";
+import type { CollectionPageSize, CompanyRecord, PaginatedResponse } from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
+  CollectionPagination,
   DataToolbar,
   DataViewToggle,
   EmptyState,
@@ -24,7 +25,7 @@ import { IconArrowUpRight } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { t } from "../../app/i18n";
+import { t, tf } from "../../app/i18n";
 
 export function CompaniesPage() {
   const { session } = useAuth();
@@ -39,12 +40,20 @@ export function CompaniesPage() {
   const [formError, setFormError] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
   const [view, setView] = useState("cards");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
 
   const load = async () => {
     if (!session) return;
     setError(false);
     try {
-      setCompanies(await apiRequest<CompanyRecord[]>(session, "/admin/companies"));
+      const response = await apiRequest<PaginatedResponse<CompanyRecord>>(
+        session,
+        `/admin/companies?page=${page}&pageSize=${pageSize}`,
+      );
+      setCompanies(response.items);
+      setTotal(response.total);
     } catch {
       setError(true);
     }
@@ -52,7 +61,7 @@ export function CompaniesPage() {
 
   useEffect(() => {
     void load();
-  }, [session]);
+  }, [session, page, pageSize]);
 
   const create = async () => {
     if (!session) return;
@@ -112,9 +121,25 @@ export function CompaniesPage() {
       />
       {companies?.length ? (
         <Stack gap="md">
+          <CollectionPagination
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(Number(value) as CollectionPageSize);
+              setPage(1);
+            }}
+            page={page}
+            pageSize={pageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+              to: Math.min(page * pageSize, total),
+              total,
+            })}
+            totalPages={Math.max(1, Math.ceil(total / pageSize))}
+          />
           <DataToolbar>
             <Text c="dimmed" size="sm">
-              {companies.length} {t("organizations.companiesTitle")}
+              {total} {t("organizations.companiesTitle")}
             </Text>
             <DataViewToggle
               data={[

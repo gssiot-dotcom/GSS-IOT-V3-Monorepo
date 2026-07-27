@@ -304,8 +304,8 @@ the overall redesign release-ready. Do not start a Wave 5.
       mutation endpoint.
 - [x] Add focused web/API denial, scope-leak, inactive-session, search,
       read-only, tooltip, responsive and visual coverage.
-- [ ] Resolve the pre-existing aggregate web E2E dark shared-surface helper
-      timeout before declaring the overall redesign release-ready.
+- [x] Resolve the pre-existing dark shared-surface helper with the current overflow-menu
+      interaction and paginated visual fixtures; the bounded focused test passes.
 
 No Wave 5 or Phase 14 work is authorized by this correction.
 
@@ -324,7 +324,45 @@ No Wave 5 or Phase 14 work is authorized by this correction.
 - [x] Add provider, authorization, malformed/SVG, cache/ETag, object-URL and responsive light/dark
       coverage.
 - [ ] Provision and verify production private S3 credentials/bucket through the deployment process.
-- [ ] Resolve the pre-existing aggregate web E2E dark shared-surface helper timeout before an
-      overall redesign release-ready claim.
+- [x] Resolve the pre-existing dark shared-surface helper timeout with current fixture contracts
+      and overflow-menu interaction coverage.
 
 No Prisma migration, Wave 5 or Phase 14 start is part of this slice.
+
+## Lifecycle/deletion/pagination correction
+
+- [x] Replace generated platform marks with the exact supplied blue/white SVG assets.
+- [x] Guard shared table/card navigation from SVG and keyboard action-menu activation.
+- [x] Convert Company Detail and related operational tab groups to `WorkspaceTabs`.
+- [x] Separate reciprocal lifecycle status endpoints from permanent deletion permissions.
+- [x] Add pristine deletion capabilities and Alarm Event/Notification evidence archive.
+- [x] Add Gateway/Node reciprocal unassignment with transactional history/audit rules.
+- [x] Move GSS Role actions into the protected overflow menu.
+- [x] Add the shared 50/100 pagination DTO, contracts, indexes, header UI and collection consumers.
+- [x] Add lifecycle/deletion/pagination architecture and rollback documentation.
+- [x] Pass lint, typecheck, unit, build, API E2E and bounded Playwright visual/browser verification.
+- [ ] Provision production storage/database backups before applying the forward migration.
+
+Phase 14 remains not started.
+
+## Post-lifecycle regression and building media correction
+
+- [x] Apply the existing lifecycle migration to development and E2E schemas and verify no pending
+      migrations.
+- [x] Verify Alarm, Notification and unread-count lists for Admin and Company and keep database
+      failures observable without leaking raw details.
+- [x] Keep public collection pagination at 50/100 and make Dashboard slice five jobs from a 50-row
+      response.
+- [x] Add shared private-asset memory/local/S3 providers and real PLAN/REAL multipart upload,
+      authenticated display and durable audited deletion/retry.
+- [x] Enforce four PLAN/four REAL, strict PNG/JPEG/WebP validation, Company scope and building
+      deletion blockers.
+- [x] Add Hour/Day half-open Node history ranges, 50/100 table pagination and bounded deterministic
+      chart sampling metadata for Admin and Company.
+- [x] Widen the Alarm Rule modal and replace hidden/inconsistent overflow bars with the shared
+      light/dark scrollbar contract.
+- [x] Add focused storage, API, migration-schema, scope, range and UI regression coverage.
+- [ ] Provision and verify the production S3 bucket/credentials and production database/object
+      backups during Phase 14 deployment work.
+
+Phase 14 remains not started by this correction.

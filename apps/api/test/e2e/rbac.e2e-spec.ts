@@ -89,6 +89,7 @@ describe("RBAC e2e", () => {
     await prisma.companyRolePermission.deleteMany();
     await prisma.companyUser.deleteMany();
     await prisma.companyRole.deleteMany();
+    await prisma.buildingPlanImage.deleteMany();
     await prisma.constructionBuilding.deleteMany();
     await prisma.constructionArea.deleteMany();
     await prisma.company.deleteMany();
@@ -473,17 +474,17 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .expect(200);
     expect(
-      adminCatalog.body.some(
+      adminCatalog.body.items.some(
         (permission: { key: string }) => permission.key === "catalog-gss-only.view",
       ),
     ).toBe(true);
     expect(
-      adminCatalog.body.some(
+      adminCatalog.body.items.some(
         (permission: { key: string }) => permission.key === "catalog-company-only.view",
       ),
     ).toBe(false);
     expect(
-      adminCatalog.body.every(
+      adminCatalog.body.items.every(
         (permission: Record<string, unknown>) =>
           ["id", "key", "module", "action", "scopeType", "description"].every(
             (field) => permission[field] !== undefined && permission[field] !== null,
@@ -496,17 +497,17 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${companyToken}`)
       .expect(200);
     expect(
-      companyCatalog.body.some(
+      companyCatalog.body.items.some(
         (permission: { key: string }) => permission.key === "catalog-company-only.view",
       ),
     ).toBe(true);
     expect(
-      companyCatalog.body.some(
+      companyCatalog.body.items.some(
         (permission: { key: string }) => permission.key === "catalog-gss-only.view",
       ),
     ).toBe(false);
     expect(
-      companyCatalog.body.every((permission: { description: string | null }) =>
+      companyCatalog.body.items.every((permission: { description: string | null }) =>
         Boolean(permission.description?.trim()),
       ),
     ).toBe(true);
@@ -548,7 +549,7 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .expect(200);
     expect(
-      roles.body.some((role: { key: string; isSuperAdmin: boolean }) => role.isSuperAdmin),
+      roles.body.items.some((role: { key: string; isSuperAdmin: boolean }) => role.isSuperAdmin),
     ).toBe(true);
 
     const permissions = await request(server)
@@ -591,13 +592,13 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .expect(200);
 
-    const superRole = roles.body.find((role: { isSuperAdmin: boolean }) => role.isSuperAdmin);
+    const superRole = roles.body.items.find((role: { isSuperAdmin: boolean }) => role.isSuperAdmin);
     await request(server)
       .patch(`/admin/roles/${superRole.id}`)
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ name: "Unsafe rename" })
       .expect(409);
-    const inUseRole = roles.body.find((role: { key: string }) => role.key === "none");
+    const inUseRole = roles.body.items.find((role: { key: string }) => role.key === "none");
     await request(server)
       .delete(`/admin/roles/${inUseRole.id}`)
       .set("Authorization", `Bearer ${adminToken}`)
@@ -852,16 +853,16 @@ describe("RBAC e2e", () => {
       .get(`/admin/companies/${firstCompany.body.company.id}/roles`)
       .set("Authorization", `Bearer ${gssToken}`)
       .expect(200);
-    expect(firstCompanyRoles.body.map((role: { key: string }) => role.key).sort()).toEqual(
+    expect(firstCompanyRoles.body.items.map((role: { key: string }) => role.key).sort()).toEqual(
       [...DEFAULT_COMPANY_ROLE_KEYS].sort(),
     );
     expect(
-      firstCompanyRoles.body.every((role: { companyId: string; isSystem: boolean }) => {
+      firstCompanyRoles.body.items.every((role: { companyId: string; isSystem: boolean }) => {
         return role.companyId === firstCompany.body.company.id && role.isSystem;
       }),
     ).toBe(true);
     expect(
-      firstCompanyRoles.body.find((role: { key: string }) => role.key === "platform_manager")
+      firstCompanyRoles.body.items.find((role: { key: string }) => role.key === "platform_manager")
         .isCompanyOwnerRole,
     ).toBe(true);
 
@@ -877,7 +878,7 @@ describe("RBAC e2e", () => {
       .get(`/admin/companies/${legacyCompany.id}/roles`)
       .set("Authorization", `Bearer ${gssToken}`)
       .expect(200);
-    expect(backfilledRoles.body.map((role: { key: string }) => role.key).sort()).toEqual(
+    expect(backfilledRoles.body.items.map((role: { key: string }) => role.key).sort()).toEqual(
       [...DEFAULT_COMPANY_ROLE_KEYS].sort(),
     );
     expect(
@@ -992,7 +993,7 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${managerToken}`)
       .expect(200);
     const permissionByKey = new Map(
-      (permissions.body as Array<{ id: string; key: string }>).map((permission) => [
+      (permissions.body.items as Array<{ id: string; key: string }>).map((permission) => [
         permission.key,
         permission.id,
       ]),
@@ -1108,7 +1109,7 @@ describe("RBAC e2e", () => {
       .get("/company/roles")
       .set("Authorization", `Bearer ${managerToken}`)
       .expect(200);
-    const noPermissionRole = (companyRoles.body as Array<{ id: string; key: string }>).find(
+    const noPermissionRole = (companyRoles.body.items as Array<{ id: string; key: string }>).find(
       (role) => role.key === "no_permission",
     )!;
     await request(server)
@@ -1187,7 +1188,7 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${managerToken}`)
       .expect(200);
     const permissionByKey = new Map(
-      (permissions.body as Array<{ id: string; key: string }>).map((permission) => [
+      (permissions.body.items as Array<{ id: string; key: string }>).map((permission) => [
         permission.key,
         permission.id,
       ]),
@@ -1296,7 +1297,7 @@ describe("RBAC e2e", () => {
       .get("/company/roles")
       .set("Authorization", `Bearer ${managerToken}`)
       .expect(200);
-    const siteManagerRole = (companyRoles.body as Array<{ id: string; key: string }>).find(
+    const siteManagerRole = (companyRoles.body.items as Array<{ id: string; key: string }>).find(
       (role) => role.key === "site_manager",
     )!;
     await request(server)
@@ -1346,7 +1347,7 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${noScopeToken}`)
       .expect(403);
 
-    const noPermissionRole = (companyRoles.body as Array<{ id: string; key: string }>).find(
+    const noPermissionRole = (companyRoles.body.items as Array<{ id: string; key: string }>).find(
       (role) => role.key === "no_permission",
     )!;
     await request(server)

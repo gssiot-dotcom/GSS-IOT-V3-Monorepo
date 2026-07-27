@@ -176,9 +176,9 @@ export function DesignSystemDemoPage() {
           rows={entityRows}
         />
         <TablePaginationFooter
-          pageSize="10"
+          pageSize={50}
           pageSizeLabel={t("table.pageSize")}
-          rangeLabel={t("table.range")}
+          rangeLabel={tf("table.range", { from: 1, to: 3, total: 3 })}
         />
       </SectionPanel>
 

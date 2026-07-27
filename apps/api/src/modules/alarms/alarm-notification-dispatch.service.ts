@@ -459,6 +459,7 @@ export class AlarmNotificationDispatchService implements OnModuleInit {
   private async unreadCount(userId: string): Promise<number> {
     return this.prisma.alarmNotification.count({
       where: {
+        deletedAt: null,
         readAt: null,
         recipientUserId: userId,
         status: AlarmNotificationStatus.SENT,

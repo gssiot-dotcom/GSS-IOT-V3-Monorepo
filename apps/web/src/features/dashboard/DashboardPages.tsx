@@ -58,8 +58,8 @@ export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/comp
       setLoading(false);
       return;
     }
-    void apiRequest<{ items: ReportJobRecord[] }>(session, `${basePath}/reports?page=1&pageSize=5`)
-      .then((response) => setJobs(response.items))
+    void apiRequest<{ items: ReportJobRecord[] }>(session, `${basePath}/reports?page=1&pageSize=50`)
+      .then((response) => setJobs(response.items.slice(0, 5)))
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [basePath, session]);

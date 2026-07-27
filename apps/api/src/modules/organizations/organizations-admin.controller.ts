@@ -3,14 +3,21 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Inject,
   Param,
   Patch,
   Post,
+  Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
   ValidationPipe,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 
 import type { AuthenticatedRequest } from "../../common/auth.types";
+import { PaginationQueryDto } from "../../common/dto/pagination.dto";
 import { AdminEndpoint } from "../../common/decorators/admin-endpoint.decorator";
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
@@ -18,22 +25,40 @@ import {
   CreateAreaDto,
   CreateBuildingDto,
   CreateCompanyDto,
-  CreateImagesDto,
+  UploadBuildingImageDto,
   UpdateAreaDto,
   UpdateBuildingDto,
   UpdateCompanyDto,
+  UpdateOrganizationStatusDto,
 } from "./dto/organization.dto";
+import {
+  BUILDING_IMAGE_MAX_BYTES,
+  type UploadedBuildingImage,
+  validateBuildingImageFile,
+} from "./building-image-file";
+import { BuildingImagesService } from "./building-images.service";
+import { type BuildingImageResponse, streamBuildingImage } from "./building-image-stream";
 import { OrganizationsService } from "./organizations.service";
+
+const buildingImageUploadInterceptor = FileInterceptor("image", {
+  limits: { fileSize: BUILDING_IMAGE_MAX_BYTES, files: 1 },
+});
 
 @AdminEndpoint()
 @Controller("admin")
 export class OrganizationsAdminController {
-  constructor(@Inject(OrganizationsService) private readonly organizations: OrganizationsService) {}
+  constructor(
+    @Inject(OrganizationsService) private readonly organizations: OrganizationsService,
+    @Inject(BuildingImagesService) private readonly buildingImages: BuildingImagesService,
+  ) {}
 
   @RequirePermissions("companies.view")
   @Get("companies")
-  listCompanies() {
-    return this.organizations.listCompanies();
+  listCompanies(
+    @Query(new ValidationPipe({ expectedType: PaginationQueryDto, transform: true }))
+    query: PaginationQueryDto,
+  ) {
+    return this.organizations.listCompanies(query);
   }
 
   @RequirePermissions("companies.create")
@@ -72,10 +97,34 @@ export class OrganizationsAdminController {
     return this.organizations.deactivateCompany(auth!.principal, companyId);
   }
 
+  @RequirePermissions("companies.update")
+  @Patch("companies/:companyId/status")
+  setCompanyStatus(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("companyId") companyId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateOrganizationStatusDto, transform: true }))
+    dto: UpdateOrganizationStatusDto,
+  ) {
+    return this.organizations.setCompanyStatus(auth!.principal, companyId, dto.status);
+  }
+
+  @RequirePermissions("companies.delete")
+  @Delete("companies/:companyId/permanent")
+  deleteCompanyPermanently(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("companyId") companyId: string,
+  ) {
+    return this.organizations.deleteCompanyPermanently(auth!.principal, companyId);
+  }
+
   @RequirePermissions("areas.view")
   @Get("companies/:companyId/areas")
-  listAreas(@Param("companyId") companyId: string) {
-    return this.organizations.listAdminAreas(companyId);
+  listAreas(
+    @Param("companyId") companyId: string,
+    @Query(new ValidationPipe({ expectedType: PaginationQueryDto, transform: true }))
+    query: PaginationQueryDto,
+  ) {
+    return this.organizations.listAdminAreas(companyId, query);
   }
 
   @RequirePermissions("areas.create")
@@ -107,10 +156,34 @@ export class OrganizationsAdminController {
     return this.organizations.deactivateArea(auth!.principal, areaId);
   }
 
+  @RequirePermissions("areas.update")
+  @Patch("areas/:areaId/status")
+  setAreaStatus(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("areaId") areaId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateOrganizationStatusDto, transform: true }))
+    dto: UpdateOrganizationStatusDto,
+  ) {
+    return this.organizations.setAreaStatus(auth!.principal, areaId, dto.status);
+  }
+
+  @RequirePermissions("areas.delete")
+  @Delete("areas/:areaId/permanent")
+  deleteAreaPermanently(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("areaId") areaId: string,
+  ) {
+    return this.organizations.deleteAreaPermanently(auth!.principal, areaId);
+  }
+
   @RequirePermissions("buildings.view")
   @Get("companies/:companyId/buildings")
-  listBuildings(@Param("companyId") companyId: string) {
-    return this.organizations.listAdminBuildings(companyId);
+  listBuildings(
+    @Param("companyId") companyId: string,
+    @Query(new ValidationPipe({ expectedType: PaginationQueryDto, transform: true }))
+    query: PaginationQueryDto,
+  ) {
+    return this.organizations.listAdminBuildings(companyId, query);
   }
 
   @RequirePermissions("buildings.create")
@@ -144,23 +217,76 @@ export class OrganizationsAdminController {
     return this.organizations.deactivateBuilding(auth!.principal, buildingId);
   }
 
-  @RequirePermissions("building-plans.manage")
-  @Post("buildings/:buildingId/plan-images")
-  addImages(
+  @RequirePermissions("buildings.update")
+  @Patch("buildings/:buildingId/status")
+  setBuildingStatus(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("buildingId") buildingId: string,
-    @Body(new ValidationPipe({ expectedType: CreateImagesDto, transform: true }))
-    dto: CreateImagesDto,
+    @Body(new ValidationPipe({ expectedType: UpdateOrganizationStatusDto, transform: true }))
+    dto: UpdateOrganizationStatusDto,
   ) {
-    return this.organizations.addBuildingImages(auth!.principal, buildingId, dto.images);
+    return this.organizations.setBuildingStatus(auth!.principal, buildingId, dto.status);
+  }
+
+  @RequirePermissions("buildings.delete")
+  @Delete("buildings/:buildingId/permanent")
+  deleteBuildingPermanently(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("buildingId") buildingId: string,
+  ) {
+    return this.organizations.deleteBuildingPermanently(auth!.principal, buildingId);
+  }
+
+  @RequirePermissions("building-plans.view")
+  @Get("buildings/:buildingId/images")
+  listImages(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("buildingId") buildingId: string,
+  ) {
+    return this.buildingImages.list(auth!.principal, buildingId);
   }
 
   @RequirePermissions("building-plans.manage")
-  @Delete("building-plan-images/:imageId")
+  @Post("buildings/:buildingId/images")
+  @UseInterceptors(buildingImageUploadInterceptor)
+  uploadImage(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("buildingId") buildingId: string,
+    @Body(new ValidationPipe({ expectedType: UploadBuildingImageDto, transform: true }))
+    dto: UploadBuildingImageDto,
+    @UploadedFile() file?: UploadedBuildingImage,
+  ) {
+    return this.buildingImages.upload(
+      auth!.principal,
+      buildingId,
+      dto.kind,
+      validateBuildingImageFile(file),
+    );
+  }
+
+  @RequirePermissions("building-plans.view")
+  @Get("building-images/:imageId/content")
+  async getImageContent(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("imageId") imageId: string,
+    @Headers("if-none-match") ifNoneMatch: string | undefined,
+    @Res({ passthrough: true }) response: BuildingImageResponse,
+  ) {
+    return streamBuildingImage(
+      this.buildingImages,
+      auth!.principal,
+      imageId,
+      ifNoneMatch,
+      response,
+    );
+  }
+
+  @RequirePermissions("building-plans.manage")
+  @Delete("building-images/:imageId")
   deleteImage(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("imageId") imageId: string,
   ) {
-    return this.organizations.deleteBuildingImage(auth!.principal, imageId);
+    return this.buildingImages.requestDelete(auth!.principal, imageId);
   }
 }

@@ -17,11 +17,13 @@ import type { GatewayCommandType, Prisma } from "@prisma/client";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
 import { AUTH_CONTEXT } from "../../common/auth.types";
+import { paginated, pageWindow } from "../../common/dto/pagination.dto";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { GatewayCommandAdapterRegistry } from "./adapters/gateway-command-adapters";
 import type { ParsedGatewayResponse } from "../mqtt/mqtt-payload-parser.service";
 import type {
+  ListGatewayCommandsQueryDto,
   RegisterNodesCommandDto,
   SetAlarmLevelsCommandDto,
   SetFaultFilterCommandDto,
@@ -110,12 +112,21 @@ export class GatewayCommandsService {
     @Inject(GatewayCommandAdapterRegistry) private readonly adapters: GatewayCommandAdapterRegistry,
   ) {}
 
-  listCommands(status?: GatewayCommandStatus, gatewayId?: string) {
-    return this.prisma.gatewayCommand.findMany({
-      orderBy: { createdAt: "desc" },
-      select: gatewayCommandSelect,
-      where: { gatewayId, status },
-    });
+  async listCommands(query: ListGatewayCommandsQueryDto) {
+    const where = {
+      gatewayId: query.gatewayId,
+      status: query.status,
+    } satisfies Prisma.GatewayCommandWhereInput;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.gatewayCommand.findMany({
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        select: gatewayCommandSelect,
+        where,
+        ...pageWindow(query),
+      }),
+      this.prisma.gatewayCommand.count({ where }),
+    ]);
+    return paginated(items, total, query);
   }
 
   async getCommand(commandId: string) {

@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   ValidationPipe,
 } from "@nestjs/common";
 
@@ -14,6 +15,7 @@ import type { AuthenticatedRequest } from "../../common/auth.types";
 import { AdminEndpoint } from "../../common/decorators/admin-endpoint.decorator";
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
+import { PaginationQueryDto, SearchPaginationQueryDto } from "../../common/dto/pagination.dto";
 import { CreateGssRoleDto, UpdateGssRoleDto } from "./dto/gss-role.dto";
 import { GssRoleService } from "./gss-role.service";
 import { SystemSettingsService } from "./system-settings.service";
@@ -28,8 +30,11 @@ export class SettingsAdminController {
 
   @RequirePermissions("admin-roles.view")
   @Get("roles")
-  listRoles() {
-    return this.roles.listRoles();
+  listRoles(
+    @Query(new ValidationPipe({ expectedType: PaginationQueryDto, transform: true }))
+    query: PaginationQueryDto,
+  ) {
+    return this.roles.listRoles(query);
   }
 
   @RequirePermissions("admin-roles.view")
@@ -40,8 +45,11 @@ export class SettingsAdminController {
 
   @RequirePermissions("permissions.view")
   @Get("permissions")
-  listPermissionCatalog() {
-    return this.roles.listPermissions();
+  listPermissionCatalog(
+    @Query(new ValidationPipe({ expectedType: SearchPaginationQueryDto, transform: true }))
+    query: SearchPaginationQueryDto,
+  ) {
+    return this.roles.listPermissionCatalog(query);
   }
 
   @RequirePermissions("admin-roles.manage")

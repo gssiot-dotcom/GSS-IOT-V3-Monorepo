@@ -5,7 +5,14 @@ export {
   LoadingState,
   SessionExpiredState,
 } from "./app-states";
-export { DataTable, TablePaginationFooter, type DataTableColumn } from "./data-table";
+export {
+  CollectionPagination,
+  DataTable,
+  TablePaginationFooter,
+  isInteractiveTarget,
+  type DataTableColumn,
+  type DataTablePagination,
+} from "./data-table";
 export { ConfirmActionModal, ModalFormFooter } from "./modal-primitives";
 export { GssButton, GssIconButton, type GssButtonProps, type GssButtonVariant } from "./button";
 export {
@@ -62,6 +69,7 @@ export {
 } from "./layout-primitives";
 export { PageHeader, type PageHeaderProps } from "./page-header";
 export { GssPlatformBrand, type GssPlatformBrandProps } from "./platform-brand";
+export { WorkspaceTabs, type WorkspaceTabItem } from "./workspace-tabs";
 export {
   RealtimeStatusBadge,
   type RealtimeConnectionState,

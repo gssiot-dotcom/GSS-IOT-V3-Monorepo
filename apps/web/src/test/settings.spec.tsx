@@ -70,7 +70,8 @@ function setupFetch(session: AuthSession) {
     if (url.pathname === `/auth/${session.context === "gss-admin" ? "gss" : "company"}/me`) {
       return new Response(JSON.stringify(session));
     }
-    if (url.pathname === "/admin/roles") return new Response(JSON.stringify([role]));
+    if (url.pathname === "/admin/roles")
+      return new Response(JSON.stringify({ items: [role], page: 1, pageSize: 50, total: 1 }));
     if (url.pathname === "/admin/roles/permissions") {
       return new Response(
         JSON.stringify([
@@ -205,6 +206,9 @@ describe("Task 06 settings pages", () => {
     renderRoute("/company/settings");
     expect(await screen.findByRole("heading", { level: 1, name: "Company settings" })).toBeTruthy();
     expect(await screen.findAllByAltText("Acme Safety logo")).toHaveLength(2);
+    expect(screen.getAllByAltText("Global Smart Solutions")).toHaveLength(2);
+    const logoPlate = document.querySelector(".gss-company-sidebar-logo-plate");
+    expect(logoPlate).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Replace logo" }));
     const input = document.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).toBeTruthy();

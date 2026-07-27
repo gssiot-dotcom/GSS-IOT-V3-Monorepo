@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Param } from "@nestjs/common";
+import { Controller, Get, Inject, Param, Query, ValidationPipe } from "@nestjs/common";
 
 import type { AuthenticatedRequest } from "../../common/auth.types";
 import { CompanyEndpoint } from "../../common/decorators/company-endpoint.decorator";
@@ -9,6 +9,7 @@ import {
   RequireBuildingScope,
 } from "../../common/decorators/require-scope.decorator";
 import { DevicesService } from "./devices.service";
+import { CompanyDeviceInventoryQueryDto } from "./dto/devices.dto";
 
 @CompanyEndpoint()
 @Controller("company")
@@ -17,8 +18,12 @@ export class DevicesCompanyController {
 
   @RequirePermissions("company-devices.view")
   @Get("devices")
-  listCompanyDevices(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
-    return this.devices.listCompanyDevices(auth!.principal.sub);
+  listCompanyDevices(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: CompanyDeviceInventoryQueryDto, transform: true }))
+    query: CompanyDeviceInventoryQueryDto,
+  ) {
+    return this.devices.listCompanyDevices(auth!.principal.sub, query);
   }
 
   @RequirePermissions("company-devices.view")

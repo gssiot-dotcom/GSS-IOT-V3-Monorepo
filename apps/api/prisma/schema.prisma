@@ -33,6 +33,12 @@ enum BuildingImageKind {
   REAL
 }
 
+enum BuildingImageDeletionState {
+  ACTIVE
+  PENDING_DELETE
+  DELETE_FAILED
+}
+
 enum PositionAssignmentStatus {
   ACTIVE
   ENDED
@@ -212,6 +218,8 @@ model GssRole {
   permissions  GssRolePermission[]
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
+
+  @@index([name, id])
 }
 
 model GssAdminUser {
@@ -273,6 +281,8 @@ model Company {
   positions                CompanyPosition[]
   createdAt                DateTime                          @default(now())
   updatedAt                DateTime                          @updatedAt
+
+  @@index([status, name, id])
 }
 
 model ConstructionArea {
@@ -295,6 +305,7 @@ model ConstructionArea {
   updatedAt           DateTime                        @updatedAt
 
   @@unique([companyId, name])
+  @@index([companyId, status, name, id])
 }
 
 model ConstructionBuilding {
@@ -325,6 +336,8 @@ model ConstructionBuilding {
   updatedAt                DateTime                          @updatedAt
 
   @@unique([areaId, title])
+  @@index([companyId, status, title, id])
+  @@index([areaId, status, title, id])
 }
 
 model NodeType {
@@ -368,6 +381,8 @@ model Gateway {
   sensorReadings           SensorReading[]
   createdAt                DateTime                         @default(now())
   updatedAt                DateTime                         @updatedAt
+
+  @@index([status, serialNumber, id])
 }
 
 model Node {
@@ -392,6 +407,8 @@ model Node {
   alarmPolicyTriggers          AlarmPolicyTrigger[]
   createdAt                    DateTime                                 @default(now())
   updatedAt                    DateTime                                 @updatedAt
+
+  @@index([status, number, id])
 }
 
 model CompanyDeviceAssignment {
@@ -482,6 +499,7 @@ model GatewayCommand {
   @@index([gatewayId, status])
   @@index([status, expiresAt])
   @@index([createdAt])
+  @@index([status, createdAt, id])
 }
 
 model BuildingAlarmLevelConfiguration {
@@ -749,6 +767,7 @@ model CompanyRole {
   updatedAt          DateTime                @updatedAt
 
   @@unique([companyId, key])
+  @@index([companyId, name, id])
 }
 
 model CompanyUser {
@@ -772,20 +791,33 @@ model CompanyUser {
   alarmNotifications     AlarmNotification[]
   createdAt              DateTime                        @default(now())
   updatedAt              DateTime                        @updatedAt
+
+  @@index([companyId, isActive, name, id])
 }
 
 model BuildingPlanImage {
-  id         String               @id @default(uuid()) @db.Uuid
-  buildingId String               @db.Uuid
-  building   ConstructionBuilding @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  kind       BuildingImageKind
-  storageKey String
-  orderIndex Int
-  width      Int?
-  height     Int?
-  createdAt  DateTime             @default(now())
+  id                      String                     @id @default(uuid()) @db.Uuid
+  buildingId              String                     @db.Uuid
+  building                ConstructionBuilding       @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  kind                    BuildingImageKind
+  storageKey              String
+  contentType             String?
+  byteSize                Int?
+  orderIndex              Int
+  width                   Int?
+  height                  Int?
+  deletionState           BuildingImageDeletionState @default(ACTIVE)
+  deletionRequestedAt     DateTime?
+  deletionRequestedByType AuditActorType?
+  deletionRequestedById   String?                    @db.Uuid
+  deletionAttemptCount    Int                        @default(0)
+  deletionFailureCode     String?
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
 
   @@unique([buildingId, kind, orderIndex])
+  @@index([buildingId, kind, deletionState, orderIndex])
+  @@index([deletionState, deletionRequestedAt])
 }
 
 model CompanyPosition {
@@ -801,6 +833,7 @@ model CompanyPosition {
   updatedAt              DateTime                        @updatedAt
 
   @@unique([companyId, key])
+  @@index([companyId, isActive, name, id])
 }
 
 model AlarmRule {
@@ -834,6 +867,7 @@ model AlarmRule {
   @@index([companyId, isActive])
   @@index([areaId])
   @@index([nodeTypeId, severity])
+  @@index([companyId, isActive, createdAt, id])
 }
 
 model AlarmRecipientPolicy {
@@ -869,6 +903,7 @@ model AlarmRecipientPolicy {
   @@index([positionId])
   @@index([specificUserId])
   @@index([ruleId, isActive])
+  @@index([ruleId, isActive, createdAt, id])
 }
 
 model AlarmCounterState {
@@ -930,6 +965,9 @@ model AlarmEvent {
   resolutionReason     AlarmResolutionReason?
   evidence             Json?
   assignmentProvenance Json?
+  deletedAt            DateTime?
+  deletedByType        AuditActorType?
+  deletedById          String?                @db.Uuid
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   company              Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
@@ -946,6 +984,8 @@ model AlarmEvent {
   @@index([companyId, status])
   @@index([buildingId, status])
   @@index([openedAt])
+  @@index([companyId, deletedAt, openedAt, id])
+  @@index([buildingId, deletedAt, openedAt, id])
 }
 
 model AlarmPolicyTrigger {
@@ -1009,6 +1049,9 @@ model AlarmNotification {
   readAt              DateTime?
   failureCode         String?
   failureMessage      String?
+  deletedAt           DateTime?
+  deletedByType       AuditActorType?
+  deletedById         String?                 @db.Uuid
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   alarmEvent          AlarmEvent              @relation(fields: [alarmEventId], references: [id], onDelete: Restrict)
@@ -1021,6 +1064,7 @@ model AlarmNotification {
   @@index([alarmEventId])
   @@index([recipientUserId, status, readAt])
   @@index([status, nextAttemptAt])
+  @@index([recipientUserId, deletedAt, createdAt, id])
 }
 
 model AlarmDeliveryLog {
@@ -1103,6 +1147,7 @@ model ReportJob {
   exports         ReportExport[]
 
   @@index([requestedByType, requestedById, createdAt])
+  @@index([requestedByType, requestedById, createdAt, id])
   @@index([companyId, createdAt])
   @@index([reportType, status, createdAt])
   @@index([status, createdAt])

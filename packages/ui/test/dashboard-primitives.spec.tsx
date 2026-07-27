@@ -11,6 +11,7 @@ import {
   EntityPrimaryCell,
   EntityStatusBadge,
   FormSection,
+  isInteractiveTarget,
   PageContainer,
   DashboardKpiCard,
   DashboardSection,
@@ -60,7 +61,26 @@ describe("dashboard primitives", () => {
     const tableChildren = Array.isArray(table.props.children)
       ? table.props.children
       : [table.props.children];
-    expect(tableChildren[0].props["aria-label"]).toBe("Gateway inventory");
+    const scrollContainer = tableChildren.find(Boolean);
+    expect(scrollContainer.props.children.props["aria-label"]).toBe("Gateway inventory");
+  });
+
+  it("treats the dots SVG and menu descendants as row actions for pointer and keyboard guards", () => {
+    const button = document.createElement("button");
+    const dotsSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dotsSvg.append(dot);
+    button.append(dotsSvg);
+
+    const menuItem = document.createElement("div");
+    menuItem.setAttribute("role", "menuitem");
+    const menuIcon = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    menuItem.append(menuIcon);
+
+    expect(isInteractiveTarget(dot)).toBe(true);
+    expect(isInteractiveTarget(menuIcon)).toBe(true);
+    expect(isInteractiveTarget(button, button)).toBe(false);
+    expect(isInteractiveTarget(document.createElement("span"))).toBe(false);
   });
 
   it("exposes reusable redesign primitives without owning domain behavior", () => {

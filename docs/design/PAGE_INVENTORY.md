@@ -79,10 +79,24 @@ Protected-route permission and scope behavior remains a backend/API security con
 
 | Surface                                   | Read behavior                                                                 | Mutation behavior                                                 | States                                                                                          |
 | ----------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| shared Admin/Company header               | platform Activity mark, wordmark and translated route context                 | none                                                              | responsive compact mark; existing right controls preserved                                      |
+| shared Admin/Company header               | supplied blue GSS SVG and translated route context                            | none                                                              | responsive contained SVG; existing right controls preserved                                     |
 | Company sidebar                           | authenticated own-company logo and session company name                       | refreshed by shared branding state                                | skeleton, contained logo, initials fallback, two-line name                                      |
 | `/company/settings`                       | metadata with `settings.company.view`; logo bytes need no settings permission | upload/replace/remove with `settings.company.manage`              | loading, read-only, selected preview, progress, success, validation/API error, confirmed remove |
 | `/admin/companies/:companyId` edit dialog | metadata/logo with `companies.view`                                           | logo with `companies.update`; name/code remains independent PATCH | contained preview, selected preview/cancel, progress, error, confirmed remove                   |
 
 The binary logo endpoints are documented in `docs/architecture/COMPANY_LOGO_STORAGE.md`. No route,
 sidebar permission key, Company scope rule or Phase 14 inventory item is added.
+
+## Lifecycle/pagination inventory amendment
+
+Company Detail inner navigation is replaced by route-derived full-width tabs without changing its
+five URLs. All full collection pages use header pagination with 50/100 sizes and the shared response
+envelope. Overflow menus own lifecycle, assignment-ending and delete actions; clicking their SVG
+descendants cannot activate the containing row/card. Alarm Event and Notification Delete actions
+are archive operations, while pristine entity deletion is explicitly permanent.
+
+- Company Building Plan: shared private PLAN/REAL image manager with real file upload and secure
+  previews.
+- Admin Company Detail / Buildings: building overflow action opens the same image manager in a large
+  modal.
+- Admin and Company Node Detail: Hour/Day range controls, bounded chart and 50/100 readings table.

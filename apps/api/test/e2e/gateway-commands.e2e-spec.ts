@@ -70,6 +70,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
     await prisma.companyRolePermission.deleteMany();
     await prisma.companyUser.deleteMany();
     await prisma.companyRole.deleteMany();
+    await prisma.buildingPlanImage.deleteMany();
     await prisma.constructionBuilding.deleteMany();
     await prisma.constructionArea.deleteMany();
     await prisma.company.deleteMany();
@@ -315,7 +316,7 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .get("/admin/gateway-commands")
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    expect(emptyList.body).toEqual([]);
+    expect(emptyList.body).toEqual({ items: [], page: 1, pageSize: 50, total: 0 });
 
     const created = await request(server)
       .post("/admin/gateway-commands/register-nodes")

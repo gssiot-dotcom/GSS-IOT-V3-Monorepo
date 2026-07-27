@@ -1,10 +1,12 @@
 import type {
   AreaRecord,
   BuildingRecord,
-  CompanyDeviceSnapshot,
+  CollectionPageSize,
+  CompanyDeviceInventoryResponse,
   CompanyRecord,
   GatewayRecord,
   NodeRecord,
+  PaginatedResponse,
   ReportFileFormat,
   ReportJobRecord,
   ReportJobStatus,
@@ -36,7 +38,14 @@ import { t, tf } from "../../app/i18n";
 import { ApiError, apiDownload, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { hasPermission } from "../../shared/rbac/has-permission";
-import { EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from "@gss-iot/ui";
+import {
+  CollectionPagination,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  StatusBadge,
+} from "@gss-iot/ui";
 import {
   COMPANY_REPORT_TYPES,
   GSS_REPORT_TYPE_PERMISSIONS,
@@ -509,10 +518,12 @@ export function ReportsWorkspace({
   const [submitting, setSubmitting] = useState(false);
   const [downloadError, setDownloadError] = useState<string>();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
   const loadRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   const queryPath = useMemo(() => {
-    const params = new URLSearchParams({ page: "1", pageSize: "25" });
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     const reportPermission = isAdmin ? GSS_REPORT_TYPE_PERMISSIONS[reportType] : undefined;
     if (!isAdmin || !reportPermission || hasPermission(session, reportPermission)) {
       params.set("reportType", reportType);
@@ -522,7 +533,7 @@ export function ReportsWorkspace({
       if (listFilters[key]) params.set(key, listFilters[key]);
     }
     return `${basePath}/reports?${params.toString()}`;
-  }, [basePath, filters, isAdmin, reportType, session]);
+  }, [basePath, filters, isAdmin, page, pageSize, reportType, session]);
 
   const load = useCallback(async () => {
     if (!session || !canView) return;
@@ -563,6 +574,7 @@ export function ReportsWorkspace({
   }, [availableReportTypes, isAdmin, reportType]);
 
   const onReportTypeChange = (next: ReportType) => {
+    setPage(1);
     setReportType(next);
     setFilters((current) => ({
       ...current,
@@ -659,6 +671,7 @@ export function ReportsWorkspace({
         isAdmin={isAdmin}
         format={format}
         onFiltersChange={(next) => {
+          setPage(1);
           setFilters(next);
           if (next.companyId !== filters.companyId) onCompanyChange?.(next.companyId);
         }}
@@ -682,6 +695,22 @@ export function ReportsWorkspace({
           </Text>
         </Group>
         {error ? <Alert color="yellow">{t("reports.backgroundRefreshFailed")}</Alert> : null}
+        <CollectionPagination
+          onPageChange={setPage}
+          onPageSizeChange={(value) => {
+            setPageSize(Number(value) as CollectionPageSize);
+            setPage(1);
+          }}
+          page={page}
+          pageSize={pageSize}
+          pageSizeLabel={t("table.pageSize")}
+          rangeLabel={tf("table.range", {
+            from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+            to: Math.min(page * pageSize, total),
+            total,
+          })}
+          totalPages={Math.max(1, Math.ceil(total / pageSize))}
+        />
         {jobs.length ? (
           <ReportJobsTable
             canExport={canExport}
@@ -714,16 +743,27 @@ export function AdminReportsPage() {
       try {
         const [companies, gateways, nodes] = await Promise.all([
           hasPermission(session, "companies.view")
-            ? apiRequest<CompanyRecord[]>(session, "/admin/companies")
-            : Promise.resolve([]),
+            ? apiRequest<PaginatedResponse<CompanyRecord>>(session, "/admin/companies?pageSize=100")
+            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<CompanyRecord>, "items">),
           hasPermission(session, "gateways.view")
-            ? apiRequest<GatewayRecord[]>(session, "/admin/devices/gateways")
-            : Promise.resolve([]),
+            ? apiRequest<PaginatedResponse<GatewayRecord>>(
+                session,
+                "/admin/devices/gateways?pageSize=100",
+              )
+            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<GatewayRecord>, "items">),
           hasPermission(session, "nodes.view")
-            ? apiRequest<NodeRecord[]>(session, "/admin/devices/nodes")
-            : Promise.resolve([]),
+            ? apiRequest<PaginatedResponse<NodeRecord>>(
+                session,
+                "/admin/devices/nodes?pageSize=100",
+              )
+            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<NodeRecord>, "items">),
         ]);
-        setOptions((current) => ({ ...current, companies, gateways, nodes }));
+        setOptions((current) => ({
+          ...current,
+          companies: companies.items,
+          gateways: gateways.items,
+          nodes: nodes.items,
+        }));
       } catch {
         setOptionsError(true);
       }
@@ -739,10 +779,16 @@ export function AdminReportsPage() {
       }
       try {
         const [areas, buildings] = await Promise.all([
-          apiRequest<AreaRecord[]>(session, `/admin/companies/${companyId}/areas`),
-          apiRequest<BuildingRecord[]>(session, `/admin/companies/${companyId}/buildings`),
+          apiRequest<PaginatedResponse<AreaRecord>>(
+            session,
+            `/admin/companies/${companyId}/areas?pageSize=100`,
+          ),
+          apiRequest<PaginatedResponse<BuildingRecord>>(
+            session,
+            `/admin/companies/${companyId}/buildings?pageSize=100`,
+          ),
         ]);
-        setOptions((current) => ({ ...current, areas, buildings }));
+        setOptions((current) => ({ ...current, areas: areas.items, buildings: buildings.items }));
       } catch {
         setOptionsError(true);
       }
@@ -778,21 +824,30 @@ export function CompanyReportsPage() {
       try {
         const [areas, buildings, devices] = await Promise.all([
           hasPermission(session, "areas.view")
-            ? apiRequest<AreaRecord[]>(session, "/company/areas")
-            : Promise.resolve([]),
+            ? apiRequest<PaginatedResponse<AreaRecord>>(session, "/company/areas?pageSize=100")
+            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<AreaRecord>, "items">),
           hasPermission(session, "buildings.view")
-            ? apiRequest<BuildingRecord[]>(session, "/company/buildings")
-            : Promise.resolve([]),
+            ? apiRequest<PaginatedResponse<BuildingRecord>>(
+                session,
+                "/company/buildings?pageSize=100",
+              )
+            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<BuildingRecord>, "items">),
           hasPermission(session, "company-devices.view")
-            ? apiRequest<CompanyDeviceSnapshot>(session, "/company/devices")
-            : Promise.resolve({ gateways: [], nodes: [] }),
+            ? apiRequest<CompanyDeviceInventoryResponse>(
+                session,
+                "/company/devices?gatewayPageSize=100&nodePageSize=100",
+              )
+            : Promise.resolve({
+                gateways: { items: [] },
+                nodes: { items: [] },
+              } as unknown as CompanyDeviceInventoryResponse),
         ]);
         setOptions((current) => ({
           ...current,
-          areas: Array.isArray(areas) ? areas : [],
-          buildings: Array.isArray(buildings) ? buildings : [],
-          gateways: Array.isArray(devices?.gateways) ? devices.gateways : [],
-          nodes: Array.isArray(devices?.nodes) ? devices.nodes : [],
+          areas: areas.items,
+          buildings: buildings.items,
+          gateways: devices.gateways.items,
+          nodes: devices.nodes.items,
         }));
       } catch {
         setOptionsError(true);

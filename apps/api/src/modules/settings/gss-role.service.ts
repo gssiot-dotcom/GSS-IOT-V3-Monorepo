@@ -9,6 +9,12 @@ import { PermissionScopeType } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
+import {
+  paginated,
+  pageWindow,
+  type PaginationQueryDto,
+  type SearchPaginationQueryDto,
+} from "../../common/dto/pagination.dto";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { CreateGssRoleDto, UpdateGssRoleDto } from "./dto/gss-role.dto";
@@ -39,11 +45,20 @@ export class GssRoleService {
     @Inject(AuditLogService) private readonly auditLog: AuditLogService,
   ) {}
 
-  listRoles() {
-    return this.prisma.gssRole.findMany({
-      orderBy: [{ isSystem: "desc" }, { name: "asc" }],
-      select: roleSelect,
-    });
+  async listRoles(query: PaginationQueryDto) {
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.gssRole.findMany({
+        orderBy: [{ isSystem: "desc" }, { name: "asc" }, { id: "asc" }],
+        select: roleSelect,
+        ...pageWindow(query),
+      }),
+      this.prisma.gssRole.count(),
+    ]);
+    return paginated(
+      items.map((role) => ({ ...role, deletion: this.deletionCapability(role) })),
+      total,
+      query,
+    );
   }
 
   listPermissions() {
@@ -52,6 +67,31 @@ export class GssRoleService {
       select: permissionSelect,
       where: { scopeType: { in: [PermissionScopeType.GSS, PermissionScopeType.BOTH] } },
     });
+  }
+
+  async listPermissionCatalog(query: SearchPaginationQueryDto) {
+    const where = {
+      scopeType: { in: [PermissionScopeType.GSS, PermissionScopeType.BOTH] },
+      ...(query.search?.trim()
+        ? {
+            OR: [
+              { key: { contains: query.search.trim(), mode: "insensitive" } },
+              { module: { contains: query.search.trim(), mode: "insensitive" } },
+              { description: { contains: query.search.trim(), mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    } satisfies Prisma.PermissionWhereInput;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.permission.findMany({
+        orderBy: [{ module: "asc" }, { key: "asc" }, { id: "asc" }],
+        select: permissionSelect,
+        where,
+        ...pageWindow(query),
+      }),
+      this.prisma.permission.count({ where }),
+    ]);
+    return paginated(items, total, query);
   }
 
   async createRole(actor: AuthTokenPayload, dto: CreateGssRoleDto) {
@@ -139,9 +179,14 @@ export class GssRoleService {
     await this.prisma.$transaction(async (tx) => {
       const role = await tx.gssRole.findUnique({ where: { id: roleId }, select: roleSelect });
       if (!role) throw new NotFoundException("The GSS role was not found.");
-      this.assertMutable(role);
-      if (role._count.users > 0) {
-        throw new ConflictException("The GSS role is assigned to users and cannot be deleted.");
+      const deletion = this.deletionCapability(role);
+      if (!deletion.allowed) {
+        throw new ConflictException({
+          blocker: deletion.blocker,
+          code: deletion.code,
+          message: deletion.blocker,
+          recommendedAlternative: "Reassign users or retain the protected role.",
+        });
       }
       await tx.gssRole.delete({ where: { id: roleId } });
       await this.auditLog.record(
@@ -180,6 +225,30 @@ export class GssRoleService {
     if (role.isSystem || role.isSuperAdmin) {
       throw new ConflictException("System and super-admin roles are protected and read-only.");
     }
+  }
+
+  private deletionCapability(role: {
+    isSuperAdmin: boolean;
+    isSystem: boolean;
+    _count: { users: number };
+  }) {
+    if (role.isSystem || role.isSuperAdmin) {
+      return {
+        allowed: false,
+        blocker: "System and super-admin roles are protected.",
+        code: "GSS_ROLE_PROTECTED",
+        mode: "NOT_ALLOWED" as const,
+      };
+    }
+    if (role._count.users > 0) {
+      return {
+        allowed: false,
+        blocker: `The role is assigned to ${role._count.users} user(s).`,
+        code: "GSS_ROLE_ASSIGNED_USERS",
+        mode: "NOT_ALLOWED" as const,
+      };
+    }
+    return { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const };
   }
 
   private auditValue(role: {

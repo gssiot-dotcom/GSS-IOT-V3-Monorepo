@@ -1,12 +1,15 @@
 import type {
+  CollectionPageSize,
   GatewayCommandRecord,
   GatewayRecord,
   NodeRecord,
   NodeTypeRecord,
+  PaginatedResponse,
 } from "@gss-iot/contracts";
 import { parseNodeNumberInput } from "@gss-iot/contracts";
 import {
   ConfirmActionModal,
+  CollectionPagination,
   DataTable,
   DataToolbar,
   EmptyState,
@@ -16,6 +19,7 @@ import {
   LoadingState,
   ModalFormFooter,
   PageHeader,
+  WorkspaceTabs,
 } from "@gss-iot/ui";
 import {
   Alert,
@@ -27,7 +31,6 @@ import {
   Paper,
   Select,
   Stack,
-  Tabs,
   Text,
   Textarea,
   TextInput,
@@ -36,6 +39,8 @@ import {
   IconBuilding,
   IconBuildingCommunity,
   IconEdit,
+  IconPlayerPause,
+  IconPlayerPlay,
   IconTrash,
   IconUnlink,
 } from "@tabler/icons-react";
@@ -63,6 +68,19 @@ type DeleteTarget = {
   id: string;
   kind: "gateway" | "node";
   label: string;
+};
+
+type UnassignTarget = {
+  impact: string;
+  label: string;
+  path: string;
+};
+
+type DeviceLifecycleTarget = {
+  id: string;
+  kind: "gateway" | "node";
+  label: string;
+  nextStatus: "ACTIVE" | "INACTIVE";
 };
 
 type ProvisioningMode = "APPEND" | "REPLACE";
@@ -97,6 +115,10 @@ export function AdminDevicesPage() {
   const [editingNode, setEditingNode] = useState<NodeRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>();
   const [assignmentTarget, setAssignmentTarget] = useState<AssignmentTarget>();
+  const [unassignTarget, setUnassignTarget] = useState<UnassignTarget>();
+  const [unassigning, setUnassigning] = useState(false);
+  const [lifecycleTarget, setLifecycleTarget] = useState<DeviceLifecycleTarget>();
+  const [lifecycleMutating, setLifecycleMutating] = useState(false);
   const [serialNumber, setSerialNumber] = useState("");
   const [installedLocation, setInstalledLocation] = useState("");
   const [gatewayType, setGatewayType] = useState("NODES_GATEWAY");
@@ -112,6 +134,13 @@ export function AdminDevicesPage() {
   const [provisionNodeIds, setProvisionNodeIds] = useState<string[]>([]);
   const [gatewaySearch, setGatewaySearch] = useState("");
   const [nodeSearch, setNodeSearch] = useState("");
+  const [gatewayPage, setGatewayPage] = useState(1);
+  const [nodePage, setNodePage] = useState(1);
+  const [gatewayPageSize, setGatewayPageSize] = useState<CollectionPageSize>(50);
+  const [nodePageSize, setNodePageSize] = useState<CollectionPageSize>(50);
+  const [gatewayTotal, setGatewayTotal] = useState(0);
+  const [nodeTotal, setNodeTotal] = useState(0);
+  const [inventoryTab, setInventoryTab] = useState<"gateways" | "nodes">("gateways");
 
   const load = async () => {
     if (!session) return;
@@ -119,16 +148,27 @@ export function AdminDevicesPage() {
     try {
       const [loadedGateways, loadedNodes, loadedNodeTypes, loadedCommands, loadedOptions] =
         await Promise.all([
-          apiRequest<GatewayRecord[]>(session, "/admin/devices/gateways"),
-          apiRequest<NodeRecord[]>(session, "/admin/devices/nodes"),
+          apiRequest<PaginatedResponse<GatewayRecord>>(
+            session,
+            `/admin/devices/gateways?page=${gatewayPage}&pageSize=${gatewayPageSize}${gatewaySearch.trim() ? `&search=${encodeURIComponent(gatewaySearch.trim())}` : ""}`,
+          ),
+          apiRequest<PaginatedResponse<NodeRecord>>(
+            session,
+            `/admin/devices/nodes?page=${nodePage}&pageSize=${nodePageSize}${nodeSearch.trim() ? `&search=${encodeURIComponent(nodeSearch.trim())}` : ""}`,
+          ),
           apiRequest<NodeTypeRecord[]>(session, "/admin/devices/node-types"),
-          apiRequest<GatewayCommandRecord[]>(session, "/admin/gateway-commands"),
+          apiRequest<PaginatedResponse<GatewayCommandRecord>>(
+            session,
+            "/admin/gateway-commands?pageSize=50",
+          ),
           apiRequest<ProvisioningOptions>(session, "/admin/devices/provisioning-options"),
         ]);
-      setGateways(loadedGateways);
-      setNodes(loadedNodes);
+      setGateways(loadedGateways.items);
+      setNodes(loadedNodes.items);
+      setGatewayTotal(loadedGateways.total);
+      setNodeTotal(loadedNodes.total);
       setNodeTypes(loadedNodeTypes);
-      setCommands(loadedCommands);
+      setCommands(loadedCommands.items);
       setOptions(loadedOptions);
       setNodeTypeId(loadedNodeTypes[0]?.id ?? "");
       setProvisionNodeTypeId((current) => current || loadedNodeTypes[0]?.id || "");
@@ -139,7 +179,7 @@ export function AdminDevicesPage() {
 
   useEffect(() => {
     void load();
-  }, [session]);
+  }, [session, gatewayPage, gatewayPageSize, gatewaySearch, nodePage, nodePageSize, nodeSearch]);
 
   const companyOptions = options.companies.map((company) => ({
     label: company.name,
@@ -194,26 +234,8 @@ export function AdminDevicesPage() {
   const registerCommands = commands
     .filter((command) => command.commandType === "REGISTER_NODES")
     .slice(0, 5);
-  const filteredGateways = gateways?.filter((gateway) => {
-    const query = gatewaySearch.trim().toLowerCase();
-    if (!query) return true;
-    return [
-      gateway.serialNumber,
-      gateway.gatewayType,
-      gateway.companyAssignments[0]?.company?.name,
-      gateway.buildingAssignments[0]?.building.title,
-    ].some((value) => value?.toLowerCase().includes(query));
-  });
-  const filteredNodes = nodes?.filter((node) => {
-    const query = nodeSearch.trim().toLowerCase();
-    if (!query) return true;
-    return [
-      node.number,
-      node.nodeType.displayName,
-      node.companyAssignments[0]?.company?.name,
-      node.gatewayAssignments[0]?.gateway.serialNumber,
-    ].some((value) => value?.toLowerCase().includes(query));
-  });
+  const filteredGateways = gateways;
+  const filteredNodes = nodes;
   const nodeNumberParse = parseNodeNumberInput(nodeNumber);
 
   const createGateway = async () => {
@@ -346,10 +368,41 @@ export function AdminDevicesPage() {
     await load();
   };
 
-  const unassign = async (path: string) => {
-    if (!session) return;
-    await apiRequest(session, path, { method: "DELETE" });
-    await load();
+  const unassign = async () => {
+    if (!session || !unassignTarget || unassigning) return;
+    setFormError("");
+    setUnassigning(true);
+    try {
+      await apiRequest(session, unassignTarget.path, { method: "DELETE" });
+      setUnassignTarget(undefined);
+      await load();
+      setSuccessMessage(t("devices.unassignedSuccess"));
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : t("common.errorDescription"));
+    } finally {
+      setUnassigning(false);
+    }
+  };
+
+  const updateDeviceLifecycle = async () => {
+    if (!session || !lifecycleTarget || lifecycleMutating) return;
+    setLifecycleMutating(true);
+    setFormError("");
+    try {
+      await apiRequest(
+        session,
+        `/admin/devices/${lifecycleTarget.kind === "gateway" ? "gateways" : "nodes"}/${lifecycleTarget.id}`,
+        { body: JSON.stringify({ status: lifecycleTarget.nextStatus }), method: "PATCH" },
+      );
+      const activated = lifecycleTarget.nextStatus === "ACTIVE";
+      setLifecycleTarget(undefined);
+      await load();
+      setSuccessMessage(t(activated ? "devices.reactivated" : "devices.deactivated"));
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : t("common.errorDescription"));
+    } finally {
+      setLifecycleMutating(false);
+    }
   };
 
   const createProvisioning = async () => {
@@ -379,32 +432,73 @@ export function AdminDevicesPage() {
               label: t("devices.editGateway"),
               onClick: () => openEditGateway(row),
             },
+            {
+              icon:
+                row.status === "ACTIVE" ? (
+                  <IconPlayerPause size={16} />
+                ) : (
+                  <IconPlayerPlay size={16} />
+                ),
+              key: "status",
+              label: t(row.status === "ACTIVE" ? "organizations.deactivate" : "devices.reactivate"),
+              onClick: () =>
+                setLifecycleTarget({
+                  id: row.id,
+                  kind: "gateway",
+                  label: row.serialNumber,
+                  nextStatus: row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                }),
+            },
           ]
         : []),
       ...(hasPermission(session, "gateways.assign")
         ? [
-            {
-              icon: <IconBuildingCommunity size={16} />,
-              key: "assign-company",
-              label: t("devices.assignCompany"),
-              onClick: () => setAssignmentTarget({ id: row.id, kind: "gateway-company" }),
-            },
-            {
-              disabled: !row.companyAssignments.length,
-              disabledReason: t("devices.companyAssignmentRequired"),
-              icon: <IconBuilding size={16} />,
-              key: "assign-building",
-              label: t("devices.assignBuilding"),
-              onClick: () => setAssignmentTarget({ id: row.id, kind: "gateway-building" }),
-            },
-            {
-              disabled: !row.buildingAssignments.length,
-              disabledReason: t("devices.noBuildingAssignment"),
-              icon: <IconUnlink size={16} />,
-              key: "unassign-building",
-              label: t("devices.unassignBuilding"),
-              onClick: () => void unassign(`/admin/devices/gateways/${row.id}/building-assignment`),
-            },
+            ...(row.companyAssignments.length
+              ? [
+                  {
+                    icon: <IconUnlink size={16} />,
+                    key: "unassign-company",
+                    label: t("devices.unassignCompany"),
+                    onClick: () =>
+                      setUnassignTarget({
+                        impact: t("devices.confirmGatewayCompanyUnassignImpact"),
+                        label: row.serialNumber,
+                        path: `/admin/devices/gateways/${row.id}/company-assignment`,
+                      }),
+                  },
+                ]
+              : [
+                  {
+                    icon: <IconBuildingCommunity size={16} />,
+                    key: "assign-company",
+                    label: t("devices.assignCompany"),
+                    onClick: () => setAssignmentTarget({ id: row.id, kind: "gateway-company" }),
+                  },
+                ]),
+            ...(row.buildingAssignments.length
+              ? [
+                  {
+                    icon: <IconUnlink size={16} />,
+                    key: "unassign-building",
+                    label: t("devices.unassignBuilding"),
+                    onClick: () =>
+                      setUnassignTarget({
+                        impact: t("devices.confirmUnassignImpact"),
+                        label: row.serialNumber,
+                        path: `/admin/devices/gateways/${row.id}/building-assignment`,
+                      }),
+                  },
+                ]
+              : [
+                  {
+                    disabled: !row.companyAssignments.length,
+                    disabledReason: t("devices.companyAssignmentRequired"),
+                    icon: <IconBuilding size={16} />,
+                    key: "assign-building",
+                    label: t("devices.assignBuilding"),
+                    onClick: () => setAssignmentTarget({ id: row.id, kind: "gateway-building" }),
+                  },
+                ]),
           ]
         : []),
       ...(hasPermission(session, "gateways.delete")
@@ -447,23 +541,61 @@ export function AdminDevicesPage() {
               label: t("devices.editNode"),
               onClick: () => openEditNode(row),
             },
+            {
+              icon:
+                row.status === "ACTIVE" ? (
+                  <IconPlayerPause size={16} />
+                ) : (
+                  <IconPlayerPlay size={16} />
+                ),
+              key: "status",
+              label: t(row.status === "ACTIVE" ? "organizations.deactivate" : "devices.reactivate"),
+              onClick: () =>
+                setLifecycleTarget({
+                  id: row.id,
+                  kind: "node",
+                  label: row.number,
+                  nextStatus: row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                }),
+            },
           ]
         : []),
       ...(hasPermission(session, "nodes.assign")
         ? [
-            {
-              icon: <IconBuildingCommunity size={16} />,
-              key: "assign-company",
-              label: t("devices.assignCompany"),
-              onClick: () => setAssignmentTarget({ id: row.id, kind: "node-company" }),
-            },
+            ...(row.companyAssignments.length
+              ? [
+                  {
+                    icon: <IconUnlink size={16} />,
+                    key: "unassign-company",
+                    label: t("devices.unassignCompany"),
+                    onClick: () =>
+                      setUnassignTarget({
+                        impact: t("devices.confirmNodeCompanyUnassignImpact"),
+                        label: row.number,
+                        path: `/admin/devices/nodes/${row.id}/company-assignment`,
+                      }),
+                  },
+                ]
+              : [
+                  {
+                    icon: <IconBuildingCommunity size={16} />,
+                    key: "assign-company",
+                    label: t("devices.assignCompany"),
+                    onClick: () => setAssignmentTarget({ id: row.id, kind: "node-company" }),
+                  },
+                ]),
             {
               disabled: !row.gatewayAssignments.length,
               disabledReason: t("devices.noGatewayAssignment"),
               icon: <IconUnlink size={16} />,
               key: "unassign-gateway",
               label: t("devices.unassignGateway"),
-              onClick: () => void unassign(`/admin/devices/nodes/${row.id}/gateway-assignment`),
+              onClick: () =>
+                setUnassignTarget({
+                  impact: t("devices.confirmNodeGatewayUnassignImpact"),
+                  label: row.number,
+                  path: `/admin/devices/nodes/${row.id}/gateway-assignment`,
+                }),
             },
           ]
         : []),
@@ -663,16 +795,40 @@ export function AdminDevicesPage() {
           </Stack>
         </Paper>
       </Can>
-      <Tabs defaultValue="gateways">
-        <Tabs.List>
-          <Tabs.Tab value="gateways">{t("devices.gatewaysTitle")}</Tabs.Tab>
-          <Tabs.Tab value="nodes">{t("devices.nodesTitle")}</Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel pt="md" value="gateways">
+      <WorkspaceTabs
+        ariaLabel={t("devices.companyDevicesTitle")}
+        items={[
+          { label: t("devices.gatewaysTitle"), value: "gateways" },
+          { label: t("devices.nodesTitle"), value: "nodes" },
+        ]}
+        onChange={(value) => setInventoryTab(value as "gateways" | "nodes")}
+        value={inventoryTab}
+      />
+      {inventoryTab === "gateways" ? (
+        <Stack gap="sm">
+          <CollectionPagination
+            onPageChange={setGatewayPage}
+            onPageSizeChange={(value) => {
+              setGatewayPageSize(Number(value) as CollectionPageSize);
+              setGatewayPage(1);
+            }}
+            page={gatewayPage}
+            pageSize={gatewayPageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: gatewayTotal === 0 ? 0 : (gatewayPage - 1) * gatewayPageSize + 1,
+              to: Math.min(gatewayPage * gatewayPageSize, gatewayTotal),
+              total: gatewayTotal,
+            })}
+            totalPages={Math.max(1, Math.ceil(gatewayTotal / gatewayPageSize))}
+          />
           <DataToolbar>
             <TextInput
               aria-label={t("devices.searchGateways")}
-              onChange={(event) => setGatewaySearch(event.currentTarget.value)}
+              onChange={(event) => {
+                setGatewaySearch(event.currentTarget.value);
+                setGatewayPage(1);
+              }}
               placeholder={t("devices.searchGateways")}
               value={gatewaySearch}
             />
@@ -744,12 +900,32 @@ export function AdminDevicesPage() {
               title={t("common.emptyTitle")}
             />
           )}
-        </Tabs.Panel>
-        <Tabs.Panel pt="md" value="nodes">
+        </Stack>
+      ) : (
+        <Stack gap="sm">
+          <CollectionPagination
+            onPageChange={setNodePage}
+            onPageSizeChange={(value) => {
+              setNodePageSize(Number(value) as CollectionPageSize);
+              setNodePage(1);
+            }}
+            page={nodePage}
+            pageSize={nodePageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: nodeTotal === 0 ? 0 : (nodePage - 1) * nodePageSize + 1,
+              to: Math.min(nodePage * nodePageSize, nodeTotal),
+              total: nodeTotal,
+            })}
+            totalPages={Math.max(1, Math.ceil(nodeTotal / nodePageSize))}
+          />
           <DataToolbar>
             <TextInput
               aria-label={t("devices.searchNodes")}
-              onChange={(event) => setNodeSearch(event.currentTarget.value)}
+              onChange={(event) => {
+                setNodeSearch(event.currentTarget.value);
+                setNodePage(1);
+              }}
               placeholder={t("devices.searchNodes")}
               value={nodeSearch}
             />
@@ -818,8 +994,8 @@ export function AdminDevicesPage() {
               title={t("common.emptyTitle")}
             />
           )}
-        </Tabs.Panel>
-      </Tabs>
+        </Stack>
+      )}
       <Modal
         opened={gatewayOpened}
         onClose={() => setGatewayOpened(false)}
@@ -942,6 +1118,44 @@ export function AdminDevicesPage() {
         onConfirm={() => void deleteDevice()}
         opened={Boolean(deleteTarget)}
         title={t("devices.confirmDeleteTitle")}
+      />
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("devices.unassign")}
+        description={unassignTarget?.impact ?? t("devices.confirmUnassignImpact")}
+        entityName={unassignTarget?.label ?? ""}
+        loading={unassigning}
+        onClose={() => {
+          if (!unassigning) setUnassignTarget(undefined);
+        }}
+        onConfirm={() => void unassign()}
+        opened={Boolean(unassignTarget)}
+        title={tf("devices.confirmUnassign", { label: unassignTarget?.label ?? "" })}
+      />
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t(
+          lifecycleTarget?.nextStatus === "ACTIVE"
+            ? "devices.reactivate"
+            : "organizations.deactivate",
+        )}
+        description={t(
+          lifecycleTarget?.nextStatus === "ACTIVE"
+            ? "organizations.confirmActivateImpact"
+            : "devices.confirmRetireImpact",
+        )}
+        entityName={lifecycleTarget?.label ?? ""}
+        loading={lifecycleMutating}
+        onClose={() => {
+          if (!lifecycleMutating) setLifecycleTarget(undefined);
+        }}
+        onConfirm={() => void updateDeviceLifecycle()}
+        opened={Boolean(lifecycleTarget)}
+        title={t(
+          lifecycleTarget?.nextStatus === "ACTIVE"
+            ? "organizations.confirmActivateTitle"
+            : "organizations.confirmDeactivateTitle",
+        )}
       />
       <Modal
         opened={Boolean(assignmentTarget)}

@@ -976,3 +976,87 @@ is claimed. Phase 14 remains not started.
 `apps/api/src/modules/company-branding/` module, organization/settings serializers, shared web API
 and branding state, `PortalLayout`, Company Settings, Admin Company Detail, shared UI brand,
 focused API/web/Playwright tests and `docs/architecture/COMPANY_LOGO_STORAGE.md`.
+
+## DEC-2026-0727 — Explicit lifecycle, evidence-safe deletion, assignment ending and collection pagination
+
+**Status:** accepted
+
+**Context:** The authoritative blueprint maps several `DELETE` organization endpoints to delete
+permissions, while the current implementation uses those routes only to set `INACTIVE`. The
+correction request explicitly separates reversible lifecycle transitions from actual deletion,
+requires operational alarm/notification evidence to remain durable, completes reciprocal device
+unassignment, and standardizes user-facing list pagination. DEC-2026-024 also establishes that a
+database node-gateway unassignment is not a physical MQTT unregister operation.
+
+**Decision:** Add explicit `PATCH .../status` endpoints guarded by update/manage permissions and
+reserve `DELETE .../permanent` plus existing true-delete endpoints for delete permissions. Keep the
+old organization `DELETE` endpoints temporarily as documented deactivate compatibility adapters.
+Hard-delete Company, Area, Building, CompanyUser, Position and custom Role records only when a
+server-derived capability is `HARD_DELETE` and all blockers are repeated inside the transaction.
+Return structured `409` blocker codes with a safe recommended alternative. Archive AlarmEvent and
+AlarmNotification through additive `deletedAt`, `deletedByType` and `deletedById` fields; normal
+lists and unread counts exclude archived rows while audit/report evidence and relations remain.
+AlarmRule and AlarmRecipientPolicy deactivation/reactivation reset their mutable counter state and
+must satisfy active uniqueness before activation. User deactivation increments `tokenVersion`;
+reactivation never restores an earlier token version. Preserve last-super-admin and
+last-platform-manager protection.
+
+Gateway/node assignment ending always updates history rows and writes audit records in one
+transaction. Node-company unassignment first ends an active node-gateway relationship. Gateway-
+company unassignment is blocked while active building or node relationships exist, with exact
+counts returned to the UI; it does not invent a hardware unregister command. Physical gateway
+membership continues to use the approved `REPLACE` provisioning flow.
+
+All user-facing collection endpoints use the shared `{ items, page, pageSize, total }` response,
+default page `1`, default page size `50`, and only `50|100`. Filtering precedes pagination and every
+ordering includes an id tie-breaker. Small fixed catalogs and selector data use explicit bounded
+option/search endpoints instead of silently reading the first collection page. Pagination controls
+live in the list header/toolbar and are shared/localized.
+
+**Consequences:** This is a forward correction wave, not Phase 14. It requires additive Prisma
+migrations for archive fields and supporting indexes, atomic contract/consumer updates, expanded
+RBAC/scope/IDOR tests and migration rollback notes. The two supplied logo SVG files remain exact
+public assets with case-sensitive paths. No operational history is physically cascade-deleted.
+The visual E2E fixture mirrors paginated response envelopes and opens command detail through the
+protected overflow action rather than the retired inline action button.
+
+**Files affected:** `apps/api/prisma/schema.prisma`, a new forward migration, organization,
+company-management, devices, alarms, settings, monitoring, gateway-command and reports APIs,
+`packages/contracts`, `packages/ui`, Admin/Company collection and detail pages, focused tests, and
+the lifecycle/deletion/pagination architecture and required design/planning/security documents.
+
+## DEC-2026-0727-02 — Private building images and bounded Node history ranges
+
+**Status:** accepted
+
+**Context:** The existing Building Plan flow trusts a client-provided storage key and has no object
+cleanup contract. The approved legacy behavior permits both PLAN and REAL images. Node detail
+history is fixed to a latest-reading window and cannot express rolling hours or a local calendar
+day. The lifecycle migration was present but not applied to the active databases.
+
+**Decision:** Generalize the Company Logo provider code into a private-asset storage boundary while
+retaining separate domain validation and server-owned key generation. Accept magic/MIME/extension-
+matched PNG/JPEG/WebP up to 8 MiB and permit four active PLAN plus four active REAL images per
+building, preserving the V2 behavior because the blueprint defines no conflicting limit. Use
+authenticated Admin/Company content routes, `building-plans.view|manage`, Company scope, private
+cache headers and no public storage metadata. Use a durable image deletion state, idempotent object
+removal, bounded retry and `ON DELETE RESTRICT` so building cascade deletion cannot bypass cleanup.
+
+Require Node history `from`/`to` UTC ISO values with a maximum 24-hour half-open range. Keep tables
+at 50/100 rows and cap charts at 500 deterministic evenly distributed ascending points with explicit
+raw/returned/sample metadata. The UI defaults to Hour/12 and converts local Day midnight boundaries
+to UTC. Realtime points merge only inside the active range and deduplicate by timestamp plus values.
+
+Apply database migrations before API and Web deployments. A schema-lag E2E assertion checks the
+lifecycle and image columns before endpoint verification. Database errors retain useful server-side
+Prisma/request context and return only a generic client message.
+
+**Consequences:** This adds one forward migration for building image storage/deletion metadata and
+the RESTRICT foreign key. Existing image metadata rows without private content are not exposed as
+downloadable objects. Production bucket provisioning and real S3 execution remain Phase 14 work.
+The scrollbar and large Alarm Rule modal changes are presentation contracts only; alarm business
+logic, RBAC separation and MQTT behavior are unchanged.
+
+**Files affected:** Prisma schema/migration, private-assets and organization modules, monitoring
+DTO/service/controllers, shared contracts, Admin/Company image/history UI, focused API/Web tests and
+`docs/architecture/BUILDING_IMAGES_AND_NODE_HISTORY.md`.

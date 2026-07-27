@@ -7,9 +7,21 @@ import {
   IsOptional,
   IsEnum,
   IsString,
+  IsUUID,
   Min,
 } from "class-validator";
-import { ProvisioningMode } from "@prisma/client";
+import { GatewayCommandStatus, ProvisioningMode } from "@prisma/client";
+import { PaginationQueryDto } from "../../../common/dto/pagination.dto";
+
+export class ListGatewayCommandsQueryDto extends PaginationQueryDto {
+  @IsOptional()
+  @IsEnum(GatewayCommandStatus)
+  status?: GatewayCommandStatus;
+
+  @IsOptional()
+  @IsUUID()
+  gatewayId?: string;
+}
 
 export class RegisterNodesCommandDto {
   @IsString()

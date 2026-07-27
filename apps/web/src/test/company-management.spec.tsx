@@ -49,6 +49,12 @@ const roles = [
     key: "platform_manager",
     name: "Platform Manager",
     permissions: [],
+    deletion: {
+      allowed: false,
+      blocker: "System roles cannot be deleted.",
+      code: "SYSTEM_ROLE",
+      mode: "NOT_ALLOWED",
+    },
   },
   {
     _count: { users: 0 },
@@ -59,6 +65,7 @@ const roles = [
     key: "safety_lead",
     name: "Safety Lead",
     permissions: [{ permissionId: "perm-monitoring" }],
+    deletion: { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" },
   },
 ];
 
@@ -106,13 +113,14 @@ function mockFetch(session: AuthSession = companySession, options: { usersStatus
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(String(input));
     if (url.href === `${apiBaseUrl}/auth/company/me`) return jsonResponse(session);
-    if (url.href === `${apiBaseUrl}/company/roles`) return jsonResponse(roles);
-    if (url.href === `${apiBaseUrl}/company/permissions`) return jsonResponse(permissions);
-    if (url.href === `${apiBaseUrl}/company/users`) {
+    if (url.pathname === "/company/roles")
+      return jsonResponse({ items: roles, page: 1, pageSize: 100, total: roles.length });
+    if (url.pathname === "/company/permissions/options") return jsonResponse(permissions);
+    if (url.pathname === "/company/users") {
       if (options.usersStatus) {
         return jsonResponse({ message: "Forbidden" }, options.usersStatus);
       }
-      return jsonResponse([
+      const items = [
         {
           areaAccess: [
             { accessLevel: "VIEW", areaId: "area-1", area: { id: "area-1", name: "Site A" } },
@@ -133,10 +141,11 @@ function mockFetch(session: AuthSession = companySession, options: { usersStatus
           },
           roleId: "role-custom",
         },
-      ]);
+      ];
+      return jsonResponse({ items, page: 1, pageSize: 50, total: items.length });
     }
-    if (url.href === `${apiBaseUrl}/company/areas`) {
-      return jsonResponse([
+    if (url.pathname === "/company/areas") {
+      const items = [
         {
           address: null,
           companyId: "company-1",
@@ -145,7 +154,8 @@ function mockFetch(session: AuthSession = companySession, options: { usersStatus
           name: "Site A",
           status: "ACTIVE",
         },
-      ]);
+      ];
+      return jsonResponse({ items, page: 1, pageSize: 100, total: items.length });
     }
     if (url.href === `${apiBaseUrl}/company/areas/area-1`) {
       return jsonResponse({
@@ -157,8 +167,8 @@ function mockFetch(session: AuthSession = companySession, options: { usersStatus
         status: "ACTIVE",
       });
     }
-    if (url.href === `${apiBaseUrl}/company/buildings`) {
-      return jsonResponse([
+    if (url.pathname === "/company/buildings") {
+      const items = [
         {
           address: null,
           areaId: "area-1",
@@ -169,7 +179,8 @@ function mockFetch(session: AuthSession = companySession, options: { usersStatus
           status: "ACTIVE",
           title: "Building A",
         },
-      ]);
+      ];
+      return jsonResponse({ items, page: 1, pageSize: 100, total: items.length });
     }
     if (url.href === `${apiBaseUrl}/company/buildings/building-1`) {
       return jsonResponse({
@@ -183,25 +194,52 @@ function mockFetch(session: AuthSession = companySession, options: { usersStatus
         title: "Building A",
       });
     }
-    if (url.href === `${apiBaseUrl}/company/devices`) {
-      return jsonResponse({ gateways: [], nodes: [] });
+    if (url.pathname === "/company/devices") {
+      return jsonResponse({
+        gateways: { items: [], page: 1, pageSize: 100, total: 0 },
+        nodes: { items: [], page: 1, pageSize: 100, total: 0 },
+      });
     }
-    if (url.href === `${apiBaseUrl}/company/buildings/building-1/plan-images`) {
-      if (init.method === "POST") return jsonResponse([], 201);
+    if (url.href === `${apiBaseUrl}/company/buildings/building-1/images`) {
+      if (init.method === "POST")
+        return jsonResponse(
+          {
+            byteSize: 11,
+            contentPath: "/company/building-images/image-2/content",
+            contentType: "image/png",
+            createdAt: "2026-07-19T01:00:00.000Z",
+            height: null,
+            id: "image-2",
+            kind: "PLAN",
+            orderIndex: 1,
+            width: null,
+          },
+          201,
+        );
       return jsonResponse([
         {
-          buildingId: "building-1",
+          byteSize: 11,
+          contentPath: "/company/building-images/image-1/content",
+          contentType: "image/png",
           createdAt: "2026-07-19T00:00:00.000Z",
           height: null,
           id: "image-1",
           kind: "PLAN",
           orderIndex: 0,
-          storageKey: "plans/building-a.png",
           width: null,
         },
       ]);
     }
-    if (url.href === `${apiBaseUrl}/company/positions`) return jsonResponse([]);
+    if (url.pathname === "/company/building-images/image-1/content") {
+      return new Response(new Uint8Array([137, 80, 78, 71]), {
+        headers: { "content-type": "image/png" },
+      });
+    }
+    if (url.pathname.startsWith("/company/building-images/") && init.method === "DELETE") {
+      return jsonResponse({});
+    }
+    if (url.pathname === "/company/positions")
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
     if (url.href === `${apiBaseUrl}/company/roles/role-custom`) return jsonResponse(roles[1]);
     return jsonResponse({}, 200);
   });
@@ -213,6 +251,14 @@ describe("company management UI", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     vi.restoreAllMocks();
+    const NativeUrl = URL;
+    vi.stubGlobal(
+      "URL",
+      class extends NativeUrl {
+        static override createObjectURL = vi.fn(() => "blob:building-image");
+        static override revokeObjectURL = vi.fn();
+      },
+    );
   });
 
   afterEach(() => {
@@ -226,7 +272,11 @@ describe("company management UI", () => {
     const fetchMock = mockFetch();
     renderApp("/company/roles");
 
-    const menuButton = await screen.findByRole("button", { name: "More actions: Safety Lead" });
+    const menuButton = await screen.findByRole(
+      "button",
+      { name: "More actions: Safety Lead" },
+      { timeout: 15_000 },
+    );
     fireEvent.click(menuButton);
     await waitFor(() =>
       expect(document.getElementById(menuButton.getAttribute("aria-controls")!)).toBeTruthy(),
@@ -265,28 +315,36 @@ describe("company management UI", () => {
     expect(screen.queryByRole("link", { name: "Roles" })).toBeNull();
   });
 
-  it("renders building plan metadata and posts storage-key additions", async () => {
+  it("previews private building images and posts real multipart uploads", async () => {
     storeCompanySession();
     const fetchMock = mockFetch();
-    renderApp("/company/buildings/building-1/plan");
+    const rendered = renderApp("/company/buildings/building-1/plan");
 
-    expect(await screen.findByText("plans/building-a.png")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Add plan image" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add plan image" });
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "Storage key" }), {
-      target: { value: "plans/new.png" },
+    expect(await screen.findByAltText("Private building image")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Upload image" }));
+    const dialog = await screen.findByRole("dialog", { name: "Upload building image" });
+    const file = new File([new Uint8Array([137, 80, 78, 71])], "new-plan.png", {
+      type: "image/png",
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add plan image" }));
+    fireEvent.change(dialog.querySelector("input[type=file]")!, { target: { files: [file] } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Upload image" }));
 
-    expect(
-      fetchMock.mock.calls.some(([input, init]) => {
-        return (
-          String(input) === `${apiBaseUrl}/company/buildings/building-1/plan-images` &&
-          init?.method === "POST" &&
-          String(init.body).includes("plans/new.png")
-        );
-      }),
-    ).toBe(true);
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([input, init]) => {
+          const body = init?.body;
+          return (
+            String(input) === `${apiBaseUrl}/company/buildings/building-1/images` &&
+            init?.method === "POST" &&
+            body instanceof FormData &&
+            body.get("kind") === "PLAN" &&
+            body.get("image") instanceof File
+          );
+        }),
+      ).toBe(true),
+    );
+    rendered.unmount();
+    expect(URL.revokeObjectURL).toHaveBeenCalled();
   });
 
   it("loads area detail without requesting assigned users when the permission is absent", async () => {
@@ -360,7 +418,7 @@ describe("company management UI", () => {
       ...companySession,
       user: {
         ...companySession.user,
-        permissions: ["welcome.view", "company-users.view", "company-users.delete"],
+        permissions: ["welcome.view", "company-users.view", "company-users.update"],
       },
     };
     storeCompanySession(session);
@@ -373,11 +431,13 @@ describe("company management UI", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Confirm deactivation" });
     expect(within(dialog).getByText("Worker")).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Deactivate user" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Deactivate" }));
 
     expect(
       fetchMock.mock.calls.some(([input, init]) => {
-        return String(input) === `${apiBaseUrl}/company/users/user-1` && init?.method === "DELETE";
+        return (
+          String(input) === `${apiBaseUrl}/company/users/user-1/status` && init?.method === "PATCH"
+        );
       }),
     ).toBe(true);
   });

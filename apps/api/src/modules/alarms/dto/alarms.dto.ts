@@ -1,13 +1,23 @@
-import { IsEnum, IsInt, IsObject, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from "class-validator";
 import { AlarmChannel, AlarmEventStatus, AlarmSeverity, AlarmTargetType } from "@prisma/client";
+import { PaginationQueryDto } from "../../../common/dto/pagination.dto";
 
-export class ListAlarmRulesQueryDto {
+export class ListAlarmRulesQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   buildingId?: string;
 }
 
-export class ListAlarmsQueryDto {
+export class ListAlarmsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   buildingId?: string;
@@ -19,6 +29,11 @@ export class ListAlarmsQueryDto {
   @IsOptional()
   @IsEnum(AlarmEventStatus)
   status?: AlarmEventStatus;
+}
+
+export class UpdateAlarmLifecycleStatusDto {
+  @IsBoolean()
+  isActive!: boolean;
 }
 
 export class AlarmActionNoteDto {

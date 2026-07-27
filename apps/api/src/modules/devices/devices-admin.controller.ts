@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   ValidationPipe,
 } from "@nestjs/common";
 
@@ -14,6 +15,7 @@ import type { AuthenticatedRequest } from "../../common/auth.types";
 import { AdminEndpoint } from "../../common/decorators/admin-endpoint.decorator";
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
+import { SearchPaginationQueryDto } from "../../common/dto/pagination.dto";
 import {
   AssignDeviceToCompanyDto,
   AssignGatewayToBuildingDto,
@@ -45,8 +47,11 @@ export class DevicesAdminController {
 
   @RequirePermissions("gateways.view")
   @Get("gateways")
-  listGateways() {
-    return this.devices.listGateways();
+  listGateways(
+    @Query(new ValidationPipe({ expectedType: SearchPaginationQueryDto, transform: true }))
+    query: SearchPaginationQueryDto,
+  ) {
+    return this.devices.listGateways(query);
   }
 
   @RequirePermissions("gateways.create")
@@ -121,8 +126,11 @@ export class DevicesAdminController {
 
   @RequirePermissions("nodes.view")
   @Get("nodes")
-  listNodes() {
-    return this.devices.listNodes();
+  listNodes(
+    @Query(new ValidationPipe({ expectedType: SearchPaginationQueryDto, transform: true }))
+    query: SearchPaginationQueryDto,
+  ) {
+    return this.devices.listNodes(query);
   }
 
   @RequirePermissions("nodes.create")

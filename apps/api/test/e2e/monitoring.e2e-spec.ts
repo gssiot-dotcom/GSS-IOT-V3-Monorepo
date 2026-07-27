@@ -76,6 +76,7 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     await prisma.companyRolePermission.deleteMany();
     await prisma.companyUser.deleteMany();
     await prisma.companyRole.deleteMany();
+    await prisma.buildingPlanImage.deleteMany();
     await prisma.constructionBuilding.deleteMany();
     await prisma.constructionArea.deleteMany();
     await prisma.company.deleteMany();
@@ -521,6 +522,9 @@ describe("Phase 6 monitoring and realtime e2e", () => {
 
   it("enforces scope and returns building/node-type filtered monitoring data with paginated history", async () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const to = new Date(Date.now() + 60_000).toISOString();
+    const from = new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString();
+    const range = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
 
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/monitoring`)
@@ -562,15 +566,72 @@ describe("Phase 6 monitoring and realtime e2e", () => {
 
     await request(server)
       .get(
-        `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history?page=1&pageSize=1`,
+        `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history?page=1&pageSize=50&${range}`,
       )
       .set("Authorization", `Bearer ${scopedToken}`)
       .expect(200)
       .expect(({ body }) => {
-        expect(body.items).toHaveLength(1);
-        expect(body.pageSize).toBe(1);
+        expect(body.items).toHaveLength(2);
+        expect(body.pageSize).toBe(50);
         expect(body.total).toBeGreaterThanOrEqual(2);
       });
+    await request(server)
+      .get(
+        `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history/chart?${range}`,
+      )
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items.length).toBeGreaterThanOrEqual(2);
+        expect(body.returnedPointCount).toBe(body.items.length);
+        expect(body.sampleLimit).toBe(500);
+        expect(body.items.map((item: { receivedAt: string }) => item.receivedAt)).toEqual(
+          [...body.items]
+            .map((item: { receivedAt: string }) => item.receivedAt)
+            .sort((left, right) => left.localeCompare(right)),
+        );
+      });
+    const boundaryReadings = await prisma.sensorReading.findMany({
+      orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+      select: { id: true, receivedAt: true },
+      take: 2,
+      where: { nodeId: doorNodeId },
+    });
+    expect(boundaryReadings).toHaveLength(2);
+    const boundaryFrom = boundaryReadings[0]!.receivedAt.toISOString();
+    const boundaryTo = boundaryReadings[1]!.receivedAt.toISOString();
+    await request(server)
+      .get(
+        `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history?page=1&pageSize=50&from=${encodeURIComponent(boundaryFrom)}&to=${encodeURIComponent(boundaryTo)}`,
+      )
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items.map((item: { id: string }) => item.id)).toContain(
+          boundaryReadings[0]!.id,
+        );
+        expect(body.items.map((item: { id: string }) => item.id)).not.toContain(
+          boundaryReadings[1]!.id,
+        );
+      });
+    await request(server)
+      .get(
+        `/admin/monitoring/buildings/${allowedBuildingId}/node-types/door_node/nodes/${doorNodeId}/history/chart?${range}`,
+      )
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200);
+    await request(server)
+      .get(
+        `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history?page=1&pageSize=25&${range}`,
+      )
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(400);
+    await request(server)
+      .get(
+        `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history?page=1&pageSize=50&from=2026-07-01T00%3A00%3A00.000Z&to=2026-07-03T00%3A00%3A00.000Z`,
+      )
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(400);
 
     await request(server)
       .get(`/company/buildings/${otherBuildingId}/monitoring/door_node`)

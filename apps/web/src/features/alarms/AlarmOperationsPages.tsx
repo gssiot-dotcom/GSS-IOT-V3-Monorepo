@@ -5,12 +5,16 @@ import type {
   AlarmPolicyRecord,
   AlarmRuleRecord,
   AlarmSeverity,
+  CollectionPageSize,
   BuildingRecord,
   CompanyPositionRecord,
   CompanyUserRecord,
   NodeTypeRecord,
+  PaginatedResponse,
 } from "@gss-iot/contracts";
 import {
+  CollectionPagination,
+  ConfirmActionModal,
   DataTable,
   EntityActionMenu,
   EmptyState,
@@ -22,19 +26,18 @@ import {
   PageHeader,
   StatusBadge,
   StickyFormActions,
+  WorkspaceTabs,
 } from "@gss-iot/ui";
+import { Button, Group, Modal, NumberInput, Select, Stack, Text, TextInput } from "@mantine/core";
 import {
-  Button,
-  Group,
-  Modal,
-  NumberInput,
-  Select,
-  Stack,
-  Tabs,
-  Text,
-  TextInput,
-} from "@mantine/core";
-import { IconBellCheck, IconCheck, IconEye, IconPlus } from "@tabler/icons-react";
+  IconBellCheck,
+  IconCheck,
+  IconEye,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconPlus,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -46,9 +49,7 @@ import { hasPermission } from "../../shared/rbac/has-permission";
 
 type BasePath = "/admin" | "/company";
 
-interface ListResponse<T> {
-  items: T[];
-}
+type ListResponse<T> = PaginatedResponse<T>;
 
 interface RuleOptions {
   buildings: Array<BuildingRecord & { company?: { name: string } }>;
@@ -195,6 +196,11 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
   const navigate = useNavigate();
   const [alarms, setAlarms] = useState<AlarmEventRecord[]>();
   const [error, setError] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
+  const [archiveTarget, setArchiveTarget] = useState<AlarmEventRecord | null>(null);
+  const [archiving, setArchiving] = useState(false);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -202,13 +208,28 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
     try {
       const response = await apiRequest<ListResponse<AlarmEventRecord>>(
         session,
-        endpoint(basePath, "/alarms"),
+        endpoint(basePath, `/alarms?page=${page}&pageSize=${pageSize}`),
       );
       setAlarms(response.items);
+      setTotal(response.total);
     } catch {
       setError(true);
     }
-  }, [basePath, session]);
+  }, [basePath, page, pageSize, session]);
+
+  const archive = async () => {
+    if (!session || !archiveTarget || archiving) return;
+    setArchiving(true);
+    try {
+      await apiRequest(session, endpoint(basePath, `/alarms/${archiveTarget.id}`), {
+        method: "DELETE",
+      });
+      setArchiveTarget(null);
+      await load();
+    } finally {
+      setArchiving(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -222,56 +243,104 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
     <Stack gap="lg">
       <PageHeader title={t("alarms.title")} subtitle={t("alarms.subtitle")} />
       {alarms.length ? (
-        <DataTable
-          rows={alarms}
-          columns={[
-            {
-              key: "building",
-              label: t("organizations.building"),
-              render: (row) => row.building?.title ?? row.buildingId,
-            },
-            {
-              key: "node",
-              label: t("devices.node"),
-              render: (row) => row.node?.number ?? row.nodeId,
-            },
-            {
-              key: "severity",
-              label: t("alarms.severity"),
-              render: (row) => <StatusValue value={row.severity} />,
-            },
-            {
-              key: "status",
-              label: t("gatewayCommands.status"),
-              render: (row) => <StatusValue value={row.status} />,
-            },
-            {
-              key: "opened",
-              label: t("alarms.openedAt"),
-              render: (row) => formatDate(row.openedAt),
-            },
-            {
-              key: "actions",
-              label: t("organizations.actions"),
-              render: (row) => (
-                <EntityActionMenu
-                  ariaLabel={`${t("common.moreActions")}: ${row.node?.number ?? row.nodeId}`}
-                  items={[
-                    {
-                      icon: <IconEye size={16} />,
-                      key: "open",
-                      label: t("organizations.open"),
-                      onClick: () => navigate(`${basePath}/alarms/${row.id}`),
-                    },
-                  ]}
-                />
-              ),
-            },
-          ]}
-        />
+        <Stack gap="sm">
+          <CollectionPagination
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(Number(value) as CollectionPageSize);
+              setPage(1);
+            }}
+            page={page}
+            pageSize={pageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+              to: Math.min(page * pageSize, total),
+              total,
+            })}
+            totalPages={Math.max(1, Math.ceil(total / pageSize))}
+          />
+          <DataTable
+            rows={alarms}
+            columns={[
+              {
+                key: "building",
+                label: t("organizations.building"),
+                render: (row) => row.building?.title ?? row.buildingId,
+              },
+              {
+                key: "node",
+                label: t("devices.node"),
+                render: (row) => row.node?.number ?? row.nodeId,
+              },
+              {
+                key: "severity",
+                label: t("alarms.severity"),
+                render: (row) => <StatusValue value={row.severity} />,
+              },
+              {
+                key: "status",
+                label: t("gatewayCommands.status"),
+                render: (row) => <StatusValue value={row.status} />,
+              },
+              {
+                key: "opened",
+                label: t("alarms.openedAt"),
+                render: (row) => formatDate(row.openedAt),
+              },
+              {
+                key: "actions",
+                label: t("organizations.actions"),
+                render: (row) => (
+                  <EntityActionMenu
+                    ariaLabel={`${t("common.moreActions")}: ${row.node?.number ?? row.nodeId}`}
+                    items={[
+                      {
+                        icon: <IconEye size={16} />,
+                        key: "open",
+                        label: t("organizations.open"),
+                        onClick: () => navigate(`${basePath}/alarms/${row.id}`),
+                      },
+                      ...(hasPermission(session, "alarms.manage")
+                        ? [
+                            {
+                              color: "red" as const,
+                              destructive: true,
+                              disabled: row.status !== "RESOLVED",
+                              disabledReason:
+                                row.status === "RESOLVED"
+                                  ? undefined
+                                  : t("alarms.deleteResolvedOnly"),
+                              icon: <IconTrash size={16} />,
+                              key: "delete",
+                              label: t("organizations.deletePermanently"),
+                              onClick: () => setArchiveTarget(row),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
+                ),
+              },
+            ]}
+          />
+        </Stack>
       ) : (
         <EmptyState description={t("alarms.empty")} title={t("common.emptyTitle")} />
       )}
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("organizations.deletePermanently")}
+        description={t("alarms.confirmArchiveImpact")}
+        entityName={archiveTarget?.node?.number ?? archiveTarget?.nodeId ?? ""}
+        loading={archiving}
+        onClose={() => {
+          if (!archiving) setArchiveTarget(null);
+        }}
+        onConfirm={() => void archive()}
+        opened={Boolean(archiveTarget)}
+        title={t("alarms.confirmArchiveTitle")}
+      />
     </Stack>
   );
 }
@@ -294,6 +363,7 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
   const [error, setError] = useState(false);
   const [mutation, setMutation] = useState<"acknowledge" | "resolve" | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<"notifications" | "triggers">("triggers");
 
   const load = useCallback(async () => {
     if (!session || !alarmId) return;
@@ -388,48 +458,50 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
           {mutationError}
         </Text>
       ) : null}
-      <Tabs defaultValue="triggers">
-        <Tabs.List>
-          <Tabs.Tab value="triggers">{t("alarms.triggers")}</Tabs.Tab>
-          <Tabs.Tab value="notifications">{t("app.notifications")}</Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel pt="md" value="triggers">
-          <DataTable
-            rows={alarm.policyTriggers ?? []}
-            columns={[
-              {
-                key: "channel",
-                label: t("alarms.channel"),
-                render: (row) => row.policy?.channel ?? "-",
-              },
-              {
-                key: "count",
-                label: t("alarms.occurrences"),
-                render: (row) => String(row.triggerOccurrenceCount ?? "-"),
-              },
-            ]}
-          />
-        </Tabs.Panel>
-        <Tabs.Panel pt="md" value="notifications">
-          <DataTable
-            rows={alarm.notifications ?? []}
-            columns={[
-              { key: "title", label: t("alarms.notification"), render: (row) => row.title },
-              {
-                key: "status",
-                label: t("gatewayCommands.status"),
-                render: (row) => <StatusValue value={row.status} />,
-              },
-              { key: "channel", label: t("alarms.channel"), render: (row) => row.channel },
-              {
-                key: "attempts",
-                label: t("gatewayCommands.attempts"),
-                render: (row) => `${row.attemptCount}/${row.maxAttempts}`,
-              },
-            ]}
-          />
-        </Tabs.Panel>
-      </Tabs>
+      <WorkspaceTabs
+        ariaLabel={t("alarms.detailTitle")}
+        items={[
+          { label: t("alarms.triggers"), value: "triggers" },
+          { label: t("app.notifications"), value: "notifications" },
+        ]}
+        onChange={(value) => setDetailTab(value as "notifications" | "triggers")}
+        value={detailTab}
+      />
+      {detailTab === "triggers" ? (
+        <DataTable
+          rows={alarm.policyTriggers ?? []}
+          columns={[
+            {
+              key: "channel",
+              label: t("alarms.channel"),
+              render: (row) => row.policy?.channel ?? "-",
+            },
+            {
+              key: "count",
+              label: t("alarms.occurrences"),
+              render: (row) => String(row.triggerOccurrenceCount ?? "-"),
+            },
+          ]}
+        />
+      ) : (
+        <DataTable
+          rows={alarm.notifications ?? []}
+          columns={[
+            { key: "title", label: t("alarms.notification"), render: (row) => row.title },
+            {
+              key: "status",
+              label: t("gatewayCommands.status"),
+              render: (row) => <StatusValue value={row.status} />,
+            },
+            { key: "channel", label: t("alarms.channel"), render: (row) => row.channel },
+            {
+              key: "attempts",
+              label: t("gatewayCommands.attempts"),
+              render: (row) => `${row.attemptCount}/${row.maxAttempts}`,
+            },
+          ]}
+        />
+      )}
     </Stack>
   );
 }
@@ -446,16 +518,31 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
   const [ruleNameError, setRuleNameError] = useState<string | null>(null);
   const [ruleFormError, setRuleFormError] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
+  const [lifecycleTarget, setLifecycleTarget] = useState<{
+    action: "DELETE" | "STATUS";
+    id: string;
+    isActive: boolean;
+    kind: "policy" | "rule";
+    name: string;
+  } | null>(null);
+  const [mutating, setMutating] = useState(false);
 
   const load = useCallback(async () => {
     if (!session) return;
     setError(false);
     try {
       const [loadedRules, loadedOptions] = await Promise.all([
-        apiRequest<ListResponse<AlarmRuleRecord>>(session, endpoint(basePath, "/alarm-rules")),
+        apiRequest<ListResponse<AlarmRuleRecord>>(
+          session,
+          endpoint(basePath, `/alarm-rules?page=${page}&pageSize=${pageSize}`),
+        ),
         apiRequest<RuleOptions>(session, endpoint(basePath, "/alarm-rules/options")),
       ]);
       setRules(loadedRules.items);
+      setTotal(loadedRules.total);
       setOptions(loadedOptions);
       if (hasPermission(session, "notifications.manage")) {
         setProviders(
@@ -468,7 +555,7 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
     } catch {
       setError(true);
     }
-  }, [basePath, session]);
+  }, [basePath, page, pageSize, session]);
 
   useEffect(() => {
     void load();
@@ -552,6 +639,35 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
     await load();
   };
 
+  const mutateLifecycle = async () => {
+    if (!session || !lifecycleTarget || mutating) return;
+    setMutating(true);
+    try {
+      const resource = lifecycleTarget.kind === "rule" ? "alarm-rules" : "alarm-policies";
+      const path = endpoint(
+        basePath,
+        `/${resource}/${lifecycleTarget.id}${
+          lifecycleTarget.action === "DELETE" ? "/permanent" : "/status"
+        }`,
+      );
+      await apiRequest(
+        session,
+        path,
+        lifecycleTarget.action === "DELETE"
+          ? { method: "DELETE" }
+          : { body: JSON.stringify({ isActive: !lifecycleTarget.isActive }), method: "PATCH" },
+      );
+      setLifecycleTarget(null);
+      await load();
+    } finally {
+      setMutating(false);
+    }
+  };
+
+  const policies = (rules ?? []).flatMap((rule) =>
+    (rule.recipientPolicies ?? []).map((policy) => ({ ...policy, ruleName: rule.name ?? rule.id })),
+  );
+
   if (!rules || !options) return <LoadingState title={t("common.loading")} />;
   if (error)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
@@ -568,6 +684,22 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
             </Button>
           </Can>
         }
+      />
+      <CollectionPagination
+        onPageChange={setPage}
+        onPageSizeChange={(value) => {
+          setPageSize(Number(value) as CollectionPageSize);
+          setPage(1);
+        }}
+        page={page}
+        pageSize={pageSize}
+        pageSizeLabel={t("table.pageSize")}
+        rangeLabel={tf("table.range", {
+          from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+          to: Math.min(page * pageSize, total),
+          total,
+        })}
+        totalPages={Math.max(1, Math.ceil(total / pageSize))}
       />
       {rules.length ? (
         <DataTable
@@ -599,6 +731,11 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
               render: (row) => String(row.recipientPolicies?.length ?? 0),
             },
             {
+              key: "status",
+              label: t("organizations.status"),
+              render: (row) => <StatusValue value={row.isActive ? "ACTIVE" : "INACTIVE"} />,
+            },
+            {
               key: "actions",
               label: t("organizations.actions"),
               render: (row) => (
@@ -606,17 +743,57 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
                   <EntityActionMenu
                     ariaLabel={`${t("common.moreActions")}: ${row.name ?? row.id}`}
                     items={[
+                      ...(row.isActive
+                        ? [
+                            {
+                              icon: <IconPlus size={16} />,
+                              key: "add-policy",
+                              label: t("alarms.addPolicy"),
+                              onClick: () => {
+                                setPolicyDraft({
+                                  ...createEmptyPolicyDraft(),
+                                  buildingId: row.buildingId,
+                                });
+                                setPolicyRule(row);
+                              },
+                            },
+                          ]
+                        : []),
                       {
-                        icon: <IconPlus size={16} />,
-                        key: "add-policy",
-                        label: t("alarms.addPolicy"),
-                        onClick: () => {
-                          setPolicyDraft({
-                            ...createEmptyPolicyDraft(),
-                            buildingId: row.buildingId,
-                          });
-                          setPolicyRule(row);
-                        },
+                        icon: row.isActive ? (
+                          <IconPlayerPause size={16} />
+                        ) : (
+                          <IconPlayerPlay size={16} />
+                        ),
+                        key: "status",
+                        label: t(
+                          row.isActive ? "organizations.deactivate" : "organizations.activate",
+                        ),
+                        onClick: () =>
+                          setLifecycleTarget({
+                            action: "STATUS",
+                            id: row.id,
+                            isActive: row.isActive,
+                            kind: "rule",
+                            name: row.name ?? row.id,
+                          }),
+                      },
+                      {
+                        color: "red",
+                        destructive: true,
+                        disabled: !row.deletion?.allowed,
+                        disabledReason: row.deletion?.blocker ?? undefined,
+                        icon: <IconTrash size={16} />,
+                        key: "delete",
+                        label: t("organizations.deletePermanently"),
+                        onClick: () =>
+                          setLifecycleTarget({
+                            action: "DELETE",
+                            id: row.id,
+                            isActive: row.isActive,
+                            kind: "rule",
+                            name: row.name ?? row.id,
+                          }),
                       },
                     ]}
                   />
@@ -628,7 +805,74 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
       ) : (
         <EmptyState description={t("alarms.emptyRules")} title={t("common.emptyTitle")} />
       )}
-      <Modal opened={opened} onClose={closeCreateRule} title={t("alarms.createRule")}>
+      {policies.length ? (
+        <Stack gap="sm">
+          <Text fw={650}>{t("alarms.policies")}</Text>
+          <DataTable
+            rows={policies}
+            columns={[
+              { key: "rule", label: t("alarms.rulesTitle"), render: (row) => row.ruleName },
+              { key: "channel", label: t("alarms.channel"), render: (row) => row.channel },
+              {
+                key: "status",
+                label: t("organizations.status"),
+                render: (row) => <StatusValue value={row.isActive ? "ACTIVE" : "INACTIVE"} />,
+              },
+              {
+                key: "actions",
+                label: t("organizations.actions"),
+                align: "right",
+                render: (row) => (
+                  <Can permission="alarm-rules.manage">
+                    <EntityActionMenu
+                      ariaLabel={`${t("common.moreActions")}: ${row.ruleName}`}
+                      items={[
+                        {
+                          icon: row.isActive ? (
+                            <IconPlayerPause size={16} />
+                          ) : (
+                            <IconPlayerPlay size={16} />
+                          ),
+                          key: "status",
+                          label: t(
+                            row.isActive ? "organizations.deactivate" : "organizations.activate",
+                          ),
+                          onClick: () =>
+                            setLifecycleTarget({
+                              action: "STATUS",
+                              id: row.id,
+                              isActive: row.isActive,
+                              kind: "policy",
+                              name: `${row.ruleName} / ${row.channel}`,
+                            }),
+                        },
+                        {
+                          color: "red",
+                          destructive: true,
+                          disabled: !row.deletion?.allowed,
+                          disabledReason: row.deletion?.blocker ?? undefined,
+                          icon: <IconTrash size={16} />,
+                          key: "delete",
+                          label: t("organizations.deletePermanently"),
+                          onClick: () =>
+                            setLifecycleTarget({
+                              action: "DELETE",
+                              id: row.id,
+                              isActive: row.isActive,
+                              kind: "policy",
+                              name: `${row.ruleName} / ${row.channel}`,
+                            }),
+                        },
+                      ]}
+                    />
+                  </Can>
+                ),
+              },
+            ]}
+          />
+        </Stack>
+      ) : null}
+      <Modal opened={opened} onClose={closeCreateRule} size="lg" title={t("alarms.createRule")}>
         <FormWorkspace>
           <FormSection title={t("alarms.rulesTitle")}>
             <FormFieldGrid>
@@ -779,6 +1023,37 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
           </StickyFormActions>
         </Stack>
       </Modal>
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t(
+          lifecycleTarget?.action === "DELETE"
+            ? "organizations.deletePermanently"
+            : lifecycleTarget?.isActive
+              ? "organizations.deactivate"
+              : "organizations.activate",
+        )}
+        description={t(
+          lifecycleTarget?.action === "DELETE"
+            ? "organizations.confirmPermanentDeleteImpact"
+            : lifecycleTarget?.isActive
+              ? "organizations.confirmDeactivateImpact"
+              : "organizations.confirmActivateImpact",
+        )}
+        entityName={lifecycleTarget?.name ?? ""}
+        loading={mutating}
+        onClose={() => {
+          if (!mutating) setLifecycleTarget(null);
+        }}
+        onConfirm={() => void mutateLifecycle()}
+        opened={Boolean(lifecycleTarget)}
+        title={t(
+          lifecycleTarget?.action === "DELETE"
+            ? "organizations.confirmPermanentDeleteTitle"
+            : lifecycleTarget?.isActive
+              ? "organizations.confirmDeactivateTitle"
+              : "organizations.confirmActivateTitle",
+        )}
+      />
     </Stack>
   );
 }
@@ -788,6 +1063,11 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
   const [notifications, setNotifications] = useState<AlarmNotificationRecord[]>();
   const [unreadCount, setUnreadCount] = useState(0);
   const [error, setError] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<AlarmNotificationRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -796,7 +1076,7 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
       const [items, count] = await Promise.all([
         apiRequest<ListResponse<AlarmNotificationRecord>>(
           session,
-          endpoint(basePath, "/notifications"),
+          endpoint(basePath, `/notifications?page=${page}&pageSize=${pageSize}`),
         ),
         apiRequest<{ unreadCount: number }>(
           session,
@@ -804,11 +1084,12 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
         ),
       ]);
       setNotifications(items.items);
+      setTotal(items.total);
       setUnreadCount(count.unreadCount);
     } catch {
       setError(true);
     }
-  }, [basePath, session]);
+  }, [basePath, page, pageSize, session]);
 
   useEffect(() => {
     void load();
@@ -824,6 +1105,20 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
     if (!session) return;
     await apiRequest(session, endpoint(basePath, "/notifications/read-all"), { method: "PATCH" });
     await load();
+  };
+
+  const archiveNotification = async () => {
+    if (!session || !deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await apiRequest(session, endpoint(basePath, `/notifications/${deleteTarget.id}`), {
+        method: "DELETE",
+      });
+      setDeleteTarget(null);
+      await load();
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (!notifications) return <LoadingState title={t("common.loading")} />;
@@ -844,6 +1139,22 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
             {t("alarms.markAllRead")}
           </Button>
         }
+      />
+      <CollectionPagination
+        onPageChange={setPage}
+        onPageSizeChange={(value) => {
+          setPageSize(Number(value) as CollectionPageSize);
+          setPage(1);
+        }}
+        page={page}
+        pageSize={pageSize}
+        pageSizeLabel={t("table.pageSize")}
+        rangeLabel={tf("table.range", {
+          from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+          to: Math.min(page * pageSize, total),
+          total,
+        })}
+        totalPages={Math.max(1, Math.ceil(total / pageSize))}
       />
       {notifications.length ? (
         <DataTable
@@ -875,6 +1186,14 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
                       label: t("alarms.markRead"),
                       onClick: () => void markRead(row.id),
                     },
+                    {
+                      color: "red",
+                      destructive: true,
+                      icon: <IconTrash size={16} />,
+                      key: "delete",
+                      label: t("organizations.deletePermanently"),
+                      onClick: () => setDeleteTarget(row),
+                    },
                   ]}
                 />
               ),
@@ -884,6 +1203,19 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
       ) : (
         <EmptyState description={t("alarms.emptyNotifications")} title={t("common.emptyTitle")} />
       )}
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("organizations.deletePermanently")}
+        description={t("alarms.confirmNotificationArchiveImpact")}
+        entityName={deleteTarget?.title ?? ""}
+        loading={deleting}
+        onClose={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        onConfirm={() => void archiveNotification()}
+        opened={Boolean(deleteTarget)}
+        title={t("alarms.confirmNotificationArchiveTitle")}
+      />
     </Stack>
   );
 }

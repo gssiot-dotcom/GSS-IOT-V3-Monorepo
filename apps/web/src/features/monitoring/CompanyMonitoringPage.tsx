@@ -1,8 +1,10 @@
 import type {
   BuildingRecord,
+  PaginatedResponse,
   BuildingAlarmLevelsResponse,
   BuildingFaultFiltersResponse,
   CanonicalNodeType,
+  CollectionPageSize,
   FaultFilterGatewayGroup,
   GatewayCommandStatus,
   MonitoringBuildingOverview,
@@ -10,6 +12,7 @@ import type {
   MonitoringNodeStateRecord,
   MonitoringNodeTypeResponse,
   PaginatedSensorHistory,
+  SensorHistoryChartResponse,
   SensorValues,
 } from "@gss-iot/contracts";
 import {
@@ -24,6 +27,7 @@ import {
   RealtimeStatusBadge,
   StatusBadge,
   TintedIconBox,
+  WorkspaceTabs,
 } from "@gss-iot/ui";
 import {
   Badge,
@@ -37,7 +41,6 @@ import {
   SimpleGrid,
   Stack,
   Switch,
-  Tabs,
   Text,
   UnstyledButton,
 } from "@mantine/core";
@@ -62,6 +65,7 @@ import { Can } from "../../shared/rbac/Can";
 import { NodeDetailDrawer } from "./components/NodeDetailDrawer";
 import { NodeStateCard } from "./components/NodeStateCard";
 import { MonitoringViewToggle, type MonitoringView } from "./components/MonitoringViewToggle";
+import { useNodeHistoryRange } from "./components/useNodeHistoryRange";
 
 type RealtimeStatus = "connected" | "offline" | "reconnecting";
 type StateRow = MonitoringNodeStateRecord & { id: string };
@@ -98,8 +102,8 @@ export function CompanyMonitoringIndexPage() {
   useEffect(() => {
     if (!session) return;
     setError(false);
-    void apiRequest<BuildingRecord[]>(session, "/company/buildings")
-      .then(setBuildings)
+    void apiRequest<PaginatedResponse<BuildingRecord>>(session, "/company/buildings?pageSize=100")
+      .then((response) => setBuildings(response.items))
       .catch(() => setError(true));
   }, [session]);
 
@@ -215,15 +219,28 @@ export function NodeTypeMonitoringPage() {
   const { session } = useAuth();
   const [response, setResponse] = useState<MonitoringNodeTypeResponse>();
   const [history, setHistory] = useState<PaginatedSensorHistory>();
+  const [historyChart, setHistoryChart] = useState<SensorHistoryChartResponse>();
+  const [historyError, setHistoryError] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [alarmLevels, setAlarmLevels] = useState<BuildingAlarmLevelsResponse>();
   const [faultFilters, setFaultFilters] = useState<BuildingFaultFiltersResponse>();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const historyRange = useNodeHistoryRange(selectedNodeId);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState<CollectionPageSize>(50);
   const [view, setView] = useState<MonitoringView>(() => {
     const stored = window.localStorage.getItem("gss.monitoring.view");
     return stored === "CARD" ? "CARD" : "TABLE";
   });
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("offline");
   const [error, setError] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<
+    "alarm-levels" | "fault-filters" | "history" | "states"
+  >("states");
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [historyRange.range.from, historyRange.range.to, selectedNodeId]);
 
   useEffect(() => {
     if (!session || !buildingId || !canonicalNodeType) return;
@@ -274,14 +291,53 @@ export function NodeTypeMonitoringPage() {
   }, [buildingId, canonicalNodeType, session]);
 
   useEffect(() => {
-    if (!session || !buildingId || !canonicalNodeType || !selectedNodeId) return;
-    void apiRequest<PaginatedSensorHistory>(
-      session,
-      `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}/nodes/${selectedNodeId}/history?page=1&pageSize=25`,
-    )
-      .then(setHistory)
-      .catch(() => setHistory(undefined));
-  }, [buildingId, canonicalNodeType, selectedNodeId, session]);
+    if (!session || !buildingId || !canonicalNodeType || !selectedNodeId) {
+      setHistory(undefined);
+      setHistoryChart(undefined);
+      return;
+    }
+    const query = new URLSearchParams({
+      from: historyRange.range.from,
+      page: String(historyPage),
+      pageSize: String(historyPageSize),
+      to: historyRange.range.to,
+    });
+    const chartQuery = new URLSearchParams({
+      from: historyRange.range.from,
+      to: historyRange.range.to,
+    });
+    setHistoryLoading(true);
+    setHistoryError(false);
+    void Promise.all([
+      apiRequest<PaginatedSensorHistory>(
+        session,
+        `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}/nodes/${selectedNodeId}/history?${query.toString()}`,
+      ),
+      apiRequest<SensorHistoryChartResponse>(
+        session,
+        `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}/nodes/${selectedNodeId}/history/chart?${chartQuery.toString()}`,
+      ),
+    ])
+      .then(([table, chart]) => {
+        setHistory(table);
+        setHistoryChart(chart);
+      })
+      .catch(() => {
+        setHistory(undefined);
+        setHistoryChart(undefined);
+        setHistoryError(true);
+      })
+      .finally(() => setHistoryLoading(false));
+  }, [
+    buildingId,
+    canonicalNodeType,
+    historyRange.range.from,
+    historyRange.range.to,
+    historyPage,
+    historyPageSize,
+    selectedNodeId,
+    session,
+  ]);
 
   useEffect(() => {
     if (!session || !buildingId || !canonicalNodeType) return;
@@ -350,14 +406,21 @@ export function NodeTypeMonitoringPage() {
         ))}
       </Box>
       {rows.length ? (
-        <Tabs defaultValue="states">
+        <Stack gap="md">
           <Group justify="space-between" wrap="wrap">
-            <Tabs.List>
-              <Tabs.Tab value="states">{t("monitoring.latestStates")}</Tabs.Tab>
-              <Tabs.Tab value="history">{t("monitoring.history")}</Tabs.Tab>
-              <Tabs.Tab value="alarm-levels">{t("alarmLevels.title")}</Tabs.Tab>
-              <Tabs.Tab value="fault-filters">{t("alarmLevels.faultFilters")}</Tabs.Tab>
-            </Tabs.List>
+            <WorkspaceTabs
+              ariaLabel={t("monitoring.title")}
+              items={[
+                { label: t("monitoring.latestStates"), value: "states" },
+                { label: t("monitoring.history"), value: "history" },
+                { label: t("alarmLevels.title"), value: "alarm-levels" },
+                { label: t("alarmLevels.faultFilters"), value: "fault-filters" },
+              ]}
+              onChange={(value) =>
+                setWorkspaceTab(value as "alarm-levels" | "fault-filters" | "history" | "states")
+              }
+              value={workspaceTab}
+            />
             <MonitoringViewToggle
               onChange={(next) => {
                 setView(next);
@@ -366,8 +429,8 @@ export function NodeTypeMonitoringPage() {
               value={view}
             />
           </Group>
-          <Tabs.Panel pt="md" value="states">
-            {view === "CARD" ? (
+          {workspaceTab === "states" ? (
+            view === "CARD" ? (
               <SimpleGrid
                 cols={{ base: 1, xs: 2, sm: 3, lg: 5 }}
                 data-testid="monitoring-node-grid"
@@ -433,28 +496,25 @@ export function NodeTypeMonitoringPage() {
                   />
                 </Box>
               </>
-            )}
-          </Tabs.Panel>
-          <Tabs.Panel pt="md" value="history">
+            )
+          ) : workspaceTab === "history" ? (
             <HistoryTable history={history} />
-          </Tabs.Panel>
-          <Tabs.Panel pt="md" value="alarm-levels">
+          ) : workspaceTab === "alarm-levels" ? (
             <AlarmLevelPanel
               buildingId={buildingId!}
               data={alarmLevels}
               nodeType={canonicalNodeType}
               onRefresh={setAlarmLevels}
             />
-          </Tabs.Panel>
-          <Tabs.Panel pt="md" value="fault-filters">
+          ) : (
             <FaultFilterPanel
               buildingId={buildingId!}
               data={faultFilters}
               nodeType={canonicalNodeType}
               onRefresh={setFaultFilters}
             />
-          </Tabs.Panel>
-        </Tabs>
+          )}
+        </Stack>
       ) : (
         <EmptyState description={t("monitoring.emptyNodes")} title={t("common.emptyTitle")} />
       )}
@@ -462,10 +522,26 @@ export function NodeTypeMonitoringPage() {
         {tf("monitoring.retention", { days: response.historyRetentionDays })}
       </Text>
       <NodeDetailDrawer
+        chart={historyChart}
+        date={historyRange.date}
         history={history}
+        historyError={historyError}
+        hours={historyRange.hours}
+        loadingHistory={historyLoading}
+        maxDate={historyRange.maxDate}
+        mode={historyRange.mode}
         node={rows.find((row) => row.nodeId === selectedNodeId)}
         nodeType={canonicalNodeType}
         onClose={() => setSelectedNodeId(undefined)}
+        onDateChange={historyRange.setDate}
+        onHoursChange={historyRange.setHours}
+        onHistoryPageChange={setHistoryPage}
+        onHistoryPageSizeChange={(value) => {
+          setHistoryPageSize(value);
+          setHistoryPage(1);
+        }}
+        onModeChange={historyRange.setMode}
+        range={historyRange.range}
         thresholds={alarmLevels?.configurations.find(
           (item) => item.nodeType.key === canonicalNodeType,
         )}

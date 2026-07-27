@@ -4,7 +4,11 @@ import type { AuthenticatedRequest } from "../../common/auth.types";
 import { AdminEndpoint } from "../../common/decorators/admin-endpoint.decorator";
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
-import { AdminMonitoringQueryDto, SensorHistoryQueryDto } from "./dto/monitoring.dto";
+import {
+  AdminMonitoringQueryDto,
+  SensorHistoryChartQueryDto,
+  SensorHistoryQueryDto,
+} from "./dto/monitoring.dto";
 import { MonitoringService } from "./monitoring.service";
 
 @AdminEndpoint()
@@ -58,5 +62,24 @@ export class MonitoringAdminController {
     query: SensorHistoryQueryDto,
   ) {
     return this.monitoring.listNodeHistory(auth!.principal, buildingId, nodeType, nodeId, query);
+  }
+
+  @RequirePermissions("monitoring.view")
+  @Get("buildings/:buildingId/node-types/:nodeType/nodes/:nodeId/history/chart")
+  getNodeHistoryChart(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("buildingId") buildingId: string,
+    @Param("nodeId") nodeId: string,
+    @Param("nodeType") nodeType: string,
+    @Query(new ValidationPipe({ expectedType: SensorHistoryChartQueryDto, transform: true }))
+    query: SensorHistoryChartQueryDto,
+  ) {
+    return this.monitoring.getNodeHistoryChart(
+      auth!.principal,
+      buildingId,
+      nodeType,
+      nodeId,
+      query,
+    );
   }
 }

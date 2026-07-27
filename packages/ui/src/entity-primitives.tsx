@@ -15,6 +15,7 @@ import {
 } from "@mantine/core";
 import { IconDotsVertical } from "@tabler/icons-react";
 import { Fragment, type ReactNode } from "react";
+import { isInteractiveTarget } from "./data-table";
 import { StatusBadge, type GssStatus } from "./status-badge";
 
 export function EntityCardGrid({ children, ...props }: SimpleGridProps) {
@@ -123,7 +124,7 @@ export function EntityActionMenu({
     <Menu aria-label={ariaLabel} position="bottom-end" shadow="md" withinPortal>
       <Tooltip label={ariaLabel}>
         <Menu.Target>
-          <ActionIcon aria-label={ariaLabel} variant="subtle">
+          <ActionIcon aria-label={ariaLabel} data-row-action variant="subtle">
             <IconDotsVertical size={18} />
           </ActionIcon>
         </Menu.Target>
@@ -134,6 +135,7 @@ export function EntityActionMenu({
             {item.destructive && index > 0 ? <Menu.Divider /> : null}
             <Menu.Item
               color={item.color}
+              data-row-action
               data-destructive={item.destructive || undefined}
               disabled={item.disabled}
               leftSection={item.icon}
@@ -168,16 +170,18 @@ export function EntityCard({
     <Card
       className={onClick ? "gss-entity-card gss-entity-card-interactive" : "gss-entity-card"}
       onClick={(event) => {
-        if ((event.target as HTMLElement).closest("button, a, input, textarea, [role=menuitem]")) {
-          return;
-        }
+        if (isInteractiveTarget(event.target, event.currentTarget)) return;
         onClick?.();
       }}
       role={onClick ? "button" : undefined}
       shadow="md"
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={(event) => {
-        if (onClick && (event.key === "Enter" || event.key === " ")) {
+        if (
+          onClick &&
+          !isInteractiveTarget(event.target, event.currentTarget) &&
+          (event.key === "Enter" || event.key === " ")
+        ) {
           event.preventDefault();
           onClick();
         }

@@ -55,3 +55,16 @@
 As of 2026-07-19, Phase 10 adds API E2E coverage for custom company role create/update, GSS-only permission rejection, cross-company role mutation denial, direct-deny effective permission preview, site-inherited building preview, inactive-position assignment rejection, no-permission protected API denial and inactive existing-token rejection. Web unit coverage verifies Company Portal role permission editing, no-permission sidebar filtering and building-plan metadata mutation.
 
 The checklist remains partially open because report/export scope enforcement, alarm recipient resolution and later provider-specific flows are scheduled for later phases.
+
+## 2026-07-27 lifecycle/deletion correction checks
+
+- [x] Status operations use update/manage permissions; delete permissions are reserved for actual
+      hard delete or documented evidence archive.
+- [x] Delete capability metadata is UX only and blockers are repeated transactionally.
+- [x] Company User deactivation/reactivation increments `tokenVersion`; safe-admin/manager checks
+      remain in the backend transaction.
+- [x] Company/Area/Building/User operations derive ownership and scope server-side.
+- [x] Notification archive is recipient-or-scoped-manager; deleted rows leave normal lists/unread.
+- [x] Gateway/Node unassignment uses assignment permissions, preserves history and audits endings.
+- [x] Direct collection inputs reject page sizes outside 50/100.
+- [x] Permission checkbox catalogs remain distinct from paginated permission list endpoints.

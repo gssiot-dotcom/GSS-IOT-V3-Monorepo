@@ -300,16 +300,31 @@ realtime contracts, RBAC/scope enforcement or alarm semantics.
 
 ## Targeted platform and Company branding contract
 
-- Admin and Company headers use the shared Mantine/Tabler `GssPlatformBrand`: a cyan-to-blue
-  Activity mark and the `Global Smart Solutions` wordmark. At constrained widths the mark remains
-  and the wordmark collapses before right-side account, theme, notification or realtime controls.
+- Admin and Company headers render the supplied public
+  `/assets/gss-logos/Gss-logo-blue.svg` as an image with localized accessible alt text and
+  `object-fit: contain`. No generated Activity mark or duplicate wordmark remains. Desktop height
+  is 40–44px and compact/mobile height is 34–38px.
 - Header order is mobile burger, platform brand, divider and translated current-route context.
   Header groups do not wrap or create document-level horizontal overflow.
+- The Admin sidebar renders `/assets/gss-logos/GSS-logo.svg` above `GSS IoT V3` and the localized
+  `GSS Admin Portal` line on the dark surface.
 - The Company sidebar brand block is company-owned. It shows a private authenticated logo inside
-  an 88px neutral plate with `object-fit: contain`, then the company name at no more than two
-  lines. It never displays `GSS IoT V3` or `Company Dashboard` as the Company identity.
+  an always-light neutral plate with neutral border/shadow, 10–14px padding and
+  `object-fit: contain`, then the company name at no more than two lines.
 - Company logo loading uses a skeleton. Missing/error states use company initials in a semantic
   avatar. The name retains a title attribute for the full value.
 - The shared logo editor preserves one primary upload action, selected-file preview/cancel,
   indeterminate progress, inline success/error feedback and a separate destructive confirmation
   for removal. Read-only users see the same preview without mutation controls.
+
+`WorkspaceTabs` is the single compact tab treatment for route workspaces and nested operational
+views. It has a visible active indicator/focus ring, scrolls horizontally on mobile and never causes
+document-level overflow. `CollectionPagination` belongs in the list header and offers only 50/100.
+
+## Global scrollbar contract
+
+All intentional overflow surfaces use the shared light/dark blue-gray scrollbar tokens. Native
+scrollbars use `scrollbar-width`, `scrollbar-color` and the WebKit track/thumb states; Mantine
+ScrollArea uses the same tokens. The usable target is 8–10px with a rounded thumb and stronger hover
+state. Do not hide sidebar, drawer, modal, table, tab or permission-list scrollbars when overflow is
+present.

@@ -1,7 +1,16 @@
-import type { CompanyRecord, GssRoleRecord, SystemSettingsRecord } from "@gss-iot/contracts";
+import type {
+  CompanyRecord,
+  CollectionPageSize,
+  GssRoleRecord,
+  PaginatedResponse,
+  SystemSettingsRecord,
+} from "@gss-iot/contracts";
 import {
+  ConfirmActionModal,
+  CollectionPagination,
   DataTable,
   EmptyState,
+  EntityActionMenu,
   ErrorState,
   LoadingState,
   PageHeader,
@@ -20,6 +29,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
+import { IconEdit, IconEye, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { t, tf } from "../../app/i18n";
@@ -48,6 +58,11 @@ export function GssRolesPage() {
   const [actionError, setActionError] = useState(false);
   const [opened, setOpened] = useState(false);
   const [editingRole, setEditingRole] = useState<GssRoleRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<GssRoleRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
   const [form, setForm] = useState<RoleFormState>(emptyRoleForm);
 
   const groupedPermissions = useMemo(
@@ -68,7 +83,10 @@ export function GssRolesPage() {
     setError(false);
     try {
       const [nextRoles, nextPermissions] = await Promise.all([
-        apiRequest<GssRoleRecord[]>(session, "/admin/roles"),
+        apiRequest<PaginatedResponse<GssRoleRecord>>(
+          session,
+          `/admin/roles?page=${page}&pageSize=${pageSize}`,
+        ),
         hasPermission(session, "admin-roles.view")
           ? apiRequest<GssRoleRecord["permissions"][number]["permission"][]>(
               session,
@@ -76,7 +94,8 @@ export function GssRolesPage() {
             )
           : Promise.resolve([]),
       ]);
-      setRoles(nextRoles);
+      setRoles(nextRoles.items);
+      setTotal(nextRoles.total);
       setPermissions(nextPermissions);
     } catch {
       setError(true);
@@ -85,7 +104,7 @@ export function GssRolesPage() {
 
   useEffect(() => {
     void load();
-  }, [session]);
+  }, [session, page, pageSize]);
 
   const openCreate = () => {
     setActionError(false);
@@ -120,14 +139,18 @@ export function GssRolesPage() {
     }
   };
 
-  const deleteRole = async (roleId: string) => {
-    if (!session) return;
+  const deleteRole = async () => {
+    if (!session || !deleteTarget || deleting) return;
     setActionError(false);
+    setDeleting(true);
     try {
-      await apiRequest(session, `/admin/roles/${roleId}`, { method: "DELETE" });
+      await apiRequest(session, `/admin/roles/${deleteTarget.id}`, { method: "DELETE" });
+      setDeleteTarget(null);
       await load();
     } catch {
       setActionError(true);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -157,62 +180,100 @@ export function GssRolesPage() {
       />
       {actionError ? <Alert color="red" title={t("settings.actionFailed")} /> : null}
       {roles?.length ? (
-        <DataTable
-          columns={[
-            { key: "name", label: t("settings.roleName"), render: (role) => role.name },
-            { key: "key", label: t("management.roleKey"), render: (role) => role.key },
-            {
-              key: "permissions",
-              label: t("management.permissions"),
-              render: (role) => String(role.permissions.length),
-            },
-            {
-              key: "users",
-              label: t("management.assignedUsers"),
-              render: (role) => String(role._count?.users ?? 0),
-            },
-            {
-              key: "protection",
-              label: t("management.protection"),
-              render: (role) => (
-                <Badge color={role.isSuperAdmin || role.isSystem ? "gray" : "blue"} variant="light">
-                  {role.isSuperAdmin
-                    ? t("settings.superAdminRole")
-                    : role.isSystem
-                      ? t("management.protectedRole")
-                      : t("management.customRole")}
-                </Badge>
-              ),
-            },
-            {
-              key: "actions",
-              label: t("organizations.actions"),
-              render: (role) => (
-                <Can permission="admin-roles.manage">
-                  <Group gap="xs">
-                    <Button onClick={() => openEdit(role)} size="xs" variant="light">
-                      {role.isSystem || role.isSuperAdmin
-                        ? t("management.viewRole")
-                        : t("management.editRole")}
-                    </Button>
-                    {!role.isSystem && !role.isSuperAdmin ? (
-                      <Button
-                        color="red"
-                        disabled={Boolean(role._count?.users)}
-                        onClick={() => void deleteRole(role.id)}
-                        size="xs"
-                        variant="light"
-                      >
-                        {t("management.deleteRole")}
-                      </Button>
-                    ) : null}
-                  </Group>
-                </Can>
-              ),
-            },
-          ]}
-          rows={roles}
-        />
+        <Stack gap="sm">
+          <CollectionPagination
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(Number(value) as CollectionPageSize);
+              setPage(1);
+            }}
+            page={page}
+            pageSize={pageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+              to: Math.min(page * pageSize, total),
+              total,
+            })}
+            totalPages={Math.max(1, Math.ceil(total / pageSize))}
+          />
+          <DataTable
+            columns={[
+              { key: "name", label: t("settings.roleName"), render: (role) => role.name },
+              { key: "key", label: t("management.roleKey"), render: (role) => role.key },
+              {
+                key: "permissions",
+                label: t("management.permissions"),
+                render: (role) => String(role.permissions.length),
+              },
+              {
+                key: "users",
+                label: t("management.assignedUsers"),
+                render: (role) => String(role._count?.users ?? 0),
+              },
+              {
+                key: "protection",
+                label: t("management.protection"),
+                render: (role) => (
+                  <Badge
+                    color={role.isSuperAdmin || role.isSystem ? "gray" : "blue"}
+                    variant="light"
+                  >
+                    {role.isSuperAdmin
+                      ? t("settings.superAdminRole")
+                      : role.isSystem
+                        ? t("management.protectedRole")
+                        : t("management.customRole")}
+                  </Badge>
+                ),
+              },
+              {
+                key: "actions",
+                label: t("organizations.actions"),
+                render: (role) => (
+                  <Can permission="admin-roles.manage">
+                    <EntityActionMenu
+                      ariaLabel={`${t("common.moreActions")}: ${role.name}`}
+                      items={[
+                        {
+                          icon:
+                            role.isSystem || role.isSuperAdmin ? (
+                              <IconEye size={16} />
+                            ) : (
+                              <IconEdit size={16} />
+                            ),
+                          key: "open",
+                          label:
+                            role.isSystem || role.isSuperAdmin
+                              ? t("management.viewRole")
+                              : t("management.editRole"),
+                          onClick: () => openEdit(role),
+                        },
+                        ...(!role.isSystem && !role.isSuperAdmin
+                          ? [
+                              {
+                                color: "red" as const,
+                                destructive: true,
+                                disabled: !role.deletion?.allowed,
+                                disabledReason:
+                                  role.deletion?.blocker ??
+                                  t("management.roleAssignedDeleteBlocked"),
+                                icon: <IconTrash size={16} />,
+                                key: "delete",
+                                label: t("management.deleteRole"),
+                                onClick: () => setDeleteTarget(role),
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
+                  </Can>
+                ),
+              },
+            ]}
+            rows={roles}
+          />
+        </Stack>
       ) : (
         <EmptyState
           description={t("settings.noGssRolesDescription")}
@@ -284,6 +345,19 @@ export function GssRolesPage() {
           </Group>
         </Stack>
       </Drawer>
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("management.deleteRole")}
+        description={t("management.confirmRoleDeleteImpact")}
+        entityName={deleteTarget?.name ?? ""}
+        loading={deleting}
+        onClose={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        onConfirm={() => void deleteRole()}
+        opened={Boolean(deleteTarget)}
+        title={t("management.confirmRoleDeleteTitle")}
+      />
     </Stack>
   );
 }

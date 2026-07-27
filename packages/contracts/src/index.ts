@@ -76,6 +76,22 @@ export interface DashboardSummary {
 }
 
 export type CompanyStatus = "ACTIVE" | "INACTIVE";
+
+export type CollectionPageSize = 50 | 100;
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  page: number;
+  pageSize: CollectionPageSize;
+  total: number;
+}
+
+export interface DeleteCapability {
+  allowed: boolean;
+  mode: "HARD_DELETE" | "SOFT_DELETE" | "NOT_ALLOWED";
+  blocker: string | null;
+  code: string | null;
+}
 export type AccessLevel = "VIEW" | "MANAGE";
 export type PermissionEffect = "ALLOW" | "DENY";
 export type DeviceLifecycleStatus = "ACTIVE" | "INACTIVE" | "RETIRED";
@@ -134,6 +150,7 @@ export interface CompanyRecord {
   address: string | null;
   email: string | null;
   phone: string | null;
+  deletion?: DeleteCapability;
 }
 
 export interface AreaRecord {
@@ -143,6 +160,7 @@ export interface AreaRecord {
   address: string | null;
   description: string | null;
   status: CompanyStatus;
+  deletion?: DeleteCapability;
 }
 
 export interface BuildingRecord {
@@ -154,6 +172,7 @@ export interface BuildingRecord {
   address: string | null;
   buildingType: string | null;
   status: CompanyStatus;
+  deletion?: DeleteCapability;
 }
 
 export interface CompanyRoleRecord {
@@ -168,6 +187,7 @@ export interface CompanyRoleRecord {
     permissionId: string;
     permission?: CompanyPermissionRecord & { scopeType?: "GSS" | "COMPANY" | "BOTH" };
   }>;
+  deletion?: DeleteCapability;
 }
 
 export interface CompanyUserRecord {
@@ -204,6 +224,7 @@ export interface CompanyUserRecord {
     positionId: string;
   }>;
   role: Pick<CompanyRoleRecord, "id" | "key" | "name" | "isCompanyOwnerRole">;
+  deletion?: DeleteCapability;
 }
 
 export interface CompanyPositionRecord {
@@ -212,6 +233,7 @@ export interface CompanyPositionRecord {
   key: string;
   name: string;
   isActive: boolean;
+  deletion?: DeleteCapability;
 }
 
 export interface CompanyPermissionRecord {
@@ -231,6 +253,7 @@ export interface GssRoleRecord {
   name: string;
   _count?: { users: number };
   permissions: Array<{ permissionId: string; permission?: CompanyPermissionRecord }>;
+  deletion?: DeleteCapability;
 }
 
 export interface SystemSettingsRecord {
@@ -260,9 +283,10 @@ export interface CompanyUserEffectiveAccessRecord {
 
 export interface BuildingPlanImageRecord {
   id: string;
-  buildingId: string;
   kind: "PLAN" | "REAL";
-  storageKey: string;
+  byteSize: number | null;
+  contentPath: string;
+  contentType: string | null;
   orderIndex: number;
   width: number | null;
   height: number | null;
@@ -338,6 +362,11 @@ export interface DeviceDeletionCapability {
 export interface CompanyDeviceSnapshot {
   gateways: GatewayRecord[];
   nodes: NodeRecord[];
+}
+
+export interface CompanyDeviceInventoryResponse {
+  gateways: PaginatedResponse<GatewayRecord>;
+  nodes: PaginatedResponse<NodeRecord>;
 }
 
 export interface MonitoringNodeStateRecord {
@@ -461,6 +490,16 @@ export interface PaginatedSensorHistory {
   total: number;
 }
 
+export interface SensorHistoryChartResponse {
+  items: SensorReadingRecord[];
+  from: string;
+  to: string;
+  totalRawPointCount: number;
+  returnedPointCount: number;
+  sampled: boolean;
+  sampleLimit: number;
+}
+
 export interface MonitoringNodeTypeResponse {
   building: BuildingRecord;
   historyRetentionDays: number;
@@ -514,6 +553,7 @@ export interface AlarmPolicyRecord {
   countIntervalSeconds: number;
   channel: AlarmChannel;
   isActive: boolean;
+  deletion?: DeleteCapability;
 }
 
 export interface AlarmRuleRecord {
@@ -528,6 +568,7 @@ export interface AlarmRuleRecord {
   recipientPolicies?: AlarmPolicyRecord[];
   createdAt: string;
   updatedAt: string;
+  deletion?: DeleteCapability;
 }
 
 export interface AlarmEventRecord {

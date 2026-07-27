@@ -309,7 +309,28 @@ with `companies.update`. Name/code PATCH and logo multipart/delete calls are del
 a logo error does not prevent a valid name/code save, and a name/code error does not roll back an
 already committed logo operation.
 
-Responsive acceptance covers 1440x900, 768x1024 and 375x812 in light and dark themes. Mobile keeps
-the brand mark and burger visible, hides lower-priority route context when necessary, and shows the
+Responsive acceptance covers 1440x900, 1280x800, 768x1024, 390x844 and 375x812 in light and dark
+themes. Mobile keeps the supplied blue SVG logo and burger visible, hides lower-priority route context when necessary, and shows the
 Company tenant brand when the drawer opens. No viewport may introduce document-level horizontal
 overflow.
+
+Admin Company Detail is full-width beneath a route-derived `WorkspaceTabs` bar. Overview, Sites,
+Buildings, Users and Devices preserve their nested URLs and refresh/deep-link selection. Admin
+Devices, Company Devices, Company Monitoring, Alarm Detail and nested Company Detail device lists
+use the same visual/keyboard contract.
+
+Reversible lifecycle actions show exactly one of Activate/Deactivate (or Enable/Disable). Permanent
+Delete is separated by a divider, uses its own named confirmation and stays open on failure.
+Server-derived blocker text is shown without treating it as authorization. List pagination appears
+in the header as localized range/total, 50/100 selector and navigation; search/filter/size changes
+reset page one.
+
+## Building image and history controls
+
+- Building PLAN and REAL images use one reusable preview-card manager in Admin and Company, with
+  count/max tabs, overflow delete confirmation and full loading/empty/error/forbidden states.
+- Node history defaults to Hour/12 and exposes Hour 1/12/24 plus Day date selection. Range changes
+  refetch chart and table data and reset the table to page one.
+- Dense chart ranges show sampled-data metadata rather than silently dropping points.
+- Create Alarm Rule uses a large responsive modal, the shared two-column desktop form grid and a
+  single column on small screens.

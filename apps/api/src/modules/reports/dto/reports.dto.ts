@@ -3,9 +3,9 @@ import {
   IsEnum,
   IsISO8601,
   IsInt,
+  IsIn,
   IsOptional,
   IsUUID,
-  Max,
   Min,
   ValidateNested,
 } from "class-validator";
@@ -89,6 +89,6 @@ export class ListReportJobsQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
-  pageSize = 25;
+  @IsIn([50, 100])
+  pageSize: 50 | 100 = 50;
 }

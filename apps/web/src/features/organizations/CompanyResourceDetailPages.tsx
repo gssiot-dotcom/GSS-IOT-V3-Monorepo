@@ -1,9 +1,10 @@
 import type {
   AreaRecord,
-  BuildingPlanImageRecord,
   BuildingRecord,
   CompanyDeviceSnapshot,
+  CompanyDeviceInventoryResponse,
   CompanyUserRecord,
+  PaginatedResponse,
 } from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
@@ -20,8 +21,8 @@ import {
   ModalFormFooter,
   PageHeader,
 } from "@gss-iot/ui";
-import { Button, Group, Modal, Select, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
-import { IconChartBar, IconEdit, IconMap, IconUpload } from "@tabler/icons-react";
+import { Button, Group, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
+import { IconChartBar, IconEdit, IconMap } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -32,6 +33,7 @@ import {
   deviceLifecycleBadge,
   formatDeviceDate,
 } from "../devices/device-labels";
+import { BuildingImageManager } from "./BuildingImageManager";
 
 export function CompanyAreaDetailPage() {
   const { areaId } = useParams();
@@ -58,8 +60,11 @@ export function CompanyAreaDetailPage() {
 
     if (hasPermission(session, "buildings.view")) {
       try {
-        const nextBuildings = await apiRequest<BuildingRecord[]>(session, "/company/buildings");
-        setBuildings(nextBuildings.filter((building) => building.areaId === areaId));
+        const nextBuildings = await apiRequest<PaginatedResponse<BuildingRecord>>(
+          session,
+          "/company/buildings?pageSize=100",
+        );
+        setBuildings(nextBuildings.items.filter((building) => building.areaId === areaId));
       } catch {
         setBuildings([]);
       }
@@ -69,9 +74,14 @@ export function CompanyAreaDetailPage() {
 
     if (hasPermission(session, "company-users.view")) {
       try {
-        const nextUsers = await apiRequest<CompanyUserRecord[]>(session, "/company/users");
+        const nextUsers = await apiRequest<PaginatedResponse<CompanyUserRecord>>(
+          session,
+          "/company/users?pageSize=100",
+        );
         setUsers(
-          nextUsers.filter((user) => user.areaAccess?.some((access) => access.areaId === areaId)),
+          nextUsers.items.filter((user) =>
+            user.areaAccess?.some((access) => access.areaId === areaId),
+          ),
         );
       } catch {
         setUsers([]);
@@ -247,9 +257,12 @@ export function CompanyBuildingDetailPage() {
       }
       if (hasPermission(session, "company-users.view")) {
         try {
-          const nextUsers = await apiRequest<CompanyUserRecord[]>(session, "/company/users");
+          const nextUsers = await apiRequest<PaginatedResponse<CompanyUserRecord>>(
+            session,
+            "/company/users?pageSize=100",
+          );
           setUsers(
-            nextUsers.filter(
+            nextUsers.items.filter(
               (user) =>
                 user.buildingAccess?.some((access) => access.buildingId === buildingId) ||
                 user.areaAccess?.some((access) => access.areaId === nextBuilding.areaId),
@@ -263,7 +276,11 @@ export function CompanyBuildingDetailPage() {
       }
       if (hasPermission(session, "company-devices.view")) {
         try {
-          setDevices(await apiRequest<CompanyDeviceSnapshot>(session, "/company/devices"));
+          const inventory = await apiRequest<CompanyDeviceInventoryResponse>(
+            session,
+            "/company/devices?gatewayPageSize=100&nodePageSize=100",
+          );
+          setDevices({ gateways: inventory.gateways.items, nodes: inventory.nodes.items });
         } catch {
           setDevices(undefined);
         }
@@ -437,106 +454,14 @@ export function CompanyBuildingDetailPage() {
 
 export function CompanyBuildingPlanPage() {
   const { buildingId } = useParams();
-  const { session } = useAuth();
-  const [images, setImages] = useState<BuildingPlanImageRecord[]>();
-  const [error, setError] = useState(false);
-  const [opened, setOpened] = useState(false);
-  const [storageKey, setStorageKey] = useState("");
-  const [kind, setKind] = useState<"PLAN" | "REAL">("PLAN");
-
-  const load = async () => {
-    if (!session || !buildingId) return;
-    setError(false);
-    try {
-      setImages(
-        await apiRequest<BuildingPlanImageRecord[]>(
-          session,
-          `/company/buildings/${buildingId}/plan-images`,
-        ),
-      );
-    } catch {
-      setError(true);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [session, buildingId]);
-
-  const addImage = async () => {
-    if (!session || !buildingId) return;
-    await apiRequest(session, `/company/buildings/${buildingId}/plan-images`, {
-      body: JSON.stringify({
-        images: [{ kind, orderIndex: images?.length ?? 0, storageKey }],
-      }),
-      method: "POST",
-    });
-    setStorageKey("");
-    setOpened(false);
-    await load();
-  };
-
-  if (!images && !error) return <LoadingState title={t("common.loading")} />;
-  if (error)
-    return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (
     <Stack gap="lg">
       <PageHeader
         title={t("organizations.buildingPlan")}
         subtitle={t("organizations.buildingPlanSubtitle")}
-        action={
-          <Can permission="building-plans.manage">
-            <Button leftSection={<IconUpload size={16} />} onClick={() => setOpened(true)}>
-              {t("organizations.addPlanImage")}
-            </Button>
-          </Can>
-        }
       />
-      {images?.length ? (
-        <DataTable
-          columns={[
-            { key: "kind", label: t("organizations.kind"), render: (image) => image.kind },
-            {
-              key: "storageKey",
-              label: t("organizations.storageKey"),
-              render: (image) => image.storageKey,
-            },
-          ]}
-          rows={images}
-        />
-      ) : (
-        <EmptyState
-          description={t("organizations.emptyPlanDescription")}
-          title={t("common.emptyTitle")}
-        />
-      )}
-      <Modal
-        opened={opened}
-        onClose={() => setOpened(false)}
-        title={t("organizations.addPlanImage")}
-      >
-        <Stack>
-          <Select
-            data={["PLAN", "REAL"]}
-            label={t("organizations.kind")}
-            onChange={(nextKind) => setKind((nextKind ?? "PLAN") as "PLAN" | "REAL")}
-            value={kind}
-          />
-          <TextInput
-            label={t("organizations.storageKey")}
-            onChange={(event) => setStorageKey(event.currentTarget.value)}
-            value={storageKey}
-          />
-          <ModalFormFooter
-            cancelLabel={t("common.cancel")}
-            onCancel={() => setOpened(false)}
-            onSubmit={() => void addImage()}
-            submitDisabled={!storageKey}
-            submitLabel={t("organizations.addPlanImage")}
-          />
-        </Stack>
-      </Modal>
+      {buildingId ? <BuildingImageManager basePath="/company" buildingId={buildingId} /> : null}
     </Stack>
   );
 }

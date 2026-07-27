@@ -41,7 +41,7 @@ vi.mock("socket.io-client", () => ({
 }));
 
 describe("Portal sidebar", () => {
-  it("keeps the Devices links in a scrollable scrollbar-hidden viewport", () => {
+  it("keeps the Devices links in the shared visible scroll area", () => {
     render(
       <MantineProvider theme={gssTheme}>
         <MemoryRouter initialEntries={["/admin/devices"]}>
@@ -55,6 +55,15 @@ describe("Portal sidebar", () => {
     expect(screen.getAllByText("Devices").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "Devices" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Gateway commands" })).toBeTruthy();
+    const blueHeaderLogos = (
+      screen.getAllByAltText("Global Smart Solutions") as HTMLImageElement[]
+    ).filter((logo) => logo.src.endsWith("/assets/gss-logos/Gss-logo-blue.svg"));
+    expect(blueHeaderLogos).toHaveLength(2);
+    const sidebarLogo = document.querySelector<HTMLImageElement>(".gss-admin-sidebar-brand > img");
+    expect(sidebarLogo?.src.endsWith("/assets/gss-logos/GSS-logo.svg")).toBe(true);
+    const sidebarBrand = document.querySelector(".gss-admin-sidebar-brand");
+    expect(sidebarBrand?.textContent).toContain("GSS IoT V3");
+    expect(sidebarBrand?.textContent).toContain("GSS Admin Portal");
     const scrollArea = document.querySelector(".gss-sidebar-scrollarea");
     const viewport = document.querySelector(".gss-sidebar-scrollarea-viewport");
     expect(scrollArea).toBeTruthy();

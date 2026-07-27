@@ -97,10 +97,11 @@ function mockFetch(handler?: (url: URL, init: RequestInit) => Response | undefin
     if (url.href === `${apiBaseUrl}/auth/gss/login`) return jsonResponse(adminSession, 201);
     if (url.href === `${apiBaseUrl}/auth/gss/me`) return jsonResponse(adminSession);
     if (url.href === `${apiBaseUrl}/auth/company/me`) return jsonResponse(companySession);
-    if (url.href === `${apiBaseUrl}/admin/companies`) return jsonResponse([company]);
+    if (url.pathname === "/admin/companies")
+      return jsonResponse({ items: [company], page: 1, pageSize: 50, total: 1 });
     if (url.href === `${apiBaseUrl}/admin/companies/company-1`) return jsonResponse(company);
-    if (url.href === `${apiBaseUrl}/admin/companies/company-1/areas`) {
-      return jsonResponse([
+    if (url.pathname === "/admin/companies/company-1/areas") {
+      const items = [
         {
           address: null,
           companyId: "company-1",
@@ -109,10 +110,11 @@ function mockFetch(handler?: (url: URL, init: RequestInit) => Response | undefin
           name: "Site A",
           status: "ACTIVE",
         },
-      ]);
+      ];
+      return jsonResponse({ items, page: 1, pageSize: 100, total: items.length });
     }
-    if (url.href === `${apiBaseUrl}/admin/companies/company-1/buildings`) {
-      return jsonResponse([
+    if (url.pathname === "/admin/companies/company-1/buildings") {
+      const items = [
         {
           address: null,
           areaId: "area-1",
@@ -123,10 +125,11 @@ function mockFetch(handler?: (url: URL, init: RequestInit) => Response | undefin
           status: "ACTIVE",
           title: "Building A",
         },
-      ]);
+      ];
+      return jsonResponse({ items, page: 1, pageSize: 100, total: items.length });
     }
-    if (url.href === `${apiBaseUrl}/admin/companies/company-1/users`) {
-      return jsonResponse([
+    if (url.pathname === "/admin/companies/company-1/users") {
+      const items = [
         {
           companyId: "company-1",
           email: "manager@example.com",
@@ -142,10 +145,11 @@ function mockFetch(handler?: (url: URL, init: RequestInit) => Response | undefin
           },
           roleId: "role-1",
         },
-      ]);
+      ];
+      return jsonResponse({ items, page: 1, pageSize: 100, total: items.length });
     }
-    if (url.href === `${apiBaseUrl}/admin/companies/company-1/roles`) {
-      return jsonResponse([
+    if (url.pathname === "/admin/companies/company-1/roles") {
+      const items = [
         {
           companyId: "company-1",
           id: "role-1",
@@ -162,10 +166,11 @@ function mockFetch(handler?: (url: URL, init: RequestInit) => Response | undefin
           name: "Site Manager",
           permissions: [],
         },
-      ]);
+      ];
+      return jsonResponse({ items, page: 1, pageSize: 100, total: items.length });
     }
-    if (url.href === `${apiBaseUrl}/admin/devices/gateways`) {
-      return jsonResponse([
+    if (url.pathname === "/admin/devices/gateways") {
+      const items = [
         {
           buildingAssignments: [],
           companyAssignments: [
@@ -178,9 +183,11 @@ function mockFetch(handler?: (url: URL, init: RequestInit) => Response | undefin
           serialNumber: "GW-001",
           status: "ACTIVE",
         },
-      ]);
+      ];
+      return jsonResponse({ items, page: 1, pageSize: 100, total: items.length });
     }
-    if (url.href === `${apiBaseUrl}/admin/devices/nodes`) return jsonResponse([]);
+    if (url.pathname === "/admin/devices/nodes")
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
 
     return emptyResponse(404);
   });
@@ -211,7 +218,7 @@ describe("auth routing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     fireEvent.click(await screen.findByRole("link", { name: "Companies" }));
-    fireEvent.click(await screen.findByText("Acme Safety"));
+    fireEvent.click((await screen.findByText("Acme Safety")).closest(".gss-entity-card")!);
 
     expect(
       await screen.findByText("Company setup, resources, users, and assigned devices."),
@@ -279,7 +286,7 @@ describe("auth routing", () => {
 
     const layout = await screen.findByTestId("admin-company-workspace-layout");
     const instance = layout.getAttribute("data-workspace-instance");
-    fireEvent.click(await screen.findByRole("link", { name: "Construction sites" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Construction sites" }));
 
     expect(await screen.findByText("Site A")).toBeTruthy();
     expect(
@@ -308,7 +315,7 @@ describe("auth routing", () => {
     expect(await screen.findByText("Site Manager")).toBeTruthy();
     expect(
       fetchMock.mock.calls.some(([input]) => {
-        return String(input) === `${apiBaseUrl}/admin/companies/company-1/roles`;
+        return new URL(String(input)).pathname === "/admin/companies/company-1/roles";
       }),
     ).toBe(true);
   });

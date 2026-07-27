@@ -1,5 +1,4 @@
 import { Body, Controller, Get, Inject, Param, Post, Query, ValidationPipe } from "@nestjs/common";
-import type { GatewayCommandStatus } from "@prisma/client";
 
 import type { AuthenticatedRequest } from "../../common/auth.types";
 import { AdminEndpoint } from "../../common/decorators/admin-endpoint.decorator";
@@ -7,6 +6,7 @@ import { CurrentPrincipal } from "../../common/decorators/current-principal.deco
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
 import { MqttClientService } from "../mqtt/mqtt-client.service";
 import {
+  ListGatewayCommandsQueryDto,
   RegisterNodesCommandDto,
   SetAlarmLevelsCommandDto,
   SetFaultFilterCommandDto,
@@ -33,10 +33,10 @@ export class GatewayCommandsController {
   @RequirePermissions("mqtt-commands.view")
   @Get()
   listCommands(
-    @Query("status") status?: GatewayCommandStatus,
-    @Query("gatewayId") gatewayId?: string,
+    @Query(new ValidationPipe({ expectedType: ListGatewayCommandsQueryDto, transform: true }))
+    query: ListGatewayCommandsQueryDto,
   ) {
-    return this.commands.listCommands(status, gatewayId);
+    return this.commands.listCommands(query);
   }
 
   @RequirePermissions("mqtt-commands.view")

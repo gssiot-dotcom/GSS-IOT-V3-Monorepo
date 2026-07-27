@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { Buffer } from "node:buffer";
 
 const apiOrigin = "http://localhost:3000";
 const storageKey = "gss-iot-v3-auth-session";
@@ -382,52 +383,120 @@ async function installFixture(
     if (path === "/company/branding/logo" || path === "/admin/companies/company-1/logo")
       return route.fulfill({ body: companyLogoPng, contentType: "image/png" });
     if (path === "/company/settings") return route.fulfill({ json: company });
-    if (path === "/admin/companies" || path === "/admin/companies/company-1")
-      return route.fulfill({ json: path.endsWith("company-1") ? company : [company] });
+    if (path === "/admin/companies/company-1") return route.fulfill({ json: company });
+    if (path === "/admin/companies")
+      return route.fulfill({
+        json: { items: [company], page: 1, pageSize: 100, total: 1 },
+      });
     if (path === "/admin/alarms" || path === "/company/alarms")
       return route.fulfill({ json: { items: alarmEvents } });
     if (path === "/admin/reports" || path === "/company/reports")
-      return route.fulfill({ json: { items: reportJobs, page: 1, pageSize: 25, total: 1 } });
-    if (path === "/company/users") return route.fulfill({ json: companyUsers });
-    if (path === "/admin/companies/company-1/users") return route.fulfill({ json: companyUsers });
-    if (path === "/admin/devices/gateways") return route.fulfill({ json: wave2Gateways });
-    if (path === "/admin/devices/nodes") return route.fulfill({ json: wave2Nodes });
+      return route.fulfill({ json: { items: reportJobs, page: 1, pageSize: 50, total: 1 } });
+    if (path === "/company/users" || path === "/admin/companies/company-1/users")
+      return route.fulfill({
+        json: { items: companyUsers, page: 1, pageSize: 100, total: companyUsers.length },
+      });
+    if (path === "/admin/devices/gateways")
+      return route.fulfill({
+        json: { items: wave2Gateways, page: 1, pageSize: 100, total: wave2Gateways.length },
+      });
+    if (path === "/admin/devices/nodes")
+      return route.fulfill({
+        json: { items: wave2Nodes, page: 1, pageSize: 100, total: wave2Nodes.length },
+      });
     if (path === "/admin/devices/node-types") return route.fulfill({ json: nodeTypes });
     if (path === "/admin/devices/provisioning-options")
       return route.fulfill({
         json: { areas, buildings, companies: [company] },
       });
     if (path === "/company/devices")
-      return route.fulfill({ json: { gateways: wave2Gateways, nodes: wave2Nodes } });
-    if (path === "/company/roles") return route.fulfill({ json: wave2Roles });
-    if (path === "/company/permissions") return route.fulfill({ json: wave2Permissions });
-    if (path === "/admin/permissions") return route.fulfill({ json: adminCatalogPermissions });
+      return route.fulfill({
+        json: {
+          gateways: {
+            items: wave2Gateways,
+            page: 1,
+            pageSize: 100,
+            total: wave2Gateways.length,
+          },
+          nodes: { items: wave2Nodes, page: 1, pageSize: 100, total: wave2Nodes.length },
+        },
+      });
+    if (path === "/company/roles")
+      return route.fulfill({
+        json: { items: wave2Roles, page: 1, pageSize: 100, total: wave2Roles.length },
+      });
+    if (path === "/company/permissions")
+      return route.fulfill({
+        json: {
+          items: wave2Permissions,
+          page: 1,
+          pageSize: 100,
+          total: wave2Permissions.length,
+        },
+      });
+    if (path === "/company/permissions/options") return route.fulfill({ json: wave2Permissions });
+    if (path === "/admin/permissions")
+      return route.fulfill({
+        json: {
+          items: adminCatalogPermissions,
+          page: 1,
+          pageSize: 100,
+          total: adminCatalogPermissions.length,
+        },
+      });
     if (path === "/company/areas/area-1") return route.fulfill({ json: areas[0] });
     if (path === "/company/buildings/building-1") return route.fulfill({ json: buildings[0] });
-    if (path === "/company/buildings/building-1/plan-images")
+    if (
+      path === "/company/buildings/building-1/images" ||
+      path === "/admin/buildings/building-1/images"
+    ) {
+      const portal = path.startsWith("/admin") ? "/admin" : "/company";
       return route.fulfill({
         json: [
           {
-            buildingId: buildings[0].id,
+            byteSize: companyLogoPng.byteLength,
+            contentPath: `${portal}/building-images/plan-1/content`,
+            contentType: "image/png",
             createdAt: "2026-07-23T08:00:00.000Z",
             height: null,
             id: "plan-1",
             kind: "PLAN",
             orderIndex: 0,
-            storageKey: "plans/tower-a.png",
+            width: null,
+          },
+          {
+            byteSize: companyLogoPng.byteLength,
+            contentPath: `${portal}/building-images/real-1/content`,
+            contentType: "image/png",
+            createdAt: "2026-07-23T08:05:00.000Z",
+            height: null,
+            id: "real-1",
+            kind: "REAL",
+            orderIndex: 0,
             width: null,
           },
         ],
       });
-    if (path.endsWith("/areas")) return route.fulfill({ json: areas });
-    if (path.endsWith("/buildings")) return route.fulfill({ json: buildings });
+    }
+    if (/^\/(admin|company)\/building-images\/(plan|real)-1\/content$/.test(path))
+      return route.fulfill({ body: companyLogoPng, contentType: "image/png" });
+    if (path.endsWith("/areas"))
+      return route.fulfill({
+        json: { items: areas, page: 1, pageSize: 100, total: areas.length },
+      });
+    if (path.endsWith("/buildings"))
+      return route.fulfill({
+        json: { items: buildings, page: 1, pageSize: 100, total: buildings.length },
+      });
+    if (path.endsWith("/positions"))
+      return route.fulfill({ json: { items: [], page: 1, pageSize: 100, total: 0 } });
     if (
       path.endsWith("/users") ||
       path.endsWith("/roles") ||
       path.endsWith("/devices/gateways") ||
       path.endsWith("/devices/nodes")
     )
-      return route.fulfill({ json: [] });
+      return route.fulfill({ json: { items: [], page: 1, pageSize: 100, total: 0 } });
     if (path === "/company/buildings/building-1/monitoring")
       return route.fulfill({
         json: {
@@ -491,6 +560,64 @@ async function installFixture(
           ],
         },
       });
+    if (path.includes("/monitoring/door_node/nodes/") && path.endsWith("/history/chart"))
+      return route.fulfill({
+        json: {
+          from: "2026-07-23T00:00:00.000Z",
+          items: [
+            {
+              buildingId: buildings[0].id,
+              classificationEvidence: null,
+              faultFiltered: false,
+              gateway: { id: "gateway-1", serialNumber: "0300" },
+              gatewayId: "gateway-1",
+              id: "door-reading-1",
+              measuredAt: "2026-07-23T08:12:00.000Z",
+              node: { id: "node-1", installedLocation: "North entrance", number: "100" },
+              nodeId: "node-1",
+              nodeType: nodeTypes[0],
+              nodeTypeId: nodeTypes[0].id,
+              receivedAt: "2026-07-23T08:12:00.000Z",
+              status: "safe",
+              values: { batteryLevel: 92, doorState: "closed" },
+            },
+          ],
+          returnedPointCount: 1,
+          sampled: false,
+          sampleLimit: 500,
+          to: "2026-07-24T00:00:00.000Z",
+          totalRawPointCount: 1,
+        },
+      });
+    if (path.includes("/monitoring/angle_node/nodes/") && path.endsWith("/history/chart"))
+      return route.fulfill({
+        json: {
+          from: "2026-07-23T00:00:00.000Z",
+          items: [
+            {
+              buildingId: buildings[0].id,
+              classificationEvidence: null,
+              faultFiltered: false,
+              gateway: { id: "gateway-1", serialNumber: "0300" },
+              gatewayId: "gateway-1",
+              id: "angle-reading-1",
+              measuredAt: "2026-07-23T08:12:00.000Z",
+              node: { id: "node-2", installedLocation: "Roof", number: "101" },
+              nodeId: "node-2",
+              nodeType: nodeTypes[1],
+              nodeTypeId: nodeTypes[1].id,
+              receivedAt: "2026-07-23T08:12:00.000Z",
+              status: "warning",
+              values: { angleX: 2.4, angleY: -1.1 },
+            },
+          ],
+          returnedPointCount: 1,
+          sampled: false,
+          sampleLimit: 500,
+          to: "2026-07-24T00:00:00.000Z",
+          totalRawPointCount: 1,
+        },
+      });
     if (path.includes("/monitoring/door_node/nodes/") && path.endsWith("/history"))
       return route.fulfill({
         json: {
@@ -513,7 +640,7 @@ async function installFixture(
             },
           ],
           page: 1,
-          pageSize: 25,
+          pageSize: 50,
           total: 1,
         },
       });
@@ -539,7 +666,7 @@ async function installFixture(
             },
           ],
           page: 1,
-          pageSize: 25,
+          pageSize: 50,
           total: 1,
         },
       });
@@ -588,7 +715,10 @@ async function installFixture(
       return route.fulfill({ json: { items: [] } });
     if (path === "/admin/alarm-rules/options" || path === "/company/alarm-rules/options")
       return route.fulfill({ json: { buildings: [], nodeTypes: [], positions: [], users: [] } });
-    if (path === "/admin/gateway-commands") return route.fulfill({ json: gatewayCommands });
+    if (path === "/admin/gateway-commands")
+      return route.fulfill({
+        json: { items: gatewayCommands, page: 1, pageSize: 50, total: gatewayCommands.length },
+      });
     if (path === "/admin/gateway-commands/mqtt-status")
       return route.fulfill({
         json: {
@@ -741,7 +871,11 @@ async function captureSurfaceEvidence(
     if (width === 375) {
       await page.getByRole("button", { name: "Toggle navigation" }).click();
     }
-    await page.getByRole("button", { name: "Open", exact: true }).first().click();
+    await page
+      .getByRole("button", { name: /More actions:/ })
+      .first()
+      .click();
+    await page.getByRole("menuitem", { name: "Inspect payload" }).click();
     await page.screenshot({
       fullPage: true,
       path: outputPath(`surface-command-drawer-${colorScheme}-${width}.png`),
@@ -774,7 +908,8 @@ async function captureSurfaceEvidence(
 test("captures protected Admin and Company redesign pages at required widths", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(300000);
+  // This evidence sweep captures more than 50 full-page responsive screenshots.
+  test.setTimeout(600000);
   const widths = [1440, 1280, 1024, 768, 375];
   const outputPath = (name: string) => testInfo.outputPath(name);
   await installFixture(page, "gss-admin", [
@@ -900,7 +1035,7 @@ test("captures Company logo branding and settings at responsive light and dark v
       });
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByRole("heading", { name: "Company settings" })).toBeVisible();
-      await expect(page.locator('[aria-label="Global Smart Solutions"]:visible')).toBeVisible();
+      await expect(page.locator('img[alt="Global Smart Solutions"]:visible')).toBeVisible();
       if (viewport.label === "mobile") {
         await page.getByRole("button", { name: "Toggle navigation" }).click();
         await expect(page.getByTitle(company.name)).toBeVisible();
@@ -961,8 +1096,110 @@ test("captures Admin company logo editor at responsive light and dark viewports"
   }
 });
 
+test("captures private building image management in both portals", async ({ page }, testInfo) => {
+  test.setTimeout(180000);
+  await installFixture(page, "company-user", [
+    "buildings.view",
+    "building-plans.view",
+    "building-plans.manage",
+  ]);
+  for (const viewport of [
+    { height: 900, label: "desktop", width: 1440 },
+    { height: 844, label: "mobile", width: 390 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/company/buildings/building-1/plan", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("img", { name: "Private building image" })).toBeVisible();
+    await page.getByRole("button", { name: "Upload image" }).click();
+    await expect(page.getByRole("dialog", { name: "Upload building image" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await page.screenshot({
+      fullPage: viewport.label !== "mobile",
+      path: testInfo.outputPath(`company-building-images-${viewport.label}.png`),
+    });
+  }
+
+  await installFixture(page, "gss-admin", [
+    "companies.view",
+    "buildings.view",
+    "building-plans.view",
+    "building-plans.manage",
+  ]);
+  for (const viewport of [
+    { height: 900, label: "desktop", width: 1440 },
+    { height: 844, label: "mobile", width: 390 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/admin/companies/company-1/buildings", {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByRole("button", { name: "More actions: Tower A" }).click();
+    await page.getByRole("menuitem", { name: "Building images" }).click();
+    await expect(page.getByRole("dialog", { name: "Building images · Tower A" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Private building image" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await page.screenshot({
+      fullPage: viewport.label !== "mobile",
+      path: testInfo.outputPath(`admin-building-images-${viewport.label}.png`),
+    });
+  }
+});
+
+test("captures responsive alarm-rule and role editor surfaces", async ({ page }, testInfo) => {
+  test.setTimeout(120000);
+  await installFixture(page, "gss-admin", ["alarm-rules.view", "alarm-rules.manage"]);
+  for (const viewport of [
+    { height: 900, label: "desktop", width: 1440 },
+    { height: 844, label: "mobile", width: 390 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/admin/alarm-rules", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Create rule" }).click();
+    const dialog = page.getByRole("dialog", { name: "Create rule" });
+    await expect(dialog).toBeVisible();
+    const box = await dialog.boundingBox();
+    expect(box).not.toBeNull();
+    if (viewport.label === "desktop") expect(box!.width).toBeGreaterThanOrEqual(600);
+    expect(box!.width).toBeLessThanOrEqual(viewport.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await page.screenshot({
+      fullPage: false,
+      path: testInfo.outputPath(`alarm-rule-modal-${viewport.label}.png`),
+    });
+  }
+
+  await installFixture(page, "company-user", ["company-roles.view", "company-roles.manage"]);
+  await page.setViewportSize({ height: 900, width: 1440 });
+  await page.goto("/company/roles", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Create role" }).click();
+  await expect(page.getByRole("dialog", { name: "Create role" })).toBeVisible();
+  await page.screenshot({
+    fullPage: false,
+    path: testInfo.outputPath("role-create-modal-desktop.png"),
+  });
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.goto("/company/roles", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "More actions: Safety lead" }).click();
+  await page.getByRole("menuitem", { name: "Edit role" }).click();
+  await expect(page.getByRole("dialog", { name: "Edit role" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+  await page.screenshot({
+    fullPage: false,
+    path: testInfo.outputPath("role-edit-modal-mobile.png"),
+  });
+});
+
 test("captures Wave 4 final evidence at exact responsive viewports", async ({ page }, testInfo) => {
-  test.setTimeout(240000);
+  test.setTimeout(420000);
   const viewports = [
     { height: 900, label: "1440x900", width: 1440 },
     { height: 800, label: "1280x800", width: 1280 },

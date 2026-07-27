@@ -71,6 +71,44 @@ function setupFetch(summary: DashboardSummary = fullSummary) {
   return fetchMock;
 }
 
+function setupReportsFetch() {
+  const reportSession: AuthSession = {
+    ...session,
+    user: { ...session.user, permissions: [...session.user.permissions, "reports.view"] },
+  };
+  const reportJobs = Array.from({ length: 6 }, (_, index) => ({
+    companyId: "company-1",
+    completedAt: null,
+    createdAt: `2026-07-2${index}T00:00:00.000Z`,
+    errorCode: null,
+    errorMessage: null,
+    id: `report-${index}`,
+    progress: 0,
+    reportType: "company_summary" as const,
+    status: "PENDING" as const,
+    updatedAt: `2026-07-2${index}T00:00:00.000Z`,
+  }));
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.href === `${apiBaseUrl}/auth/company/me`)
+      return new Response(JSON.stringify(reportSession));
+    if (url.pathname === "/company/dashboard/summary")
+      return new Response(JSON.stringify(fullSummary));
+    if (url.pathname === "/company/reports") {
+      return new Response(
+        JSON.stringify({ items: reportJobs, page: 1, pageSize: 50, total: reportJobs.length }),
+      );
+    }
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  window.sessionStorage.setItem(
+    storageKey,
+    JSON.stringify({ accessToken: reportSession.accessToken, context: reportSession.context }),
+  );
+  return fetchMock;
+}
+
 describe("dashboard analytics", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
@@ -128,5 +166,20 @@ describe("dashboard analytics", () => {
     expect(screen.queryByText("Telemetry volume")).toBeNull();
     expect(screen.queryByText("Open alarms")).toBeNull();
     expect(screen.getByText("No operational sections available")).toBeTruthy();
+  });
+
+  it("requests the allowed report page size and keeps only five dashboard jobs", async () => {
+    const fetchMock = setupReportsFetch();
+    renderApp();
+
+    await screen.findByText("Recent report jobs");
+    await waitFor(() => {
+      const reportRequest = fetchMock.mock.calls
+        .map(([input]) => new URL(String(input)))
+        .find((url) => url.pathname === "/company/reports");
+      expect(reportRequest?.searchParams.get("pageSize")).toBe("50");
+      expect(reportRequest?.searchParams.get("page")).toBe("1");
+    });
+    expect(screen.queryByText("report-5")).toBeNull();
   });
 });

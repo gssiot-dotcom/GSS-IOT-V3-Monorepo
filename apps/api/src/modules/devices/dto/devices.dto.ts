@@ -1,5 +1,32 @@
-import { IsEnum, IsOptional, IsString, IsUUID } from "class-validator";
+import { Type } from "class-transformer";
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Min } from "class-validator";
 import { DeviceLifecycleStatus, GatewayType } from "@prisma/client";
+
+export class CompanyDeviceInventoryQueryDto {
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  gatewayPage = 1;
+
+  @Type(() => Number)
+  @IsIn([50, 100])
+  @IsInt()
+  @IsOptional()
+  gatewayPageSize: 50 | 100 = 50;
+
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  nodePage = 1;
+
+  @Type(() => Number)
+  @IsIn([50, 100])
+  @IsInt()
+  @IsOptional()
+  nodePageSize: 50 | 100 = 50;
+}
 
 export class CreateGatewayDto {
   @IsEnum(GatewayType)

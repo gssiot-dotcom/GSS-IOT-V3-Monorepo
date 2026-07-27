@@ -15,6 +15,7 @@ import type { AuthenticatedRequest } from "../../common/auth.types";
 import { AdminEndpoint } from "../../common/decorators/admin-endpoint.decorator";
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
+import { PaginationQueryDto } from "../../common/dto/pagination.dto";
 import { AlarmsService } from "./alarms.service";
 import {
   AlarmActionNoteDto,
@@ -24,6 +25,7 @@ import {
   ListAlarmRulesQueryDto,
   UpdateAlarmRecipientPolicyDto,
   UpdateAlarmRuleDto,
+  UpdateAlarmLifecycleStatusDto,
 } from "./dto/alarms.dto";
 
 @AdminEndpoint()
@@ -83,13 +85,35 @@ export class AlarmsAdminController {
     return this.alarms.disableRule(auth!.principal, ruleId);
   }
 
+  @RequirePermissions("alarm-rules.manage")
+  @Patch("alarm-rules/:ruleId/status")
+  updateRuleStatus(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("ruleId") ruleId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateAlarmLifecycleStatusDto, transform: true }))
+    dto: UpdateAlarmLifecycleStatusDto,
+  ) {
+    return this.alarms.updateRuleStatus(auth!.principal, ruleId, dto.isActive);
+  }
+
+  @RequirePermissions("alarm-rules.manage")
+  @Delete("alarm-rules/:ruleId/permanent")
+  permanentlyDeleteRule(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("ruleId") ruleId: string,
+  ) {
+    return this.alarms.permanentlyDeleteRule(auth!.principal, ruleId);
+  }
+
   @RequirePermissions("alarm-rules.view")
   @Get("alarm-rules/:ruleId/policies")
   listPolicies(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("ruleId") ruleId: string,
+    @Query(new ValidationPipe({ expectedType: PaginationQueryDto, transform: true }))
+    query: PaginationQueryDto,
   ) {
-    return this.alarms.listPolicies(auth!.principal, ruleId);
+    return this.alarms.listPolicies(auth!.principal, ruleId, query);
   }
 
   @RequirePermissions("alarm-rules.manage")
@@ -121,6 +145,26 @@ export class AlarmsAdminController {
     @Param("policyId") policyId: string,
   ) {
     return this.alarms.disablePolicy(auth!.principal, policyId);
+  }
+
+  @RequirePermissions("alarm-rules.manage")
+  @Patch("alarm-policies/:policyId/status")
+  updatePolicyStatus(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("policyId") policyId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateAlarmLifecycleStatusDto, transform: true }))
+    dto: UpdateAlarmLifecycleStatusDto,
+  ) {
+    return this.alarms.updatePolicyStatus(auth!.principal, policyId, dto.isActive);
+  }
+
+  @RequirePermissions("alarm-rules.manage")
+  @Delete("alarm-policies/:policyId/permanent")
+  permanentlyDeletePolicy(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("policyId") policyId: string,
+  ) {
+    return this.alarms.permanentlyDeletePolicy(auth!.principal, policyId);
   }
 
   @RequirePermissions("alarms.view")
@@ -214,8 +258,12 @@ export class AlarmsAdminController {
 
   @RequirePermissions("notifications.view")
   @Get("notifications")
-  listNotifications(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
-    return this.alarms.listNotifications(auth!.principal);
+  listNotifications(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: PaginationQueryDto, transform: true }))
+    query: PaginationQueryDto,
+  ) {
+    return this.alarms.listNotifications(auth!.principal, query);
   }
 
   @RequirePermissions("notifications.view")
@@ -237,6 +285,24 @@ export class AlarmsAdminController {
     @Param("notificationId") notificationId: string,
   ) {
     return this.alarms.markNotificationRead(auth!.principal, notificationId);
+  }
+
+  @RequirePermissions("alarms.manage")
+  @Delete("alarms/:alarmId")
+  archiveAlarm(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("alarmId") alarmId: string,
+  ) {
+    return this.alarms.archiveAlarmEvent(auth!.principal, alarmId);
+  }
+
+  @RequirePermissions("notifications.view")
+  @Delete("notifications/:notificationId")
+  archiveNotification(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("notificationId") notificationId: string,
+  ) {
+    return this.alarms.archiveNotification(auth!.principal, notificationId);
   }
 
   @RequirePermissions("notifications.manage")

@@ -8,12 +8,15 @@ import type {
   CompanyUserEffectiveAccessRecord,
   CompanyUserRecord,
   PermissionEffect,
+  CollectionPageSize,
+  PaginatedResponse,
 } from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
-import { apiRequest } from "../../shared/api/api-client";
+import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
+  CollectionPagination,
   EmptyState,
   EntityActionMenu,
   EntityPrimaryCell,
@@ -29,6 +32,7 @@ import {
   StickyFormActions,
 } from "@gss-iot/ui";
 import {
+  Alert,
   Badge,
   Button,
   Checkbox,
@@ -42,7 +46,14 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconEdit, IconPlayerPause, IconPlus, IconShield } from "@tabler/icons-react";
+import {
+  IconEdit,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconPlus,
+  IconShield,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { t, tf } from "../../app/i18n";
@@ -103,12 +114,18 @@ export function CompanyUsersPage() {
   const [form, setForm] = useState<UserFormState>(emptyUserForm);
   const [positionKey, setPositionKey] = useState("");
   const [positionName, setPositionName] = useState("");
-  const [pendingDeactivate, setPendingDeactivate] = useState<{
+  const [pendingMutation, setPendingMutation] = useState<{
+    action: "DELETE" | "STATUS";
     id: string;
     kind: "position" | "user";
     name: string;
+    isActive?: boolean;
   } | null>(null);
   const [isMutating, setIsMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<string>();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
 
   const permissionOptions = permissions.map((permission) => ({
     label: permission.key,
@@ -134,11 +151,20 @@ export function CompanyUsersPage() {
     if (!session) return;
     setError(false);
     try {
-      setUsers(await apiRequest<CompanyUserRecord[]>(session, "/company/users"));
+      const usersPage = await apiRequest<PaginatedResponse<CompanyUserRecord>>(
+        session,
+        `/company/users?page=${page}&pageSize=${pageSize}`,
+      );
+      setUsers(usersPage.items);
+      setTotal(usersPage.total);
 
       if (hasPermission(session, "company-roles.view")) {
         try {
-          setRoles(await apiRequest<CompanyRoleRecord[]>(session, "/company/roles"));
+          const response = await apiRequest<PaginatedResponse<CompanyRoleRecord>>(
+            session,
+            "/company/roles?pageSize=100",
+          );
+          setRoles(response.items);
         } catch {
           setRoles([]);
         }
@@ -149,7 +175,7 @@ export function CompanyUsersPage() {
       if (hasPermission(session, "company-permissions.view")) {
         try {
           setPermissions(
-            await apiRequest<CompanyPermissionRecord[]>(session, "/company/permissions"),
+            await apiRequest<CompanyPermissionRecord[]>(session, "/company/permissions/options"),
           );
         } catch {
           setPermissions([]);
@@ -160,7 +186,11 @@ export function CompanyUsersPage() {
 
       if (hasPermission(session, "areas.view")) {
         try {
-          setAreas(await apiRequest<AreaRecord[]>(session, "/company/areas"));
+          const response = await apiRequest<PaginatedResponse<AreaRecord>>(
+            session,
+            "/company/areas?pageSize=100",
+          );
+          setAreas(response.items);
         } catch {
           setAreas([]);
         }
@@ -170,7 +200,11 @@ export function CompanyUsersPage() {
 
       if (hasPermission(session, "buildings.view")) {
         try {
-          setBuildings(await apiRequest<BuildingRecord[]>(session, "/company/buildings"));
+          const response = await apiRequest<PaginatedResponse<BuildingRecord>>(
+            session,
+            "/company/buildings?pageSize=100",
+          );
+          setBuildings(response.items);
         } catch {
           setBuildings([]);
         }
@@ -179,7 +213,11 @@ export function CompanyUsersPage() {
       }
 
       try {
-        setPositions(await apiRequest<CompanyPositionRecord[]>(session, "/company/positions"));
+        const response = await apiRequest<PaginatedResponse<CompanyPositionRecord>>(
+          session,
+          "/company/positions?pageSize=100",
+        );
+        setPositions(response.items);
       } catch {
         setPositions([]);
       }
@@ -190,7 +228,7 @@ export function CompanyUsersPage() {
 
   useEffect(() => {
     void load();
-  }, [session]);
+  }, [session, page, pageSize]);
 
   const openCreate = () => {
     setEditingUser(null);
@@ -319,12 +357,6 @@ export function CompanyUsersPage() {
     await load();
   };
 
-  const deactivateUser = async (userId: string) => {
-    if (!session) return;
-    await apiRequest(session, `/company/users/${userId}`, { method: "DELETE" });
-    await load();
-  };
-
   const createPosition = async () => {
     if (!session) return;
     await apiRequest(session, "/company/positions", {
@@ -337,22 +369,23 @@ export function CompanyUsersPage() {
     await load();
   };
 
-  const deactivatePosition = async (positionId: string) => {
-    if (!session) return;
-    await apiRequest(session, `/company/positions/${positionId}`, { method: "DELETE" });
-    await load();
-  };
-
-  const confirmDeactivate = async () => {
-    if (!pendingDeactivate) return;
+  const confirmMutation = async () => {
+    if (!session || !pendingMutation || isMutating) return;
     setIsMutating(true);
+    setMutationError(undefined);
     try {
-      if (pendingDeactivate.kind === "user") {
-        await deactivateUser(pendingDeactivate.id);
-      } else {
-        await deactivatePosition(pendingDeactivate.id);
-      }
-      setPendingDeactivate(null);
+      const base = `/company/${pendingMutation.kind === "user" ? "users" : "positions"}/${pendingMutation.id}`;
+      await apiRequest(
+        session,
+        pendingMutation.action === "DELETE" ? `${base}/permanent` : `${base}/status`,
+        pendingMutation.action === "DELETE"
+          ? { method: "DELETE" }
+          : { body: JSON.stringify({ isActive: pendingMutation.isActive }), method: "PATCH" },
+      );
+      await load();
+      setPendingMutation(null);
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
       setIsMutating(false);
     }
@@ -386,100 +419,147 @@ export function CompanyUsersPage() {
           </Group>
         }
       />
+      {mutationError ? <Alert color="red">{mutationError}</Alert> : null}
       {users?.length ? (
-        <DataTable
-          ariaLabel={t("management.usersTitle")}
-          columns={[
-            {
-              key: "name",
-              label: t("organizations.name"),
-              render: (user) => (
-                <EntityPrimaryCell
-                  identifier={user.email}
-                  onClick={() => void openEdit(user)}
-                  title={user.name}
-                />
-              ),
-            },
-            {
-              key: "role",
-              label: t("management.role"),
-              render: (user) => <Badge variant="light">{user.role.name}</Badge>,
-            },
-            {
-              key: "status",
-              label: t("organizations.status"),
-              render: (user) => (
-                <EntityStatusBadge
-                  label={user.isActive ? t("management.active") : t("management.inactive")}
-                  status={user.isActive ? "active" : "inactive"}
-                />
-              ),
-            },
-            {
-              key: "scope",
-              label: t("management.scope"),
-              render: (user) => (
-                <Group gap={4} wrap="wrap">
-                  <Badge color="gray" size="sm" variant="light">
-                    {tf("management.scopeSummary", {
-                      areas: user.areaAccess?.length ?? 0,
-                      buildings: user.buildingAccess?.length ?? 0,
-                    })}
-                  </Badge>
-                  {user.positionAssignments?.slice(0, 2).map((assignment) => (
-                    <Badge color="gssCyan" key={assignment.id} size="sm" variant="light">
-                      {assignment.position.name}
-                    </Badge>
-                  ))}
-                </Group>
-              ),
-            },
-            {
-              key: "action",
-              label: t("organizations.actions"),
-              align: "right",
-              render: (user) =>
-                hasPermission(session, "company-users.update") ||
-                (hasPermission(session, "company-users.delete") && user.isActive) ? (
-                  <EntityActionMenu
-                    ariaLabel={`${t("common.moreActions")}: ${user.name}`}
-                    items={[
-                      ...(hasPermission(session, "company-users.update")
-                        ? [
-                            {
-                              icon: <IconEdit size={16} />,
-                              key: "edit",
-                              label: t("management.editUser"),
-                              onClick: () => void openEdit(user),
-                            },
-                          ]
-                        : []),
-                      ...(hasPermission(session, "company-users.delete") && user.isActive
-                        ? [
-                            {
-                              color: "red" as const,
-                              destructive: true,
-                              icon: <IconPlayerPause size={16} />,
-                              key: "deactivate",
-                              label: t("organizations.deactivate"),
-                              onClick: () =>
-                                setPendingDeactivate({
-                                  kind: "user",
-                                  id: user.id,
-                                  name: user.name,
-                                }),
-                            },
-                          ]
-                        : []),
-                    ]}
+        <Stack gap="sm">
+          <CollectionPagination
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(Number(value) as CollectionPageSize);
+              setPage(1);
+            }}
+            page={page}
+            pageSize={pageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+              to: Math.min(page * pageSize, total),
+              total,
+            })}
+            totalPages={Math.max(1, Math.ceil(total / pageSize))}
+          />
+          <DataTable
+            ariaLabel={t("management.usersTitle")}
+            columns={[
+              {
+                key: "name",
+                label: t("organizations.name"),
+                render: (user) => (
+                  <EntityPrimaryCell
+                    identifier={user.email}
+                    onClick={() => void openEdit(user)}
+                    title={user.name}
                   />
-                ) : null,
-            },
-          ]}
-          onRowClick={(user) => void openEdit(user)}
-          rows={users}
-        />
+                ),
+              },
+              {
+                key: "role",
+                label: t("management.role"),
+                render: (user) => <Badge variant="light">{user.role.name}</Badge>,
+              },
+              {
+                key: "status",
+                label: t("organizations.status"),
+                render: (user) => (
+                  <EntityStatusBadge
+                    label={user.isActive ? t("management.active") : t("management.inactive")}
+                    status={user.isActive ? "active" : "inactive"}
+                  />
+                ),
+              },
+              {
+                key: "scope",
+                label: t("management.scope"),
+                render: (user) => (
+                  <Group gap={4} wrap="wrap">
+                    <Badge color="gray" size="sm" variant="light">
+                      {tf("management.scopeSummary", {
+                        areas: user.areaAccess?.length ?? 0,
+                        buildings: user.buildingAccess?.length ?? 0,
+                      })}
+                    </Badge>
+                    {user.positionAssignments?.slice(0, 2).map((assignment) => (
+                      <Badge color="gssCyan" key={assignment.id} size="sm" variant="light">
+                        {assignment.position.name}
+                      </Badge>
+                    ))}
+                  </Group>
+                ),
+              },
+              {
+                key: "action",
+                label: t("organizations.actions"),
+                align: "right",
+                render: (user) =>
+                  hasPermission(session, "company-users.update") ||
+                  hasPermission(session, "company-users.delete") ? (
+                    <EntityActionMenu
+                      ariaLabel={`${t("common.moreActions")}: ${user.name}`}
+                      items={[
+                        ...(hasPermission(session, "company-users.update")
+                          ? [
+                              {
+                                icon: <IconEdit size={16} />,
+                                key: "edit",
+                                label: t("management.editUser"),
+                                onClick: () => void openEdit(user),
+                              },
+                            ]
+                          : []),
+                        ...(hasPermission(session, "company-users.update")
+                          ? [
+                              {
+                                icon: user.isActive ? (
+                                  <IconPlayerPause size={16} />
+                                ) : (
+                                  <IconPlayerPlay size={16} />
+                                ),
+                                key: "status",
+                                label: t(
+                                  user.isActive
+                                    ? "organizations.deactivate"
+                                    : "organizations.activate",
+                                ),
+                                onClick: () =>
+                                  setPendingMutation({
+                                    action: "STATUS",
+                                    kind: "user",
+                                    id: user.id,
+                                    isActive: !user.isActive,
+                                    name: user.name,
+                                  }),
+                              },
+                            ]
+                          : []),
+                        ...(hasPermission(session, "company-users.delete")
+                          ? [
+                              {
+                                color: "red" as const,
+                                destructive: true,
+                                disabled: !user.deletion?.allowed,
+                                disabledReason: user.deletion?.blocker ?? undefined,
+                                icon: <IconTrash size={16} />,
+                                key: "delete",
+                                label: t("organizations.deletePermanently"),
+                                onClick: () =>
+                                  setPendingMutation({
+                                    action: "DELETE",
+                                    kind: "user",
+                                    id: user.id,
+                                    name: user.name,
+                                  }),
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
+                  ) : null,
+              },
+            ]}
+            onRowClick={(user) => void openEdit(user)}
+            rows={users}
+          />
+        </Stack>
       ) : (
         <EmptyState
           description={t("management.emptyUsersDescription")}
@@ -734,18 +814,42 @@ export function CompanyUsersPage() {
                 label: t("organizations.actions"),
                 align: "right",
                 render: (position) =>
-                  hasPermission(session, "company-users.manage") && position.isActive ? (
+                  hasPermission(session, "company-users.manage") ? (
                     <EntityActionMenu
                       ariaLabel={`${t("common.moreActions")}: ${position.name}`}
                       items={[
                         {
+                          icon: position.isActive ? (
+                            <IconPlayerPause size={16} />
+                          ) : (
+                            <IconPlayerPlay size={16} />
+                          ),
+                          key: "status",
+                          label: t(
+                            position.isActive
+                              ? "organizations.deactivate"
+                              : "organizations.activate",
+                          ),
+                          onClick: () =>
+                            setPendingMutation({
+                              action: "STATUS",
+                              kind: "position",
+                              id: position.id,
+                              isActive: !position.isActive,
+                              name: position.name,
+                            }),
+                        },
+                        {
                           color: "red",
                           destructive: true,
-                          icon: <IconPlayerPause size={16} />,
-                          key: "deactivate",
-                          label: t("organizations.deactivate"),
+                          disabled: !position.deletion?.allowed,
+                          disabledReason: position.deletion?.blocker ?? undefined,
+                          icon: <IconTrash size={16} />,
+                          key: "delete",
+                          label: t("organizations.deletePermanently"),
                           onClick: () =>
-                            setPendingDeactivate({
+                            setPendingMutation({
+                              action: "DELETE",
                               kind: "position",
                               id: position.id,
                               name: position.name,
@@ -785,18 +889,34 @@ export function CompanyUsersPage() {
       </Modal>
       <ConfirmActionModal
         cancelLabel={t("common.cancel")}
-        confirmLabel={
-          pendingDeactivate?.kind === "position"
-            ? t("management.confirmDeactivatePosition")
-            : t("management.confirmDeactivateUser")
-        }
-        description={t("organizations.confirmDeactivateImpact")}
-        entityName={pendingDeactivate?.name ?? ""}
+        confirmLabel={t(
+          pendingMutation?.action === "DELETE"
+            ? "organizations.deletePermanently"
+            : pendingMutation?.isActive
+              ? "organizations.activate"
+              : "organizations.deactivate",
+        )}
+        description={t(
+          pendingMutation?.action === "DELETE"
+            ? "organizations.confirmPermanentDeleteImpact"
+            : pendingMutation?.isActive
+              ? "organizations.confirmActivateImpact"
+              : "organizations.confirmDeactivateImpact",
+        )}
+        entityName={pendingMutation?.name ?? ""}
         loading={isMutating}
-        onClose={() => setPendingDeactivate(null)}
-        onConfirm={() => void confirmDeactivate()}
-        opened={Boolean(pendingDeactivate)}
-        title={t("organizations.confirmDeactivateTitle")}
+        onClose={() => {
+          if (!isMutating) setPendingMutation(null);
+        }}
+        onConfirm={() => void confirmMutation()}
+        opened={Boolean(pendingMutation)}
+        title={t(
+          pendingMutation?.action === "DELETE"
+            ? "organizations.confirmPermanentDeleteTitle"
+            : pendingMutation?.isActive
+              ? "organizations.confirmActivateTitle"
+              : "organizations.confirmDeactivateTitle",
+        )}
       />
     </Stack>
   );

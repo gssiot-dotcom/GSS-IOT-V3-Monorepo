@@ -10,10 +10,16 @@ import { AssignmentStatus } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
+import {
+  paginated,
+  pageWindow,
+  type SearchPaginationQueryDto,
+} from "../../common/dto/pagination.dto";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import type {
   BulkCreateNodesDto,
+  CompanyDeviceInventoryQueryDto,
   CreateGatewayDto,
   CreateNodeDto,
   UpdateGatewayDto,
@@ -110,20 +116,42 @@ export class DevicesService {
     });
   }
 
-  listGateways() {
-    return this.prisma.gateway
-      .findMany({
-        orderBy: { serialNumber: "asc" },
+  async listGateways(query: SearchPaginationQueryDto) {
+    const search = query.search?.trim();
+    const where: Prisma.GatewayWhereInput = search
+      ? {
+          OR: [
+            { serialNumber: { contains: search, mode: "insensitive" } },
+            { installedLocation: { contains: search, mode: "insensitive" } },
+            {
+              companyAssignments: {
+                some: { company: { name: { contains: search, mode: "insensitive" } } },
+              },
+            },
+            {
+              buildingAssignments: {
+                some: { building: { title: { contains: search, mode: "insensitive" } } },
+              },
+            },
+          ],
+        }
+      : {};
+    const [gateways, total] = await this.prisma.$transaction([
+      this.prisma.gateway.findMany({
+        orderBy: [{ serialNumber: "asc" }, { id: "asc" }],
         select: gatewaySelect,
-      })
-      .then((gateways) =>
-        Promise.all(
-          gateways.map(async (gateway) => ({
-            ...gateway,
-            deletion: await this.getGatewayDeletionCapability(gateway.id),
-          })),
-        ),
-      );
+        where,
+        ...pageWindow(query),
+      }),
+      this.prisma.gateway.count({ where }),
+    ]);
+    const items = await Promise.all(
+      gateways.map(async (gateway) => ({
+        ...gateway,
+        deletion: await this.getGatewayDeletionCapability(gateway.id),
+      })),
+    );
+    return paginated(items, total, query);
   }
 
   createGateway(actor: AuthTokenPayload, dto: CreateGatewayDto) {
@@ -198,17 +226,45 @@ export class DevicesService {
     });
   }
 
-  listNodes() {
-    return this.prisma.node
-      .findMany({ orderBy: { number: "asc" }, select: nodeSelect })
-      .then((nodes) =>
-        Promise.all(
-          nodes.map(async (node) => ({
-            ...node,
-            deletion: await this.getNodeDeletionCapability(node.id),
-          })),
-        ),
-      );
+  async listNodes(query: SearchPaginationQueryDto) {
+    const search = query.search?.trim();
+    const where: Prisma.NodeWhereInput = search
+      ? {
+          OR: [
+            { number: { contains: search, mode: "insensitive" } },
+            { installedLocation: { contains: search, mode: "insensitive" } },
+            { nodeType: { displayName: { contains: search, mode: "insensitive" } } },
+            {
+              companyAssignments: {
+                some: { company: { name: { contains: search, mode: "insensitive" } } },
+              },
+            },
+            {
+              gatewayAssignments: {
+                some: {
+                  gateway: { serialNumber: { contains: search, mode: "insensitive" } },
+                },
+              },
+            },
+          ],
+        }
+      : {};
+    const [nodes, total] = await this.prisma.$transaction([
+      this.prisma.node.findMany({
+        orderBy: [{ number: "asc" }, { id: "asc" }],
+        select: nodeSelect,
+        where,
+        ...pageWindow(query),
+      }),
+      this.prisma.node.count({ where }),
+    ]);
+    const items = await Promise.all(
+      nodes.map(async (node) => ({
+        ...node,
+        deletion: await this.getNodeDeletionCapability(node.id),
+      })),
+    );
+    return paginated(items, total, query);
   }
 
   async listProvisioningOptions() {
@@ -380,8 +436,31 @@ export class DevicesService {
   unassignGatewayFromCompany(actor: AuthTokenPayload, gatewayId: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.getGatewayOrThrow(gatewayId, tx);
+      const [buildingAssignments, nodeAssignments] = await Promise.all([
+        tx.gatewayBuildingAssignment.count({
+          where: { gatewayId, status: AssignmentStatus.ACTIVE },
+        }),
+        tx.nodeGatewayAssignment.count({
+          where: { gatewayId, status: AssignmentStatus.ACTIVE },
+        }),
+      ]);
+      if (buildingAssignments > 0 || nodeAssignments > 0) {
+        throw new ConflictException({
+          blocker: `Unassign ${buildingAssignments} building relationship(s) and ${nodeAssignments} node relationship(s) first.`,
+          code: "GATEWAY_COMPANY_UNASSIGN_HAS_CHILD_ASSIGNMENTS",
+          counts: { buildingAssignments, nodeAssignments },
+          message: "The gateway still has active child assignments.",
+          recommendedAlternative: "Unassign the building and nodes before removing the company.",
+        });
+      }
       const oldAssignment = await this.endActiveGatewayCompanyAssignment(gatewayId, tx);
-      await this.endActiveGatewayBuildingAssignment(gatewayId, tx);
+      if (!oldAssignment) {
+        throw new ConflictException({
+          blocker: "The gateway has no active company assignment.",
+          code: "GATEWAY_COMPANY_ASSIGNMENT_NOT_ACTIVE",
+          message: "The gateway is already unassigned.",
+        });
+      }
       await this.auditLog.record(
         actor,
         {
@@ -427,6 +506,13 @@ export class DevicesService {
     return this.prisma.$transaction(async (tx) => {
       await this.getGatewayOrThrow(gatewayId, tx);
       const oldAssignment = await this.endActiveGatewayBuildingAssignment(gatewayId, tx);
+      if (!oldAssignment) {
+        throw new ConflictException({
+          blocker: "The gateway has no active building assignment.",
+          code: "GATEWAY_BUILDING_ASSIGNMENT_NOT_ACTIVE",
+          message: "The gateway is already unassigned from a building.",
+        });
+      }
       await this.auditLog.record(
         actor,
         {
@@ -463,15 +549,26 @@ export class DevicesService {
   unassignNodeFromCompany(actor: AuthTokenPayload, nodeId: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.getNodeOrThrow(nodeId, tx);
+      const oldGatewayAssignment = await this.endActiveNodeGatewayAssignment(nodeId, tx);
       const oldAssignment = await this.endActiveNodeCompanyAssignment(nodeId, tx);
-      await this.endActiveNodeGatewayAssignment(nodeId, tx);
+      if (!oldAssignment) {
+        throw new ConflictException({
+          blocker: "The node has no active company assignment.",
+          code: "NODE_COMPANY_ASSIGNMENT_NOT_ACTIVE",
+          message: "The node is already unassigned.",
+        });
+      }
       await this.auditLog.record(
         actor,
         {
           action: "node.company.unassign",
           entityId: nodeId,
           entityType: "Node",
-          oldValue: { assignment: oldAssignment },
+          newValue: { physicalGatewayMembershipChanged: false },
+          oldValue: {
+            companyAssignment: oldAssignment,
+            gatewayAssignment: oldGatewayAssignment,
+          },
         },
         tx,
       );
@@ -490,6 +587,13 @@ export class DevicesService {
     return this.prisma.$transaction(async (tx) => {
       await this.getNodeOrThrow(nodeId, tx);
       const oldAssignment = await this.endActiveNodeGatewayAssignment(nodeId, tx);
+      if (!oldAssignment) {
+        throw new ConflictException({
+          blocker: "The node has no active gateway assignment.",
+          code: "NODE_GATEWAY_ASSIGNMENT_NOT_ACTIVE",
+          message: "The node is already unassigned from a gateway.",
+        });
+      }
       await this.auditLog.record(
         actor,
         {
@@ -504,9 +608,42 @@ export class DevicesService {
     });
   }
 
-  async listCompanyDevices(companyUserId: string) {
+  async listCompanyDevices(companyUserId: string, query: CompanyDeviceInventoryQueryDto) {
     const { companyId } = await this.getCompanyUserContext(companyUserId);
-    return this.listCompanyDeviceSnapshot({ companyId });
+    const gatewayWhere = {
+      companyAssignments: { some: { companyId, status: AssignmentStatus.ACTIVE } },
+    } satisfies Prisma.GatewayWhereInput;
+    const nodeWhere = {
+      companyAssignments: { some: { companyId, status: AssignmentStatus.ACTIVE } },
+    } satisfies Prisma.NodeWhereInput;
+    const [gatewayItems, gatewayTotal, nodeItems, nodeTotal] = await this.prisma.$transaction([
+      this.prisma.gateway.findMany({
+        orderBy: [{ serialNumber: "asc" }, { id: "asc" }],
+        select: gatewaySelect,
+        skip: (query.gatewayPage - 1) * query.gatewayPageSize,
+        take: query.gatewayPageSize,
+        where: gatewayWhere,
+      }),
+      this.prisma.gateway.count({ where: gatewayWhere }),
+      this.prisma.node.findMany({
+        orderBy: [{ number: "asc" }, { id: "asc" }],
+        select: nodeSelect,
+        skip: (query.nodePage - 1) * query.nodePageSize,
+        take: query.nodePageSize,
+        where: nodeWhere,
+      }),
+      this.prisma.node.count({ where: nodeWhere }),
+    ]);
+    return {
+      gateways: paginated(gatewayItems, gatewayTotal, {
+        page: query.gatewayPage,
+        pageSize: query.gatewayPageSize,
+      }),
+      nodes: paginated(nodeItems, nodeTotal, {
+        page: query.nodePage,
+        pageSize: query.nodePageSize,
+      }),
+    };
   }
 
   async listCompanyAreaDevices(companyUserId: string, areaId: string) {
@@ -648,42 +785,47 @@ export class DevicesService {
   }
 
   private async endCompanyDeviceAssignment(assignmentId: string, executor: PrismaExecutor) {
-    return executor.companyDeviceAssignment.update({
-      where: { id: assignmentId },
-      data: { activeKey: assignmentId, status: AssignmentStatus.ENDED, unassignedAt: new Date() },
+    const endedAt = new Date();
+    const result = await executor.companyDeviceAssignment.updateMany({
+      where: { id: assignmentId, status: AssignmentStatus.ACTIVE },
+      data: { activeKey: assignmentId, status: AssignmentStatus.ENDED, unassignedAt: endedAt },
     });
+    if (result.count !== 1) return null;
+    return executor.companyDeviceAssignment.findUnique({ where: { id: assignmentId } });
   }
 
   private async endActiveGatewayBuildingAssignment(gatewayId: string, executor: PrismaExecutor) {
     const assignment = await executor.gatewayBuildingAssignment.findFirst({
       where: { gatewayId, status: AssignmentStatus.ACTIVE },
     });
-    return assignment
-      ? executor.gatewayBuildingAssignment.update({
-          where: { id: assignment.id },
-          data: {
-            activeKey: assignment.id,
-            status: AssignmentStatus.ENDED,
-            unassignedAt: new Date(),
-          },
-        })
-      : null;
+    if (!assignment) return null;
+    const result = await executor.gatewayBuildingAssignment.updateMany({
+      where: { id: assignment.id, status: AssignmentStatus.ACTIVE },
+      data: {
+        activeKey: assignment.id,
+        status: AssignmentStatus.ENDED,
+        unassignedAt: new Date(),
+      },
+    });
+    if (result.count !== 1) return null;
+    return executor.gatewayBuildingAssignment.findUnique({ where: { id: assignment.id } });
   }
 
   private async endActiveNodeGatewayAssignment(nodeId: string, executor: PrismaExecutor) {
     const assignment = await executor.nodeGatewayAssignment.findFirst({
       where: { nodeId, status: AssignmentStatus.ACTIVE },
     });
-    return assignment
-      ? executor.nodeGatewayAssignment.update({
-          where: { id: assignment.id },
-          data: {
-            activeKey: assignment.id,
-            status: AssignmentStatus.ENDED,
-            unassignedAt: new Date(),
-          },
-        })
-      : null;
+    if (!assignment) return null;
+    const result = await executor.nodeGatewayAssignment.updateMany({
+      where: { id: assignment.id, status: AssignmentStatus.ACTIVE },
+      data: {
+        activeKey: assignment.id,
+        status: AssignmentStatus.ENDED,
+        unassignedAt: new Date(),
+      },
+    });
+    if (result.count !== 1) return null;
+    return executor.nodeGatewayAssignment.findUnique({ where: { id: assignment.id } });
   }
 
   private async getCompanyUserContext(companyUserId: string) {

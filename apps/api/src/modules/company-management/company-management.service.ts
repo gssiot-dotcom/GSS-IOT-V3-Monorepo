@@ -7,13 +7,19 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { hash } from "bcrypt";
-import { PermissionScopeType, PositionAssignmentStatus } from "@prisma/client";
+import { PermissionScopeType, PositionAssignmentStatus, ReportRequesterType } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { SafeAdminPolicyService } from "../rbac/safe-admin-policy.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import {
+  paginated,
+  pageWindow,
+  type PaginationQueryDto,
+  type SearchPaginationQueryDto,
+} from "../../common/dto/pagination.dto";
 import { ensureDefaultCompanyRoles } from "./default-company-roles";
 import type {
   CreateCompanyPositionDto,
@@ -69,6 +75,13 @@ const userSelect = {
       positionId: true,
     },
   },
+  _count: {
+    select: {
+      alarmNotifications: true,
+      alarmRecipientPolicies: true,
+      positionAssignments: true,
+    },
+  },
 } satisfies Prisma.CompanyUserSelect;
 
 const roleSelect = {
@@ -97,6 +110,7 @@ const positionSelect = {
   isActive: true,
   createdAt: true,
   updatedAt: true,
+  _count: { select: { assignments: true, alarmRecipientPolicies: true } },
 } satisfies Prisma.CompanyPositionSelect;
 
 @Injectable()
@@ -107,12 +121,24 @@ export class CompanyManagementService {
     @Inject(SafeAdminPolicyService) private readonly safeAdmin: SafeAdminPolicyService,
   ) {}
 
-  async listCompanyUsers(companyId: string) {
-    return this.prisma.companyUser.findMany({
-      where: { companyId },
-      orderBy: { name: "asc" },
-      select: userSelect,
-    });
+  async listCompanyUsers(companyId: string, query: PaginationQueryDto) {
+    const where = { companyId } satisfies Prisma.CompanyUserWhereInput;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.companyUser.findMany({
+        where,
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        select: userSelect,
+        ...pageWindow(query),
+      }),
+      this.prisma.companyUser.count({ where }),
+    ]);
+    const enriched = await Promise.all(
+      items.map(async (user) => ({
+        ...user,
+        deletion: await this.companyUserDeletionCapability(user),
+      })),
+    );
+    return paginated(enriched, total, query);
   }
 
   async createCompanyUser(actor: AuthTokenPayload, companyId: string, dto: CreateCompanyUserDto) {
@@ -224,7 +250,10 @@ export class CompanyManagementService {
             : undefined,
           phone: dto.phone,
           roleId: dto.roleId,
-          tokenVersion: willDeactivate ? { increment: 1 } : undefined,
+          tokenVersion:
+            dto.isActive !== undefined && dto.isActive !== oldUser.isActive
+              ? { increment: 1 }
+              : undefined,
         },
         select: userSelect,
       });
@@ -247,7 +276,41 @@ export class CompanyManagementService {
     return this.updateCompanyUser(actor, companyId, userId, { isActive: false });
   }
 
-  async listCompanyRoles(companyId: string) {
+  async updateCompanyUserStatus(
+    actor: AuthTokenPayload,
+    companyId: string,
+    userId: string,
+    isActive: boolean,
+  ) {
+    return this.updateCompanyUser(actor, companyId, userId, { isActive });
+  }
+
+  async permanentlyDeleteCompanyUser(actor: AuthTokenPayload, companyId: string, userId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await this.assertCompanyUser(companyId, userId, tx);
+      await this.safeAdmin.assertCompanyUserCanLoseOwnerRole(
+        actor.sub,
+        userId,
+        user.role.isCompanyOwnerRole,
+        tx,
+      );
+      const capability = await this.companyUserDeletionCapability(user, tx);
+      this.assertDeletionAllowed(capability, "deactivate the user");
+      await tx.companyUser.delete({ where: { id: userId } });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "company-user.delete",
+          entityId: userId,
+          entityType: "CompanyUser",
+          oldValue: user,
+        },
+        tx,
+      );
+    });
+  }
+
+  async listCompanyRoles(companyId: string, query: PaginationQueryDto) {
     return this.prisma.$transaction(async (tx) => {
       await this.assertCompany(companyId, tx);
       const defaultRoles = await ensureDefaultCompanyRoles(companyId, tx);
@@ -256,11 +319,21 @@ export class CompanyManagementService {
           `Default company role templates are unavailable: ${defaultRoles.missingTemplateKeys.join(", ")}.`,
         );
       }
-      return tx.companyRole.findMany({
-        where: { companyId },
-        orderBy: { name: "asc" },
-        select: roleSelect,
-      });
+      const where = { companyId } satisfies Prisma.CompanyRoleWhereInput;
+      const [items, total] = await Promise.all([
+        tx.companyRole.findMany({
+          where: { companyId },
+          orderBy: [{ name: "asc" }, { id: "asc" }],
+          select: roleSelect,
+          ...pageWindow(query),
+        }),
+        tx.companyRole.count({ where }),
+      ]);
+      return paginated(
+        items.map((role) => ({ ...role, deletion: this.companyRoleDeletionCapability(role) })),
+        total,
+        query,
+      );
     });
   }
 
@@ -382,13 +455,7 @@ export class CompanyManagementService {
   async deleteCompanyRole(actor: AuthTokenPayload, companyId: string, roleId: string) {
     return this.prisma.$transaction(async (tx) => {
       const oldRole = await this.assertRole(companyId, roleId, tx);
-      if (oldRole.isSystem || oldRole.isCompanyOwnerRole) {
-        throw new ForbiddenException("System company roles cannot be deleted.");
-      }
-      const userCount = await tx.companyUser.count({ where: { roleId } });
-      if (userCount > 0) {
-        throw new ConflictException("A company role assigned to users cannot be deleted.");
-      }
+      this.assertDeletionAllowed(this.companyRoleDeletionCapability(oldRole), "reassign its users");
       await tx.companyRole.delete({ where: { id: roleId } });
       await this.auditLog.record(
         actor,
@@ -403,7 +470,39 @@ export class CompanyManagementService {
     });
   }
 
-  async listCompanyPermissions() {
+  async listCompanyPermissions(query: SearchPaginationQueryDto) {
+    const where = {
+      scopeType: { in: [PermissionScopeType.COMPANY, PermissionScopeType.BOTH] },
+      ...(query.search?.trim()
+        ? {
+            OR: [
+              { key: { contains: query.search.trim(), mode: "insensitive" } },
+              { module: { contains: query.search.trim(), mode: "insensitive" } },
+              { description: { contains: query.search.trim(), mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    } satisfies Prisma.PermissionWhereInput;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.permission.findMany({
+        where,
+        orderBy: [{ key: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          key: true,
+          module: true,
+          action: true,
+          scopeType: true,
+          description: true,
+        },
+        ...pageWindow(query),
+      }),
+      this.prisma.permission.count({ where }),
+    ]);
+    return paginated(items, total, query);
+  }
+
+  async listCompanyPermissionOptions() {
     return this.prisma.permission.findMany({
       where: { scopeType: { in: [PermissionScopeType.COMPANY, PermissionScopeType.BOTH] } },
       orderBy: { key: "asc" },
@@ -418,12 +517,25 @@ export class CompanyManagementService {
     });
   }
 
-  async listCompanyPositions(companyId: string) {
-    return this.prisma.companyPosition.findMany({
-      where: { companyId },
-      orderBy: { name: "asc" },
-      select: positionSelect,
-    });
+  async listCompanyPositions(companyId: string, query: PaginationQueryDto) {
+    const where = { companyId } satisfies Prisma.CompanyPositionWhereInput;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.companyPosition.findMany({
+        where,
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        select: positionSelect,
+        ...pageWindow(query),
+      }),
+      this.prisma.companyPosition.count({ where }),
+    ]);
+    return paginated(
+      items.map((position) => ({
+        ...position,
+        deletion: this.companyPositionDeletionCapability(position),
+      })),
+      total,
+      query,
+    );
   }
 
   async createCompanyPosition(
@@ -485,25 +597,38 @@ export class CompanyManagementService {
   }
 
   async deactivateCompanyPosition(actor: AuthTokenPayload, companyId: string, positionId: string) {
+    return this.updateCompanyPosition(actor, companyId, positionId, { isActive: false });
+  }
+
+  async updateCompanyPositionStatus(
+    actor: AuthTokenPayload,
+    companyId: string,
+    positionId: string,
+    isActive: boolean,
+  ) {
+    return this.updateCompanyPosition(actor, companyId, positionId, { isActive });
+  }
+
+  async permanentlyDeleteCompanyPosition(
+    actor: AuthTokenPayload,
+    companyId: string,
+    positionId: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
-      const oldPosition = await this.assertPosition(companyId, positionId, tx);
-      const position = await tx.companyPosition.update({
-        where: { id: positionId },
-        data: { isActive: false },
-        select: positionSelect,
-      });
+      const position = await this.assertPosition(companyId, positionId, tx);
+      const capability = this.companyPositionDeletionCapability(position);
+      this.assertDeletionAllowed(capability, "deactivate the position");
+      await tx.companyPosition.delete({ where: { id: positionId } });
       await this.auditLog.record(
         actor,
         {
-          action: "company-position.deactivate",
-          entityId: position.id,
+          action: "company-position.delete",
+          entityId: positionId,
           entityType: "CompanyPosition",
-          newValue: position,
-          oldValue: oldPosition,
+          oldValue: position,
         },
         tx,
       );
-      return position;
     });
   }
 
@@ -771,6 +896,84 @@ export class CompanyManagementService {
           );
         }
       }
+    }
+  }
+
+  private async companyUserDeletionCapability(
+    user: Awaited<ReturnType<CompanyManagementService["assertCompanyUser"]>>,
+    executor: PrismaExecutor = this.prisma,
+  ) {
+    const reportJobs = await executor.reportJob.count({
+      where: {
+        requestedById: user.id,
+        requestedByType: ReportRequesterType.COMPANY_USER,
+      },
+    });
+    const dependencies =
+      user._count.positionAssignments +
+      user._count.alarmRecipientPolicies +
+      user._count.alarmNotifications +
+      reportJobs;
+    if (dependencies > 0) {
+      return {
+        allowed: false,
+        blocker: "The user has assignment, alarm, notification, or report history.",
+        code: "COMPANY_USER_HAS_PROTECTED_HISTORY",
+        mode: "NOT_ALLOWED" as const,
+      };
+    }
+    return { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const };
+  }
+
+  private companyRoleDeletionCapability(role: {
+    isCompanyOwnerRole: boolean;
+    isSystem: boolean;
+    _count: { users: number };
+  }) {
+    if (role.isSystem || role.isCompanyOwnerRole) {
+      return {
+        allowed: false,
+        blocker: "System and company-owner roles are protected.",
+        code: "COMPANY_ROLE_PROTECTED",
+        mode: "NOT_ALLOWED" as const,
+      };
+    }
+    if (role._count.users > 0) {
+      return {
+        allowed: false,
+        blocker: `The role is assigned to ${role._count.users} user(s).`,
+        code: "COMPANY_ROLE_ASSIGNED_USERS",
+        mode: "NOT_ALLOWED" as const,
+      };
+    }
+    return { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const };
+  }
+
+  private companyPositionDeletionCapability(position: {
+    _count: { alarmRecipientPolicies: number; assignments: number };
+  }) {
+    if (position._count.assignments > 0 || position._count.alarmRecipientPolicies > 0) {
+      return {
+        allowed: false,
+        blocker: "The position has assignment or alarm-policy history.",
+        code: "COMPANY_POSITION_HAS_PROTECTED_HISTORY",
+        mode: "NOT_ALLOWED" as const,
+      };
+    }
+    return { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const };
+  }
+
+  private assertDeletionAllowed(
+    capability: { allowed: boolean; blocker: string | null; code: string | null },
+    recommendedAlternative: string,
+  ) {
+    if (!capability.allowed) {
+      throw new ConflictException({
+        blocker: capability.blocker,
+        code: capability.code,
+        message: capability.blocker,
+        recommendedAlternative,
+      });
     }
   }
 }

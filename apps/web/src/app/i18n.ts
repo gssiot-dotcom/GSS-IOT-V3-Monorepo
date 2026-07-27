@@ -20,6 +20,29 @@ const messages = {
   "branding.logoSelectedSize": "Selected file · {size} KB",
   "branding.logoUpload": "Upload logo",
   "branding.platformName": "Global Smart Solutions",
+  "buildingImages.actions": "Building image actions",
+  "buildingImages.chooseFile": "Choose image",
+  "buildingImages.delete": "Delete image",
+  "buildingImages.deleteDescription":
+    "The private image file and its building record will be deleted.",
+  "buildingImages.deleteTitle": "Delete building image?",
+  "buildingImages.emptyDescription": "Upload a plan or site image for this building.",
+  "buildingImages.invalidFile": "Choose a non-empty PNG, JPEG or WebP image up to 8 MB.",
+  "buildingImages.kind": "Image type",
+  "buildingImages.kindTabs": "Building image types",
+  "buildingImages.metadata": "Uploaded {date} · {size} KB",
+  "buildingImages.plan": "Plan",
+  "buildingImages.planTab": "Plan ({count}/{max})",
+  "buildingImages.previewAlt": "Private building image",
+  "buildingImages.previewError": "The private image preview could not be loaded.",
+  "buildingImages.real": "Site image",
+  "buildingImages.realTab": "Site images ({count}/{max})",
+  "buildingImages.selectedPreviewAlt": "Selected image preview",
+  "buildingImages.subtitle": "Private plan and site images, limited to four of each type.",
+  "buildingImages.title": "Building images",
+  "buildingImages.upload": "Upload image",
+  "buildingImages.uploadHelp": "PNG, JPEG or WebP, up to 8 MB. Files are stored privately.",
+  "buildingImages.uploadTitle": "Upload building image",
   "auth.company": "Company",
   "auth.email": "Email",
   "auth.gss": "GSS Admin",
@@ -80,6 +103,13 @@ const messages = {
   "alarms.title": "Alarms",
   "alarms.triggers": "Triggers",
   "alarms.unread": "unread",
+  "alarms.deleteResolvedOnly": "Only resolved alarms can be archived.",
+  "alarms.confirmArchiveTitle": "Archive alarm event?",
+  "alarms.confirmArchiveImpact":
+    "The resolved alarm will be removed from normal views while trigger, delivery, and audit evidence is retained.",
+  "alarms.confirmNotificationArchiveTitle": "Delete notification?",
+  "alarms.confirmNotificationArchiveImpact":
+    "The notification will be removed from normal and unread views while delivery and audit evidence is retained.",
   "common.forbidden": "You do not have access to this page.",
   "common.emptyDescription": "Create or select a scoped resource to continue.",
   "common.emptyTitle": "No records found",
@@ -204,9 +234,17 @@ const messages = {
   "devices.unassigned": "Unassigned",
   "devices.viewDetails": "View details",
   "devices.unassign": "Unassign",
+  "devices.unassignCompany": "Unassign company",
+  "devices.unassignedSuccess": "Assignment ended and history preserved.",
   "devices.confirmUnassign": "Unassign {label}?",
   "devices.confirmUnassignImpact":
     "The active assignment will be removed while assignment history is preserved.",
+  "devices.confirmGatewayCompanyUnassignImpact":
+    "This updates assignment history only. Active building and node relationships must be removed first.",
+  "devices.confirmNodeCompanyUnassignImpact":
+    "The company and active gateway assignments will end in one transaction. Database history is preserved; physical membership may require an approved REPLACE provisioning command.",
+  "devices.confirmNodeGatewayUnassignImpact":
+    "The gateway assignment will end in the database and history is preserved. Physical membership may require an approved REPLACE provisioning command.",
   "devices.confirmRetire": "Retire {label}?",
   "devices.confirmRetireImpact":
     "Retirement marks this hardware inactive for future operations and preserves its history.",
@@ -329,6 +367,10 @@ const messages = {
   "management.confirmDeleteRoleImpact":
     "This permanently removes the custom role. User assignments must be cleared first.",
   "management.deleteRole": "Delete role",
+  "management.confirmRoleDeleteTitle": "Delete role permanently?",
+  "management.confirmRoleDeleteImpact":
+    "This removes the custom role permanently. Assigned, system, and super-admin roles cannot be deleted.",
+  "management.roleAssignedDeleteBlocked": "Reassign every user before deleting this role.",
   "management.directAllow": "Direct allow",
   "management.directDeny": "Direct deny",
   "management.directPermissions": "Direct permissions",
@@ -471,7 +513,19 @@ const messages = {
   "monitoring.emptyHistory": "No sensor readings are available for this node.",
   "monitoring.emptyNodes": "No active nodes are connected through this building's gateways.",
   "monitoring.history": "Sensor history",
+  "monitoring.historyDate": "History date",
+  "monitoring.historyHour1": "1 hour",
+  "monitoring.historyHour12": "12 hours",
+  "monitoring.historyHour24": "24 hours",
+  "monitoring.historyHourRange": "Hour range",
+  "monitoring.historyLoadError": "The selected sensor-history range could not be loaded.",
+  "monitoring.historyMode": "History range mode",
+  "monitoring.historyModeDay": "Day",
+  "monitoring.historyModeHour": "Hour",
   "monitoring.historyRange": "{count} of {total} readings",
+  "monitoring.historySampledDescription":
+    "The chart shows {returned} deterministic points sampled from {total} readings.",
+  "monitoring.historySampledTitle": "Dense range sampled",
   "monitoring.historyPointLabel": "Reading received {date}, status {status}",
   "monitoring.historyTooltipAngleX": "X angle: {value}°",
   "monitoring.historyTooltipAngleY": "Y angle: {value}°",
@@ -535,12 +589,13 @@ const messages = {
   "organizations.areaDetailSubtitle":
     "Construction site detail, scoped buildings and assigned users.",
   "organizations.companyDetailSubtitle": "Company setup, resources, users, and assigned devices.",
+  "organizations.companyWorkspaceTabs": "Company workspace sections",
   "organizations.companyProfile": "Company profile",
   "organizations.building": "Building",
   "organizations.buildingDetailSubtitle": "Building detail, assigned users and devices.",
   "organizations.buildingPlan": "Building plan",
   "organizations.buildingPlanSubtitle":
-    "Plan metadata uses the approved storage-key boundary until production storage is selected.",
+    "Upload and manage private plan and site images for this building.",
   "organizations.areasTitle": "Construction sites",
   "organizations.buildingsTitle": "Buildings",
   "organizations.code": "Code",
@@ -551,6 +606,18 @@ const messages = {
   "organizations.createCompany": "Create company",
   "organizations.createSite": "Create construction site",
   "organizations.deactivate": "Deactivate",
+  "organizations.activate": "Activate",
+  "organizations.deleteCompany": "Delete company",
+  "organizations.deletePermanently": "Delete permanently",
+  "organizations.confirmPermanentDeleteTitle": "Delete permanently?",
+  "organizations.confirmPermanentDeleteImpact":
+    "Permanent deletion is allowed only when the record is pristine and has no protected history or dependencies. This cannot be undone.",
+  "organizations.confirmActivateTitle": "Activate company?",
+  "organizations.confirmActivateImpact":
+    "This restores the company lifecycle to active. Existing permissions and scope checks still apply.",
+  "organizations.confirmDeleteCompanyTitle": "Delete company permanently?",
+  "organizations.confirmDeleteCompanyImpact":
+    "Permanent deletion is allowed only for a pristine company with no protected users, sites, devices, alarms, reports, or assignment history. This cannot be undone.",
   "organizations.confirmDeactivateTitle": "Confirm deactivation",
   "organizations.confirmDeactivateImpact":
     "This reversible action will stop active operations for this entity. You can reactivate it through the approved workflow.",
@@ -731,7 +798,7 @@ const messages = {
   "status.unread": "Unread",
   "status.warning": "Warning",
   "table.pageSize": "Rows per page",
-  "table.range": "1-3 of 3",
+  "table.range": "{from}-{to} of {total}",
 } as const;
 
 export type TranslationKey = keyof typeof messages;

@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   ValidationPipe,
 } from "@nestjs/common";
 
@@ -14,15 +15,18 @@ import type { AuthenticatedRequest } from "../../common/auth.types";
 import { CompanyEndpoint } from "../../common/decorators/company-endpoint.decorator";
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
+import { PaginationQueryDto, SearchPaginationQueryDto } from "../../common/dto/pagination.dto";
 import {
   CreateCompanyPositionDto,
   CreateCompanyRoleDto,
   CreateCompanyUserDto,
   ReplaceUserPositionAssignmentsDto,
   UpdateCompanyPositionDto,
+  UpdateCompanyPositionStatusDto,
   UpdateCompanyRoleDto,
   UpdateCompanyRolePermissionsDto,
   UpdateCompanyUserDto,
+  UpdateCompanyUserStatusDto,
 } from "./dto/company-management.dto";
 import { CompanyManagementService } from "./company-management.service";
 
@@ -35,9 +39,14 @@ export class CompanyManagementCompanyController {
 
   @RequirePermissions("company-users.view")
   @Get("users")
-  async listUsers(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
+  async listUsers(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: PaginationQueryDto, transform: true }))
+    query: PaginationQueryDto,
+  ) {
     return this.companyManagement.listCompanyUsers(
       await this.companyManagement.getCompanyIdForCompanyUser(auth!.principal.sub),
+      query,
     );
   }
 
@@ -96,11 +105,45 @@ export class CompanyManagementCompanyController {
     );
   }
 
+  @RequirePermissions("company-users.update")
+  @Patch("users/:userId/status")
+  async updateUserStatus(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("userId") userId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateCompanyUserStatusDto, transform: true }))
+    dto: UpdateCompanyUserStatusDto,
+  ) {
+    return this.companyManagement.updateCompanyUserStatus(
+      auth!.principal,
+      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      userId,
+      dto.isActive,
+    );
+  }
+
+  @RequirePermissions("company-users.delete")
+  @Delete("users/:userId/permanent")
+  async permanentlyDeleteUser(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("userId") userId: string,
+  ) {
+    return this.companyManagement.permanentlyDeleteCompanyUser(
+      auth!.principal,
+      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      userId,
+    );
+  }
+
   @RequirePermissions("company-roles.view")
   @Get("roles")
-  async listRoles(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
+  async listRoles(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: PaginationQueryDto, transform: true }))
+    query: PaginationQueryDto,
+  ) {
     return this.companyManagement.listCompanyRoles(
       await this.companyManagement.getCompanyIdForCompanyUser(auth!.principal.sub),
+      query,
     );
   }
 
@@ -165,15 +208,29 @@ export class CompanyManagementCompanyController {
 
   @RequirePermissions("company-permissions.view")
   @Get("permissions")
-  listPermissions() {
-    return this.companyManagement.listCompanyPermissions();
+  listPermissions(
+    @Query(new ValidationPipe({ expectedType: SearchPaginationQueryDto, transform: true }))
+    query: SearchPaginationQueryDto,
+  ) {
+    return this.companyManagement.listCompanyPermissions(query);
+  }
+
+  @RequirePermissions("company-permissions.view")
+  @Get("permissions/options")
+  listPermissionOptions() {
+    return this.companyManagement.listCompanyPermissionOptions();
   }
 
   @RequirePermissions("company-users.view")
   @Get("positions")
-  async listPositions(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
+  async listPositions(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: PaginationQueryDto, transform: true }))
+    query: PaginationQueryDto,
+  ) {
     return this.companyManagement.listCompanyPositions(
       await this.companyManagement.getCompanyIdForCompanyUser(auth!.principal.sub),
+      query,
     );
   }
 
@@ -214,6 +271,35 @@ export class CompanyManagementCompanyController {
     @Param("positionId") positionId: string,
   ) {
     return this.companyManagement.deactivateCompanyPosition(
+      auth!.principal,
+      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      positionId,
+    );
+  }
+
+  @RequirePermissions("company-users.manage")
+  @Patch("positions/:positionId/status")
+  async updatePositionStatus(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("positionId") positionId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateCompanyPositionStatusDto, transform: true }))
+    dto: UpdateCompanyPositionStatusDto,
+  ) {
+    return this.companyManagement.updateCompanyPositionStatus(
+      auth!.principal,
+      await this.companyManagement.assertCompanyManager(auth!.principal.sub),
+      positionId,
+      dto.isActive,
+    );
+  }
+
+  @RequirePermissions("company-users.manage")
+  @Delete("positions/:positionId/permanent")
+  async permanentlyDeletePosition(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("positionId") positionId: string,
+  ) {
+    return this.companyManagement.permanentlyDeleteCompanyPosition(
       auth!.principal,
       await this.companyManagement.assertCompanyManager(auth!.principal.sub),
       positionId,

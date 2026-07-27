@@ -61,6 +61,7 @@ describe("Phase 4 device inventory e2e", () => {
     await prisma.companyRolePermission.deleteMany();
     await prisma.companyUser.deleteMany();
     await prisma.companyRole.deleteMany();
+    await prisma.buildingPlanImage.deleteMany();
     await prisma.constructionBuilding.deleteMany();
     await prisma.constructionArea.deleteMany();
     await prisma.company.deleteMany();
@@ -486,7 +487,8 @@ describe("Phase 4 device inventory e2e", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
     expect(
-      inventory.body.find((item: { id: string }) => item.id === pristineGateway.body.id).deletion,
+      inventory.body.items.find((item: { id: string }) => item.id === pristineGateway.body.id)
+        .deletion,
     ).toEqual({
       allowed: true,
       blocker: null,

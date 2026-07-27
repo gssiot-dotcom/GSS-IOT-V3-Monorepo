@@ -1,6 +1,12 @@
-import type { AuthContext, CompanyPermissionRecord } from "@gss-iot/contracts";
+import type {
+  AuthContext,
+  CollectionPageSize,
+  CompanyPermissionRecord,
+  PaginatedResponse,
+} from "@gss-iot/contracts";
 import {
   DataTable,
+  CollectionPagination,
   EmptyState,
   ErrorState,
   ForbiddenState,
@@ -23,28 +29,31 @@ export function PermissionCatalogPage({ context }: { context: CatalogContext }) 
   const [permissions, setPermissions] = useState<CompanyPermissionRecord[]>();
   const [errorStatus, setErrorStatus] = useState<number>();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
   const endpoint = context === "gss-admin" ? "/admin/permissions" : "/company/permissions";
 
   const load = useCallback(() => {
     if (!session) return;
     setErrorStatus(undefined);
     setPermissions(undefined);
-    void apiRequest<CompanyPermissionRecord[]>(session, endpoint)
-      .then(setPermissions)
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search.trim()) params.set("search", search.trim());
+    void apiRequest<PaginatedResponse<CompanyPermissionRecord>>(
+      session,
+      `${endpoint}?${params.toString()}`,
+    )
+      .then((response) => {
+        setPermissions(response.items);
+        setTotal(response.total);
+      })
       .catch((error: unknown) => setErrorStatus(error instanceof ApiError ? error.status : 500));
-  }, [endpoint, session]);
+  }, [endpoint, page, pageSize, search, session]);
 
   useEffect(() => load(), [load]);
 
-  const filtered = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    if (!permissions || !query) return permissions ?? [];
-    return permissions.filter((permission) =>
-      [permission.key, permission.module, permission.description ?? ""].some((value) =>
-        value.toLocaleLowerCase().includes(query),
-      ),
-    );
-  }, [permissions, search]);
+  const filtered = useMemo(() => permissions ?? [], [permissions]);
 
   if (errorStatus === 401) {
     return (
@@ -81,16 +90,35 @@ export function PermissionCatalogPage({ context }: { context: CatalogContext }) 
           <TextInput
             aria-label={t("permissions.searchLabel")}
             leftSection={<IconSearch aria-hidden="true" size={16} />}
-            onChange={(event) => setSearch(event.currentTarget.value)}
+            onChange={(event) => {
+              setSearch(event.currentTarget.value);
+              setPage(1);
+            }}
             placeholder={t("permissions.searchPlaceholder")}
             value={search}
             w={{ base: "100%", sm: 420 }}
           />
           <Text c="dimmed" size="sm">
-            {tf("permissions.resultCount", { count: filtered.length })}
+            {tf("permissions.resultCount", { count: total })}
           </Text>
         </Group>
       </Paper>
+      <CollectionPagination
+        onPageChange={setPage}
+        onPageSizeChange={(value) => {
+          setPageSize(Number(value) as CollectionPageSize);
+          setPage(1);
+        }}
+        page={page}
+        pageSize={pageSize}
+        pageSizeLabel={t("table.pageSize")}
+        rangeLabel={tf("table.range", {
+          from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+          to: Math.min(page * pageSize, total),
+          total,
+        })}
+        totalPages={Math.max(1, Math.ceil(total / pageSize))}
+      />
 
       {!permissions.length ? (
         <EmptyState

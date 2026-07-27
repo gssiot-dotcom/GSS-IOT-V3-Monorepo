@@ -1,6 +1,12 @@
-import type { GatewayCommandRecord, MqttStatusRecord } from "@gss-iot/contracts";
+import type {
+  CollectionPageSize,
+  GatewayCommandRecord,
+  MqttStatusRecord,
+  PaginatedResponse,
+} from "@gss-iot/contracts";
 import {
   ConfirmActionModal,
+  CollectionPagination,
   DataTable,
   DataToolbar,
   EmptyState,
@@ -15,7 +21,7 @@ import { Code, Drawer, Group, Paper, Select, SimpleGrid, Stack, Text } from "@ma
 import { IconEye, IconPlayerPause, IconRefresh } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { t } from "../../app/i18n";
+import { t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { hasPermission } from "../../shared/rbac/has-permission";
@@ -85,26 +91,35 @@ export function GatewayCommandsPage() {
   >();
   const [isMutating, setIsMutating] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
+  const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
     if (!session) return;
     setError(false);
     try {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+      if (statusFilter !== "ALL") params.set("status", statusFilter);
       const [loadedCommands, loadedMqttStatus] = await Promise.all([
-        apiRequest<GatewayCommandRecord[]>(session, "/admin/gateway-commands"),
+        apiRequest<PaginatedResponse<GatewayCommandRecord>>(
+          session,
+          `/admin/gateway-commands?${params.toString()}`,
+        ),
         apiRequest<MqttStatusRecord>(session, "/admin/gateway-commands/mqtt-status"),
       ]);
-      setCommands(loadedCommands);
+      setCommands(loadedCommands.items);
+      setTotal(loadedCommands.total);
       setMqttStatus(loadedMqttStatus);
       setSelected((current) =>
         current
-          ? (loadedCommands.find((command) => command.id === current.id) ?? current)
+          ? (loadedCommands.items.find((command) => command.id === current.id) ?? current)
           : current,
       );
     } catch {
       setError(true);
     }
-  }, [session]);
+  }, [page, pageSize, session, statusFilter]);
 
   const shouldPoll = useMemo(
     () => Boolean(commands?.some((command) => isActiveCommand(command))),
@@ -134,9 +149,7 @@ export function GatewayCommandsPage() {
     await load();
   };
 
-  const filteredCommands = commands?.filter(
-    (command) => statusFilter === "ALL" || command.status === statusFilter,
-  );
+  const filteredCommands = commands;
 
   const commandActionMenu = (row: GatewayCommandRecord) => {
     const items = [
@@ -204,9 +217,25 @@ export function GatewayCommandsPage() {
       {actionError ? <Text c="red">{actionError}</Text> : null}
       {commands.length ? (
         <Stack gap="md">
+          <CollectionPagination
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(Number(value) as CollectionPageSize);
+              setPage(1);
+            }}
+            page={page}
+            pageSize={pageSize}
+            pageSizeLabel={t("table.pageSize")}
+            rangeLabel={tf("table.range", {
+              from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+              to: Math.min(page * pageSize, total),
+              total,
+            })}
+            totalPages={Math.max(1, Math.ceil(total / pageSize))}
+          />
           <DataToolbar>
             <Text c="dimmed" size="sm">
-              {filteredCommands?.length ?? 0} / {commands.length} {t("gatewayCommands.title")}
+              {filteredCommands?.length ?? 0} / {total} {t("gatewayCommands.title")}
             </Text>
             <Select
               aria-label={t("gatewayCommands.status")}
@@ -216,9 +245,10 @@ export function GatewayCommandsPage() {
                   ["PENDING", "SENT", "ACKNOWLEDGED", "FAILED", "EXPIRED", "CANCELLED"] as const
                 ).map((status) => ({ label: commandStatusLabel(status), value: status })),
               ]}
-              onChange={(value) =>
-                setStatusFilter((value as GatewayCommandRecord["status"] | "ALL") ?? "ALL")
-              }
+              onChange={(value) => {
+                setStatusFilter((value as GatewayCommandRecord["status"] | "ALL") ?? "ALL");
+                setPage(1);
+              }}
               value={statusFilter}
             />
           </DataToolbar>

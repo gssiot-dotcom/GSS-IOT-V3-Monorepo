@@ -19,6 +19,7 @@ import type { AlarmChannel, Prisma } from "@prisma/client";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
 import { AUTH_CONTEXT } from "../../common/auth.types";
+import { paginated, pageWindow, type PaginationQueryDto } from "../../common/dto/pagination.dto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { PermissionResolverService } from "../rbac/permission-resolver.service";
@@ -36,7 +37,16 @@ import type {
 const ruleInclude = {
   building: { select: { areaId: true, companyId: true, id: true, title: true } },
   nodeType: { select: { displayName: true, id: true, key: true, numericCode: true } },
-  recipientPolicies: true,
+  recipientPolicies: {
+    include: {
+      _count: {
+        select: { alarmNotifications: true, counterStates: true, policyTriggers: true },
+      },
+    },
+  },
+  _count: {
+    select: { counterStates: true, events: true, policyTriggers: true, recipientPolicies: true },
+  },
 } satisfies Prisma.AlarmRuleInclude;
 
 @Injectable()
@@ -52,7 +62,7 @@ export class AlarmsService {
     private readonly evaluator: AlarmOccurrenceEvaluatorService,
   ) {}
 
-  async listRules(auth: AuthTokenPayload, query: { buildingId?: string }) {
+  async listRules(auth: AuthTokenPayload, query: ListAlarmsQueryDto) {
     await this.assertPermission(auth, "alarm-rules.view");
     const where: Prisma.AlarmRuleWhereInput = query.buildingId
       ? { buildingId: query.buildingId }
@@ -67,12 +77,20 @@ export class AlarmsService {
         throw new ForbiddenException("The requested alarm rule scope is not assigned.");
       }
     }
-    const rules = await this.prisma.alarmRule.findMany({
-      include: ruleInclude,
-      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
-      where,
-    });
-    return { items: rules.map((rule) => this.mapRule(rule)) };
+    const [rules, total] = await this.prisma.$transaction([
+      this.prisma.alarmRule.findMany({
+        include: ruleInclude,
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        where,
+        ...pageWindow(query),
+      }),
+      this.prisma.alarmRule.count({ where }),
+    ]);
+    return paginated(
+      rules.map((rule) => this.mapRule(rule)),
+      total,
+      query,
+    );
   }
 
   async getRule(auth: AuthTokenPayload, ruleId: string) {
@@ -232,15 +250,111 @@ export class AlarmsService {
     return this.mapRule(updated);
   }
 
-  async listPolicies(auth: AuthTokenPayload, ruleId: string) {
+  async updateRuleStatus(auth: AuthTokenPayload, ruleId: string, isActive: boolean) {
+    if (!isActive) return this.disableRule(auth, ruleId);
+    await this.assertPermission(auth, "alarm-rules.manage");
+    const current = await this.getRuleOrThrow(ruleId);
+    await this.assertRuleScope(auth, current);
+    if (current.isActive) return this.mapRule(current);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const duplicate = await tx.alarmRule.findFirst({
+        where: {
+          activeKey: "active",
+          buildingId: current.buildingId,
+          id: { not: ruleId },
+          nodeTypeId: current.nodeTypeId,
+          severity: current.severity,
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new ConflictException({
+          blocker: "An active rule already exists for this building, node type, and severity.",
+          code: "ALARM_RULE_ACTIVE_DUPLICATE",
+          message: "The alarm rule cannot be enabled.",
+        });
+      }
+      const saved = await tx.alarmRule.update({
+        data: {
+          activeKey: "active",
+          disabledAt: null,
+          evaluationVersion: { increment: 1 },
+          isActive: true,
+          updatedById: auth.sub,
+          updatedByType: this.actorType(auth),
+        },
+        include: ruleInclude,
+        where: { id: ruleId, isActive: false },
+      });
+      await tx.alarmCounterState.updateMany({
+        data: { currentCount: 0, status: "RESET", version: { increment: 1 } },
+        where: { ruleId },
+      });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-rule.enable",
+          entityId: ruleId,
+          entityType: "AlarmRule",
+          newValue: saved,
+          oldValue: current,
+        },
+        tx,
+      );
+      return saved;
+    });
+    await this.evaluator.resetRuleStates(ruleId, AlarmResolutionReason.CONFIGURATION_CHANGED);
+    return this.mapRule(updated);
+  }
+
+  async permanentlyDeleteRule(auth: AuthTokenPayload, ruleId: string) {
+    await this.assertPermission(auth, "alarm-rules.manage");
+    const current = await this.getRuleOrThrow(ruleId);
+    await this.assertRuleScope(auth, current);
+    return this.prisma.$transaction(async (tx) => {
+      const counts = await this.ruleDependencyCounts(ruleId, tx);
+      this.assertPristineDelete(
+        counts,
+        "ALARM_RULE_HAS_PROTECTED_HISTORY",
+        "Disable the rule instead.",
+      );
+      await tx.alarmRule.delete({ where: { id: ruleId } });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-rule.delete",
+          entityId: ruleId,
+          entityType: "AlarmRule",
+          oldValue: current,
+        },
+        tx,
+      );
+    });
+  }
+
+  async listPolicies(auth: AuthTokenPayload, ruleId: string, query: PaginationQueryDto) {
     const rule = await this.getRuleOrThrow(ruleId);
     await this.assertRuleScope(auth, rule);
     await this.assertPermission(auth, "alarm-rules.view");
-    const policies = await this.prisma.alarmRecipientPolicy.findMany({
-      orderBy: { createdAt: "asc" },
-      where: { ruleId },
-    });
-    return { items: policies.map((policy) => this.mapPolicy(policy)) };
+    const where = { ruleId } satisfies Prisma.AlarmRecipientPolicyWhereInput;
+    const [policies, total] = await this.prisma.$transaction([
+      this.prisma.alarmRecipientPolicy.findMany({
+        include: {
+          _count: {
+            select: { alarmNotifications: true, counterStates: true, policyTriggers: true },
+          },
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        where,
+        ...pageWindow(query),
+      }),
+      this.prisma.alarmRecipientPolicy.count({ where }),
+    ]);
+    return paginated(
+      policies.map((policy) => this.mapPolicy(policy)),
+      total,
+      query,
+    );
   }
 
   async createPolicy(auth: AuthTokenPayload, ruleId: string, dto: CreateAlarmRecipientPolicyDto) {
@@ -343,60 +457,172 @@ export class AlarmsService {
     const current = await this.getPolicyOrThrow(policyId);
     const rule = await this.getRuleOrThrow(current.ruleId);
     await this.assertRuleScope(auth, rule);
-    const policy = await this.prisma.alarmRecipientPolicy.update({
-      data: {
-        activeKey: policyId,
-        disabledAt: new Date(),
-        isActive: false,
-        updatedById: auth.sub,
-        updatedByType: this.actorType(auth),
-      },
-      where: { id: policyId },
+    const policy = await this.prisma.$transaction(async (tx) => {
+      const saved = await tx.alarmRecipientPolicy.update({
+        data: {
+          activeKey: policyId,
+          disabledAt: new Date(),
+          isActive: false,
+          updatedById: auth.sub,
+          updatedByType: this.actorType(auth),
+        },
+        where: { id: policyId },
+      });
+      await tx.alarmCounterState.updateMany({
+        data: { currentCount: 0, status: "RESET", version: { increment: 1 } },
+        where: { policyId },
+      });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-recipient-policy.disable",
+          entityId: saved.id,
+          entityType: "AlarmRecipientPolicy",
+          newValue: saved,
+          oldValue: current,
+        },
+        tx,
+      );
+      return saved;
     });
     await this.evaluator.resetPolicyStates(policyId, AlarmResolutionReason.POLICY_DISABLED);
-    await this.auditLog.record(auth, {
-      action: "alarm-recipient-policy.disable",
-      entityId: policy.id,
-      entityType: "AlarmRecipientPolicy",
-      newValue: policy,
-      oldValue: current,
-    });
     return this.mapPolicy(policy);
   }
 
-  async listCounters(auth: AuthTokenPayload, query: { buildingId?: string }) {
-    await this.assertPermission(auth, "alarms.view");
-    const where = await this.alarmReadRuleWhere(auth, query.buildingId);
-    const items = await this.prisma.alarmCounterState.findMany({
-      include: { node: { select: { id: true, number: true } }, policy: true, rule: true },
-      orderBy: [{ updatedAt: "desc" }],
-      take: 100,
-      where: { rule: where },
+  async updatePolicyStatus(auth: AuthTokenPayload, policyId: string, isActive: boolean) {
+    if (!isActive) return this.disablePolicy(auth, policyId);
+    await this.assertPermission(auth, "alarm-rules.manage");
+    const current = await this.getPolicyOrThrow(policyId);
+    const rule = await this.getRuleOrThrow(current.ruleId);
+    await this.assertRuleScope(auth, rule);
+    if (current.isActive) return this.mapPolicy(current);
+    if (!rule.isActive) {
+      throw new ConflictException({
+        blocker: "The parent alarm rule is disabled.",
+        code: "ALARM_POLICY_PARENT_RULE_DISABLED",
+        message: "Enable the rule before enabling this policy.",
+      });
+    }
+    const policy = await this.prisma.$transaction(async (tx) => {
+      const duplicate = await tx.alarmRecipientPolicy.findFirst({
+        where: {
+          activeKey: "active",
+          channelKey: current.channelKey,
+          id: { not: policyId },
+          ruleId: current.ruleId,
+          targetKey: current.targetKey,
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new ConflictException({
+          blocker: "An active policy already exists for this target and channel.",
+          code: "ALARM_POLICY_ACTIVE_DUPLICATE",
+          message: "The recipient policy cannot be enabled.",
+        });
+      }
+      const saved = await tx.alarmRecipientPolicy.update({
+        data: {
+          activeKey: "active",
+          disabledAt: null,
+          evaluationVersion: { increment: 1 },
+          isActive: true,
+          updatedById: auth.sub,
+          updatedByType: this.actorType(auth),
+        },
+        where: { id: policyId, isActive: false },
+      });
+      await tx.alarmCounterState.updateMany({
+        data: { currentCount: 0, status: "RESET", version: { increment: 1 } },
+        where: { policyId },
+      });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-recipient-policy.enable",
+          entityId: policyId,
+          entityType: "AlarmRecipientPolicy",
+          newValue: saved,
+          oldValue: current,
+        },
+        tx,
+      );
+      return saved;
     });
-    return { items };
+    await this.evaluator.resetPolicyStates(policyId, AlarmResolutionReason.CONFIGURATION_CHANGED);
+    return this.mapPolicy(policy);
   }
 
-  async listEvents(auth: AuthTokenPayload, query: { buildingId?: string }) {
+  async permanentlyDeletePolicy(auth: AuthTokenPayload, policyId: string) {
+    await this.assertPermission(auth, "alarm-rules.manage");
+    const current = await this.getPolicyOrThrow(policyId);
+    const rule = await this.getRuleOrThrow(current.ruleId);
+    await this.assertRuleScope(auth, rule);
+    return this.prisma.$transaction(async (tx) => {
+      const counts = await this.policyDependencyCounts(policyId, tx);
+      this.assertPristineDelete(
+        counts,
+        "ALARM_POLICY_HAS_PROTECTED_HISTORY",
+        "Disable the recipient policy instead.",
+      );
+      await tx.alarmRecipientPolicy.delete({ where: { id: policyId } });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-recipient-policy.delete",
+          entityId: policyId,
+          entityType: "AlarmRecipientPolicy",
+          oldValue: current,
+        },
+        tx,
+      );
+    });
+  }
+
+  async listCounters(auth: AuthTokenPayload, query: ListAlarmsQueryDto) {
+    await this.assertPermission(auth, "alarms.view");
+    const where = await this.alarmReadRuleWhere(auth, query.buildingId);
+    const counterWhere = { rule: where } satisfies Prisma.AlarmCounterStateWhereInput;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.alarmCounterState.findMany({
+        include: { node: { select: { id: true, number: true } }, policy: true, rule: true },
+        orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+        where: counterWhere,
+        ...pageWindow(query),
+      }),
+      this.prisma.alarmCounterState.count({ where: counterWhere }),
+    ]);
+    return paginated(items, total, query);
+  }
+
+  async listEvents(auth: AuthTokenPayload, query: ListAlarmsQueryDto) {
     await this.assertPermission(auth, "alarms.view");
     const where = await this.alarmReadEventWhere(auth, query.buildingId);
-    const items = await this.prisma.alarmEvent.findMany({
-      orderBy: [{ openedAt: "desc" }],
-      take: 100,
-      where,
-    });
-    return { items };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.alarmEvent.findMany({
+        orderBy: [{ openedAt: "desc" }, { id: "asc" }],
+        where,
+        ...pageWindow(query),
+      }),
+      this.prisma.alarmEvent.count({ where }),
+    ]);
+    return paginated(items, total, query);
   }
 
-  async listTriggers(auth: AuthTokenPayload, query: { buildingId?: string }) {
+  async listTriggers(auth: AuthTokenPayload, query: ListAlarmsQueryDto) {
     await this.assertPermission(auth, "alarms.view");
     const where = await this.alarmReadRuleWhere(auth, query.buildingId);
-    const items = await this.prisma.alarmPolicyTrigger.findMany({
-      include: { alarmEvent: true, policy: true, rule: true },
-      orderBy: [{ triggeredAt: "desc" }],
-      take: 100,
-      where: { rule: where },
-    });
-    return { items };
+    const triggerWhere = { rule: where } satisfies Prisma.AlarmPolicyTriggerWhereInput;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.alarmPolicyTrigger.findMany({
+        include: { alarmEvent: true, policy: true, rule: true },
+        orderBy: [{ triggeredAt: "desc" }, { id: "asc" }],
+        where: triggerWhere,
+        ...pageWindow(query),
+      }),
+      this.prisma.alarmPolicyTrigger.count({ where: triggerWhere }),
+    ]);
+    return paginated(items, total, query);
   }
 
   async listAlarms(auth: AuthTokenPayload, query: ListAlarmsQueryDto) {
@@ -404,13 +630,20 @@ export class AlarmsService {
     const where = await this.alarmReadEventWhere(auth, query.buildingId);
     if (query.severity) where.severity = query.severity;
     if (query.status) where.status = query.status;
-    const items = await this.prisma.alarmEvent.findMany({
-      include: this.eventListInclude(),
-      orderBy: [{ openedAt: "desc" }],
-      take: 100,
-      where,
-    });
-    return { items: items.map((event) => this.mapEvent(event)) };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.alarmEvent.findMany({
+        include: this.eventListInclude(),
+        orderBy: [{ openedAt: "desc" }, { id: "asc" }],
+        where,
+        ...pageWindow(query),
+      }),
+      this.prisma.alarmEvent.count({ where }),
+    ]);
+    return paginated(
+      items.map((event) => this.mapEvent(event)),
+      total,
+      query,
+    );
   }
 
   async getAlarm(auth: AuthTokenPayload, alarmEventId: string) {
@@ -421,12 +654,13 @@ export class AlarmsService {
         notifications: {
           include: { deliveryLogs: { orderBy: { attemptNumber: "asc" } }, recipientUser: true },
           orderBy: { createdAt: "asc" },
+          where: { deletedAt: null },
         },
         policyTriggers: { include: { policy: true }, orderBy: { triggeredAt: "asc" } },
       },
       where: { id: alarmEventId },
     });
-    if (!event) throw new NotFoundException("The alarm event was not found.");
+    if (!event || event.deletedAt) throw new NotFoundException("The alarm event was not found.");
     await this.assertEventScope(auth, event);
     return this.mapEvent(event);
   }
@@ -446,7 +680,7 @@ export class AlarmsService {
     const items = await this.prisma.alarmNotification.findMany({
       include: { deliveryLogs: { orderBy: { attemptNumber: "asc" } }, recipientUser: true },
       orderBy: { createdAt: "asc" },
-      where: { alarmEventId: event.id },
+      where: { alarmEventId: event.id, deletedAt: null },
     });
     return { items: items.map((item) => this.mapNotification(item)) };
   }
@@ -527,18 +761,29 @@ export class AlarmsService {
     return this.getAlarm(auth, updated.id);
   }
 
-  async listNotifications(auth: AuthTokenPayload) {
+  async listNotifications(auth: AuthTokenPayload, query: PaginationQueryDto) {
     await this.assertPermission(auth, "notifications.view");
     if (auth.context === AUTH_CONTEXT.gssAdmin) {
-      return { items: [] };
+      return paginated([], 0, query);
     }
-    const items = await this.prisma.alarmNotification.findMany({
-      include: { alarmEvent: { include: { building: true, node: true, nodeType: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-      where: { recipientUserId: auth.sub },
-    });
-    return { items: items.map((item) => this.mapNotification(item)) };
+    const where = {
+      deletedAt: null,
+      recipientUserId: auth.sub,
+    } satisfies Prisma.AlarmNotificationWhereInput;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.alarmNotification.findMany({
+        include: { alarmEvent: { include: { building: true, node: true, nodeType: true } } },
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        where,
+        ...pageWindow(query),
+      }),
+      this.prisma.alarmNotification.count({ where }),
+    ]);
+    return paginated(
+      items.map((item) => this.mapNotification(item)),
+      total,
+      query,
+    );
   }
 
   async unreadNotificationCount(auth: AuthTokenPayload) {
@@ -551,6 +796,7 @@ export class AlarmsService {
         readAt: null,
         recipientUserId: auth.sub,
         status: AlarmNotificationStatus.SENT,
+        deletedAt: null,
       },
     });
     return { unreadCount };
@@ -562,7 +808,7 @@ export class AlarmsService {
       throw new NotFoundException("The notification was not found.");
     }
     const notification = await this.prisma.alarmNotification.findFirst({
-      where: { id: notificationId, recipientUserId: auth.sub },
+      where: { id: notificationId, recipientUserId: auth.sub, deletedAt: null },
     });
     if (!notification) throw new NotFoundException("The notification was not found.");
     const updated = await this.prisma.alarmNotification.update({
@@ -586,6 +832,7 @@ export class AlarmsService {
           readAt: null,
           recipientUserId: auth.sub,
           status: AlarmNotificationStatus.SENT,
+          deletedAt: null,
         },
       });
     }
@@ -597,6 +844,79 @@ export class AlarmsService {
     return this.assertPermission(auth, "notifications.manage").then(() =>
       this.notificationDispatch.providerStatuses(),
     );
+  }
+
+  async archiveAlarmEvent(auth: AuthTokenPayload, alarmEventId: string) {
+    const event = await this.getEventForAction(auth, alarmEventId, "alarms.manage");
+    if (event.status !== AlarmEventStatus.RESOLVED) {
+      throw new ConflictException({
+        blocker: "Only resolved alarm events can be archived.",
+        code: "ALARM_EVENT_NOT_RESOLVED",
+        message: "Resolve the alarm safely before deleting it from normal views.",
+        recommendedAlternative: "Acknowledge or resolve the alarm first.",
+      });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const archived = await tx.alarmEvent.update({
+        data: {
+          deletedAt: new Date(),
+          deletedById: auth.sub,
+          deletedByType: this.actorType(auth),
+        },
+        where: { id: alarmEventId, deletedAt: null },
+      });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-event.archive",
+          entityId: alarmEventId,
+          entityType: "AlarmEvent",
+          newValue: { deletedAt: archived.deletedAt },
+          oldValue: event,
+        },
+        tx,
+      );
+      return { archived: true, id: archived.id };
+    });
+  }
+
+  async archiveNotification(auth: AuthTokenPayload, notificationId: string) {
+    await this.assertPermission(auth, "notifications.view");
+    const notification = await this.prisma.alarmNotification.findUnique({
+      include: { alarmEvent: true },
+      where: { id: notificationId },
+    });
+    if (!notification || notification.deletedAt) {
+      throw new NotFoundException("The notification was not found.");
+    }
+    const isRecipient =
+      auth.context === AUTH_CONTEXT.companyUser && notification.recipientUserId === auth.sub;
+    if (!isRecipient) {
+      await this.assertPermission(auth, "notifications.manage");
+      await this.assertEventScope(auth, notification.alarmEvent);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const archived = await tx.alarmNotification.update({
+        data: {
+          deletedAt: new Date(),
+          deletedById: auth.sub,
+          deletedByType: this.actorType(auth),
+        },
+        where: { id: notificationId, deletedAt: null },
+      });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-notification.archive",
+          entityId: notificationId,
+          entityType: "AlarmNotification",
+          newValue: { deletedAt: archived.deletedAt },
+          oldValue: notification,
+        },
+        tx,
+      );
+      return { archived: true, id: archived.id };
+    });
   }
 
   private eventListInclude() {
@@ -615,7 +935,7 @@ export class AlarmsService {
   ) {
     await this.assertPermission(auth, permission);
     const event = await this.prisma.alarmEvent.findUnique({ where: { id: alarmEventId } });
-    if (!event) throw new NotFoundException("The alarm event was not found.");
+    if (!event || event.deletedAt) throw new NotFoundException("The alarm event was not found.");
     await this.assertEventScope(auth, event);
     return event;
   }
@@ -744,7 +1064,9 @@ export class AlarmsService {
   }
 
   private async alarmReadEventWhere(auth: AuthTokenPayload, buildingId?: string) {
-    const where: Prisma.AlarmEventWhereInput = buildingId ? { buildingId } : {};
+    const where: Prisma.AlarmEventWhereInput = buildingId
+      ? { buildingId, deletedAt: null }
+      : { deletedAt: null };
     if (auth.context === AUTH_CONTEXT.companyUser) {
       const scope = await this.companyScope(auth.sub);
       where.companyId = scope.companyId;
@@ -939,21 +1261,93 @@ export class AlarmsService {
   }
 
   private mapRule(rule: Prisma.AlarmRuleGetPayload<{ include: typeof ruleInclude }>) {
+    const dependencies =
+      rule._count.counterStates +
+      rule._count.events +
+      rule._count.policyTriggers +
+      rule._count.recipientPolicies;
     return {
       ...rule,
       createdAt: rule.createdAt.toISOString(),
       disabledAt: rule.disabledAt?.toISOString() ?? null,
       recipientPolicies: rule.recipientPolicies.map((policy) => this.mapPolicy(policy)),
+      deletion:
+        dependencies === 0
+          ? { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const }
+          : {
+              allowed: false,
+              blocker: "The rule has recipient configuration or operational history.",
+              code: "ALARM_RULE_HAS_PROTECTED_HISTORY",
+              mode: "NOT_ALLOWED" as const,
+            },
       updatedAt: rule.updatedAt.toISOString(),
     };
   }
 
-  private mapPolicy(policy: Prisma.AlarmRecipientPolicyGetPayload<object>) {
+  private mapPolicy(
+    policy: Prisma.AlarmRecipientPolicyGetPayload<object> & {
+      _count?: { alarmNotifications: number; counterStates: number; policyTriggers: number };
+    },
+  ) {
+    const dependencies = policy._count
+      ? policy._count.alarmNotifications +
+        policy._count.counterStates +
+        policy._count.policyTriggers
+      : undefined;
     return {
       ...policy,
       createdAt: policy.createdAt.toISOString(),
       disabledAt: policy.disabledAt?.toISOString() ?? null,
+      ...(dependencies === undefined
+        ? {}
+        : {
+            deletion:
+              dependencies === 0
+                ? { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const }
+                : {
+                    allowed: false,
+                    blocker: "The policy has counter, trigger, or notification history.",
+                    code: "ALARM_POLICY_HAS_PROTECTED_HISTORY",
+                    mode: "NOT_ALLOWED" as const,
+                  },
+          }),
       updatedAt: policy.updatedAt.toISOString(),
     };
+  }
+
+  private async ruleDependencyCounts(ruleId: string, executor: Prisma.TransactionClient) {
+    const [recipientPolicies, counterStates, events, policyTriggers] = await Promise.all([
+      executor.alarmRecipientPolicy.count({ where: { ruleId } }),
+      executor.alarmCounterState.count({ where: { ruleId } }),
+      executor.alarmEvent.count({ where: { ruleId } }),
+      executor.alarmPolicyTrigger.count({ where: { ruleId } }),
+    ]);
+    return { counterStates, events, policyTriggers, recipientPolicies };
+  }
+
+  private async policyDependencyCounts(policyId: string, executor: Prisma.TransactionClient) {
+    const [counterStates, policyTriggers, alarmNotifications] = await Promise.all([
+      executor.alarmCounterState.count({ where: { policyId } }),
+      executor.alarmPolicyTrigger.count({ where: { policyId } }),
+      executor.alarmNotification.count({ where: { policyId } }),
+    ]);
+    return { alarmNotifications, counterStates, policyTriggers };
+  }
+
+  private assertPristineDelete(
+    counts: Record<string, number>,
+    code: string,
+    recommendedAlternative: string,
+  ) {
+    const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+    if (total > 0) {
+      throw new ConflictException({
+        blocker: "The record has protected configuration or operational history.",
+        code,
+        counts,
+        message: "The record cannot be permanently deleted.",
+        recommendedAlternative,
+      });
+    }
   }
 }

@@ -67,23 +67,28 @@ describe("read-only permission catalog", () => {
   it("loads the Admin catalog, filters key/module/description, and exposes no mutations", async () => {
     testSession = session("gss-admin");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      void input;
-      return new Response(JSON.stringify(permissions));
+      const search = new URL(String(input)).searchParams.get("search");
+      const items = search
+        ? permissions.filter((item) => item.description?.includes("monitoring"))
+        : permissions;
+      return new Response(JSON.stringify({ items, page: 1, pageSize: 50, total: items.length }));
     });
     vi.stubGlobal("fetch", fetchMock);
     renderPage("gss-admin");
 
     expect((await screen.findAllByText("monitoring.view")).length).toBeGreaterThan(0);
     expect(
-      fetchMock.mock.calls.some(([input]) => String(input).endsWith("/admin/permissions")),
+      fetchMock.mock.calls.some(
+        ([input]) => new URL(String(input)).pathname === "/admin/permissions",
+      ),
     ).toBe(true);
     expect(screen.getAllByText("company-roles.manage").length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getByRole("textbox", { name: "Search permission catalog" }), {
       target: { value: "monitoring data" },
     });
-    expect(screen.getAllByText("monitoring.view").length).toBeGreaterThan(0);
-    expect(screen.queryAllByText("company-roles.manage")).toHaveLength(0);
+    await waitFor(() => expect(screen.getAllByText("monitoring.view").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.queryAllByText("company-roles.manage")).toHaveLength(0));
     expect(screen.queryByRole("button", { name: /save|create|edit|delete/i })).toBeNull();
   });
 
@@ -91,14 +96,18 @@ describe("read-only permission catalog", () => {
     testSession = session("company-user");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       void input;
-      return new Response(JSON.stringify(permissions.slice(1)));
+      return new Response(
+        JSON.stringify({ items: permissions.slice(1), page: 1, pageSize: 50, total: 1 }),
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     renderPage("company-user");
 
     expect((await screen.findAllByText("company-roles.manage")).length).toBeGreaterThan(0);
     expect(
-      fetchMock.mock.calls.some(([input]) => String(input).endsWith("/company/permissions")),
+      fetchMock.mock.calls.some(
+        ([input]) => new URL(String(input)).pathname === "/company/permissions",
+      ),
     ).toBe(true);
     expect(screen.queryAllByText("monitoring.view")).toHaveLength(0);
   });

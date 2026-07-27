@@ -73,6 +73,7 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     await prisma.companyPosition.deleteMany();
     await prisma.companyUser.deleteMany();
     await prisma.companyRole.deleteMany();
+    await prisma.buildingPlanImage.deleteMany();
     await prisma.constructionBuilding.deleteMany();
     await prisma.constructionArea.deleteMany();
     await prisma.company.deleteMany();
@@ -211,6 +212,27 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     expect(notification.deliveryLogs[0]?.providerKey).toBe("in_app");
 
     const server = app.getHttpServer() as Parameters<typeof request>[0];
+    for (const [prefix, token] of [
+      ["/company", companyToken],
+      ["/admin", gssToken],
+    ] as const) {
+      await request(server)
+        .get(`${prefix}/alarms?page=1&pageSize=50`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+      await request(server)
+        .get(`${prefix}/notifications?page=1&pageSize=50`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+      await request(server)
+        .get(`${prefix}/notifications/unread-count`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+      await request(server)
+        .get(`${prefix}/notifications?pageSize=5`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(400);
+    }
     await request(server)
       .get("/company/notifications/unread-count")
       .set("Authorization", `Bearer ${companyToken}`)
@@ -264,7 +286,7 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     await createRuleAndPolicy(1, 0, AlarmChannel.EMAIL, { testProvider: "retryable_failure" });
     await sendDanger("provider-1", "2026-07-19T17:00:00.000Z", 4.5);
     await waitFor(() => prisma.alarmNotification.count(), 1);
-    await waitForNotificationStatus("PENDING");
+    await waitForNotificationStatus("PENDING", 1);
     const notification = await prisma.alarmNotification.findFirstOrThrow();
     expect(notification.status).toBe("PENDING");
 
@@ -501,10 +523,10 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     throw new Error("Alarm event did not resolve.");
   }
 
-  async function waitForNotificationStatus(status: string) {
+  async function waitForNotificationStatus(status: string, minimumAttempts = 0) {
     for (let index = 0; index < 100; index += 1) {
       const notification = await prisma.alarmNotification.findFirst();
-      if (notification?.status === status) return;
+      if (notification?.status === status && notification.attemptCount >= minimumAttempts) return;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     throw new Error(`Alarm notification did not reach ${status}.`);

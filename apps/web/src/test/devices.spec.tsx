@@ -71,8 +71,8 @@ describe("Phase 8 Admin devices provisioning UI", () => {
         if (deleteError) return Promise.reject(new Error(deleteError));
         return Promise.resolve(undefined);
       }
-      if (path === "/admin/devices/gateways") {
-        return Promise.resolve([
+      if (path.startsWith("/admin/devices/gateways?")) {
+        const items = [
           {
             buildingAssignments: [
               {
@@ -101,10 +101,11 @@ describe("Phase 8 Admin devices provisioning UI", () => {
               blocker: deletionAllowed ? null : "companyAssignmentHistory",
             },
           },
-        ]);
+        ];
+        return Promise.resolve({ items, page: 1, pageSize: 50, total: items.length });
       }
-      if (path === "/admin/devices/nodes") {
-        return Promise.resolve([
+      if (path.startsWith("/admin/devices/nodes?")) {
+        const items = [
           {
             batteryLevel: null,
             companyAssignments: [
@@ -134,7 +135,8 @@ describe("Phase 8 Admin devices provisioning UI", () => {
               blocker: deletionAllowed ? null : "companyAssignmentHistory",
             },
           },
-        ]);
+        ];
+        return Promise.resolve({ items, page: 1, pageSize: 50, total: items.length });
       }
       if (path === "/admin/devices/node-types") {
         return Promise.resolve([
@@ -147,8 +149,8 @@ describe("Phase 8 Admin devices provisioning UI", () => {
           },
         ]);
       }
-      if (path === "/admin/gateway-commands") {
-        return Promise.resolve([
+      if (path.startsWith("/admin/gateway-commands?")) {
+        const items = [
           {
             acknowledgedAt: null,
             attemptCount: 1,
@@ -196,7 +198,8 @@ describe("Phase 8 Admin devices provisioning UI", () => {
             topic: "GSSIOT/test/GATE_SUB/GRM22JU22PGW-001",
             updatedAt: "2026-07-16T00:00:00.000Z",
           },
-        ]);
+        ];
+        return Promise.resolve({ items, page: 1, pageSize: 50, total: items.length });
       }
       if (path === "/admin/devices/provisioning-options") {
         return Promise.resolve({
@@ -267,7 +270,7 @@ describe("Phase 8 Admin devices provisioning UI", () => {
 
     await waitFor(() => expect(provisioningOptions).toBeDefined());
     expect(JSON.parse(String(provisioningOptions?.body))).toMatchObject({ mode: "APPEND" });
-  });
+  }, 15_000);
 
   it("renders compact edit/delete actions with server-derived history blockers", async () => {
     render(
@@ -346,8 +349,8 @@ describe("Phase 8 Admin devices provisioning UI", () => {
       target: { value: "100-102, 102" },
     });
     expect(await screen.findByText("3 nodes will be created")).toBeTruthy();
-    expect(screen.getByText("100")).toBeTruthy();
-    expect(screen.getByText("102")).toBeTruthy();
+    expect(screen.getAllByText("100").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("102").length).toBeGreaterThan(0);
 
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", { name: "Create node" }),

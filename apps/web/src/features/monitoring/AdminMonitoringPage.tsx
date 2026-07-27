@@ -1,11 +1,13 @@
 import type {
   AdminMonitoringOptionsRecord,
   AdminMonitoringSummaryRecord,
+  CollectionPageSize,
   MonitoringBuildingOverview,
   MonitoringNodeStateEvent,
   MonitoringNodeStateRecord,
   MonitoringNodeTypeResponse,
   PaginatedSensorHistory,
+  SensorHistoryChartResponse,
 } from "@gss-iot/contracts";
 import {
   DataTable,
@@ -41,6 +43,7 @@ import { Can } from "../../shared/rbac/Can";
 import { NodeDetailDrawer } from "./components/NodeDetailDrawer";
 import { NodeStateCard } from "./components/NodeStateCard";
 import { MonitoringViewToggle, type MonitoringView } from "./components/MonitoringViewToggle";
+import { useNodeHistoryRange } from "./components/useNodeHistoryRange";
 import {
   isCanonicalNodeType,
   nodeTypeOrder,
@@ -59,17 +62,27 @@ export function AdminMonitoringPage() {
   const [buildingOverview, setBuildingOverview] = useState<MonitoringBuildingOverview>();
   const [nodeResponse, setNodeResponse] = useState<MonitoringNodeTypeResponse>();
   const [history, setHistory] = useState<PaginatedSensorHistory>();
+  const [historyChart, setHistoryChart] = useState<SensorHistoryChartResponse>();
+  const [historyError, setHistoryError] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState<CollectionPageSize>(50);
   const [companyId, setCompanyId] = useState("");
   const [areaId, setAreaId] = useState("");
   const [buildingId, setBuildingId] = useState("");
   const [nodeType, setNodeType] = useState<string>();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const historyRange = useNodeHistoryRange(selectedNodeId);
   const [view, setView] = useState<MonitoringView>(() =>
     window.localStorage.getItem("gss.monitoring.admin.view") === "CARD" ? "CARD" : "TABLE",
   );
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("offline");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [historyRange.range.from, historyRange.range.to, selectedNodeId]);
 
   useEffect(() => {
     if (!session) return;
@@ -130,15 +143,51 @@ export function AdminMonitoringPage() {
   useEffect(() => {
     if (!session || !buildingId || !nodeType || !selectedNodeId || !isCanonicalNodeType(nodeType)) {
       setHistory(undefined);
+      setHistoryChart(undefined);
       return;
     }
-    void apiRequest<PaginatedSensorHistory>(
-      session,
-      `/admin/monitoring/buildings/${buildingId}/node-types/${nodeType}/nodes/${selectedNodeId}/history?page=1&pageSize=25`,
-    )
-      .then(setHistory)
-      .catch(() => setHistory(undefined));
-  }, [buildingId, nodeType, selectedNodeId, session?.accessToken]);
+    const query = new URLSearchParams({
+      from: historyRange.range.from,
+      page: String(historyPage),
+      pageSize: String(historyPageSize),
+      to: historyRange.range.to,
+    });
+    const chartQuery = new URLSearchParams({
+      from: historyRange.range.from,
+      to: historyRange.range.to,
+    });
+    setHistoryLoading(true);
+    setHistoryError(false);
+    void Promise.all([
+      apiRequest<PaginatedSensorHistory>(
+        session,
+        `/admin/monitoring/buildings/${buildingId}/node-types/${nodeType}/nodes/${selectedNodeId}/history?${query.toString()}`,
+      ),
+      apiRequest<SensorHistoryChartResponse>(
+        session,
+        `/admin/monitoring/buildings/${buildingId}/node-types/${nodeType}/nodes/${selectedNodeId}/history/chart?${chartQuery.toString()}`,
+      ),
+    ])
+      .then(([table, chart]) => {
+        setHistory(table);
+        setHistoryChart(chart);
+      })
+      .catch(() => {
+        setHistory(undefined);
+        setHistoryChart(undefined);
+        setHistoryError(true);
+      })
+      .finally(() => setHistoryLoading(false));
+  }, [
+    buildingId,
+    historyRange.range.from,
+    historyRange.range.to,
+    historyPage,
+    historyPageSize,
+    nodeType,
+    selectedNodeId,
+    session?.accessToken,
+  ]);
 
   useEffect(() => {
     if (!session || !buildingId || !nodeType || !isCanonicalNodeType(nodeType)) {
@@ -436,10 +485,26 @@ export function AdminMonitoringPage() {
           )}
           {selectedNode ? (
             <NodeDetailDrawer
+              chart={historyChart}
+              date={historyRange.date}
               history={history}
+              historyError={historyError}
+              hours={historyRange.hours}
+              loadingHistory={historyLoading}
+              maxDate={historyRange.maxDate}
+              mode={historyRange.mode}
               node={selectedNode}
               nodeType={nodeType as never}
               onClose={() => setSelectedNodeId(undefined)}
+              onDateChange={historyRange.setDate}
+              onHoursChange={historyRange.setHours}
+              onHistoryPageChange={setHistoryPage}
+              onHistoryPageSizeChange={(value) => {
+                setHistoryPageSize(value);
+                setHistoryPage(1);
+              }}
+              onModeChange={historyRange.setMode}
+              range={historyRange.range}
             />
           ) : null}
         </>

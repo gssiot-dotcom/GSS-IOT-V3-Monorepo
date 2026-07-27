@@ -298,3 +298,79 @@ Verification completed for this slice:
   changed for this logo slice is formatted;
 - the aggregate web Playwright command still exceeds the six-minute bounded run in the previously
   documented dark shared-surface harness, while the focused branding run remains green.
+
+## Lifecycle/deletion/unassignment/tabs/pagination correction — 2026-07-27
+
+The repository now uses the supplied case-sensitive SVG assets in both portal headers and the Admin
+sidebar, an always-light Company logo plate, SVG-safe shared row/card action guards, full-width
+route-driven Company Detail tabs and the shared `WorkspaceTabs` contract. Reversible lifecycle
+mutations are explicit and separate from pristine permanent deletion. Alarm Event/Notification
+deletion archives evidence. Gateway/Node company unassignment preserves and audits assignment
+history with hierarchy blockers/cascade rules.
+
+An additive Prisma migration introduces archive actor columns and pagination/deleted-state indexes.
+The shared 50/100 collection envelope is wired through organization, company-management, device,
+role/permission, gateway-command, alarm, notification, sensor-history and report surfaces. Phase 14
+remains not started. Architecture and rollback details are in
+`docs/architecture/LIFECYCLE_DELETION_PAGINATION.md`.
+
+Verification for this correction is complete:
+
+- `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`
+  pass; the production build retains the known bundle-size advisory;
+- the workspace unit gate passes 43 test files and 135 tests in total: config 6, contracts 5,
+  shared UI 14, API 33 and web 77;
+- the new migration applied successfully to the E2E schema; the initially affected RBAC, devices,
+  gateway-command and monitoring E2E files pass 49/49 after pagination-contract updates, while the
+  other three API E2E files passed 16/16 in the full run;
+- aggregate `pnpm --filter web test:e2e` passes 14/14 in 11.7 minutes, including protected
+  Admin/Company routes, supplied SVG branding, Company logo editors, exact Wave-4 viewports,
+  light/dark states and overflow-menu command drawer evidence;
+- representative 1440, 768 and 375 screenshots were inspected from
+  `test-results/ui-redesign.visual-capture-30d0a-cross-navigation-and-tables`;
+- every format-supported file changed by this correction passes Prettier. The repository-wide
+  `pnpm format:check` remains red on 102 pre-existing/out-of-scope files, none from this correction.
+
+## Post-lifecycle regression, building images and history ranges — 2026-07-27
+
+The previously pending lifecycle migration is applied to the local development and E2E schemas;
+`prisma migrate status` reports all 18 migrations applied. Alarm/Notification lists and unread
+counts are verified in both authorization contexts, and the dashboard now requests report page size
+50 before displaying five items. Prisma database exceptions log method, path, code and metadata on
+the server while returning a generic frontend error.
+
+Building PLAN/REAL metadata entry is replaced by real private multipart upload in both portals. The
+shared memory/local/S3 private-asset boundary, strict raster validation, four-per-kind limit,
+authenticated streams, durable provider deletion/retry state, audit trail and building RESTRICT
+foreign key are implemented. Company Building Plan and Admin Company Buildings reuse one responsive
+image manager without exposing storage keys.
+
+Node detail history now supports Hour 1/12/24 and a local calendar Day, UTC half-open API ranges,
+50/100 table pagination and an ascending chart capped at 500 deterministic sampled points with
+explicit metadata. The Create Alarm Rule form uses the responsive large two-column form contract,
+and one light/dark custom scrollbar contract now covers root and Mantine overflow surfaces.
+
+Architecture, rollout and rollback details are in
+`docs/architecture/BUILDING_IMAGES_AND_NODE_HISTORY.md`. Phase 14 and production S3 provisioning
+remain deferred.
+
+Verification for this correction:
+
+- Prisma Client generation passes; both development and E2E schemas report all 18 migrations
+  applied with no pending migration;
+- `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` pass. The aggregate unit gate passes
+  35 files and 142 tests: config 6, contracts 5, shared UI 14, API 38 and Web 79;
+- the complete API E2E gate passes 8 files and 68 tests, including lifecycle schema-lag,
+  Admin/Company Alarm/Notification, building-image storage/authorization and monitoring-range
+  coverage;
+- Web browser verification passes the four bootstrap cases and all 12 visual cases when run in
+  bounded groups. The aggregate wrapper was also attempted but exceeded its tool window because
+  the evidence sweep generates more than 100 full-page captures; no individual case remains
+  failing;
+- representative building-image, Node history tooltip, Alarm Rule modal and Role editor desktop/
+  mobile captures were inspected under `test-results/ui-redesign.visual-capture-d805f--management-in-both-portals`,
+  `test-results/ui-redesign.visual-capture-95a40--exact-responsive-viewports` and
+  `test-results/ui-redesign.visual-capture-1dbc8-le-and-role-editor-surfaces`;
+- every file changed for this correction passes Prettier. The repository-wide
+  `pnpm format:check` remains red on 98 pre-existing/out-of-scope files and is not expanded into a
+  broad formatting rewrite.
