@@ -28,7 +28,14 @@ const session: AuthSession = {
 
 const fullSummary: DashboardSummary = {
   gateways: { offline: 1, online: 3, unassigned: 0 },
-  kpis: { activeBuildings: 2, gateways: 4, gatewaysOffline: 1, nodes: 9, telemetryReadings: 12 },
+  kpis: {
+    activeBuildings: 2,
+    activeSites: 1,
+    gateways: 4,
+    gatewaysOffline: 1,
+    nodes: 9,
+    telemetryReadings: 12,
+  },
   openAlarmsBySeverity: { CAUTION: 1, DANGER: 2, WARNING: 0 },
   range: { from: "2026-07-15T00:00:00.000Z", key: "7d", to: "2026-07-22T00:00:00.000Z" },
   severityDistribution: { caution: 1, danger: 2, offline: 1, safe: 5, unconfigured: 0, warning: 0 },
@@ -85,6 +92,16 @@ describe("dashboard analytics", () => {
     expect(screen.getByText("Latest node severity")).toBeTruthy();
     expect(screen.getByText("Open alarms")).toBeTruthy();
     expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByText("Active construction sites")).toBeTruthy();
+    expect(screen.getByText("Active buildings")).toBeTruthy();
+    expect(screen.getByText("Gateways")).toBeTruthy();
+    expect(screen.getByText("Nodes")).toBeTruthy();
+
+    const telemetryPoint = screen.getByRole("button", { name: /3 sensor readings/i });
+    fireEvent.mouseEnter(telemetryPoint);
+    expect((await screen.findByRole("tooltip")).textContent).toContain("3 readings received");
+    fireEvent.focus(screen.getByRole("button", { name: /9 sensor readings/i }));
+    expect((await screen.findByRole("tooltip")).textContent).toContain("9 readings received");
 
     fireEvent.change(screen.getByRole("combobox", { name: "Dashboard range" }), {
       target: { value: "30d" },

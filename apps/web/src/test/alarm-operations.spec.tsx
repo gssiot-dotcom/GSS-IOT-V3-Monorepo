@@ -140,7 +140,7 @@ describe("alarm operations", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "The alarm cannot be manually resolved while the latest state is unsafe.",
     );
-    expect(screen.getByText("OPEN")).toBeTruthy();
+    expect(screen.getByText("Open")).toBeTruthy();
     await waitFor(() => expect(resolveButton.hasAttribute("disabled")).toBe(false));
   });
 
@@ -156,7 +156,7 @@ describe("alarm operations", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Resolve" }));
 
-    await waitFor(() => expect(screen.getByText("RESOLVED")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Resolved")).toBeTruthy());
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

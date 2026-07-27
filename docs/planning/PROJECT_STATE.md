@@ -207,7 +207,23 @@ roles and permission-aware destructive actions. Authenticated Wave 2 visual
 captures pass at 1440x900, 1280x800 and 390x844 for the seven review routes and
 are stored under
 `test-results/ui-redesign.visual-capture-51391--at-the-requested-viewports`.
-Wave 3 remains intentionally unstarted.
+Wave 3 was subsequently implemented; the final Wave 4 handoff below is the
+current UI redesign status.
+
+## Final UI redesign Wave 4 handoff — 2026-07-23
+
+Final Admin/Company visual QA is implemented in the presentation layer only.
+It corrects dashboard/report status interpolation and mobile badge layout,
+adds monitoring mobile node-state cards while retaining desktop tables,
+removes duplicate mobile realtime indicators, and normalizes the remaining
+Admin company device lifecycle labels. Routes, API contracts, RBAC, Company
+scope, MQTT/realtime, alarm/report/settings behavior and i18n contracts remain
+unchanged. Exact viewport captures and the route/state matrix are recorded in
+`docs/ui-redesign/WAVE4_FINAL_VERIFICATION.md`.
+
+Workspace unit tests, lint, typecheck, build and API E2E pass. The aggregate
+web E2E command timed out in an existing dark shared-surface evidence helper;
+overall redesign release readiness remains conditional on that harness risk.
 
 ## Wave 3 UI redesign handoff — 2026-07-23
 
@@ -220,9 +236,65 @@ Company scope behavior, Socket.IO monitoring joins/events, alarm occurrence and
 count-interval evidence, report lifecycle/export authorization and protected
 settings behavior remain unchanged.
 
-Targeted authenticated screenshots were not produced in this run because the
-available local browser session was unauthenticated. Repository-wide visual QA
-and Wave 4 were intentionally not started. `pnpm typecheck`, Prettier on the
-changed files, targeted ESLint and `git diff --check` passed. The web Vitest
-runner hung before emitting test results when run against the dashboard and
-focused Wave 3 specs; this remains a verification risk for the next wave.
+The original Wave 3 handoff deferred authenticated screenshots because the
+available browser session was unauthenticated. Wave 4 superseded that gap
+with the test-only protected and exact-viewport captures documented in
+`docs/ui-redesign/WAVE4_FINAL_VERIFICATION.md`. The earlier focused-run hang
+is no longer present: the full workspace unit suite passes. The aggregate web
+E2E runner still has the separate documented dark-surface evidence timeout.
+
+## Targeted post-Wave-4 correction handoff — 2026-07-25
+
+The feedback-driven dashboard and monitoring correction plus the read-only
+Permission Catalog vertical slice are implemented without starting Wave 5 or
+Phase 14. Dashboard and realtime summary metrics now share compact neutral
+surfaces and remain six-across at 1280/1440. Telemetry and bounded node-history
+charts expose portal-based mouse/keyboard tooltips. Company monitoring building
+entries use compact semantic whole-card navigation without nested badges.
+
+Admin `/admin/settings/permissions` is guarded by `permissions.view` and returns
+only GSS/BOTH permissions from `GET /admin/permissions`. Company
+`/company/permissions` remains guarded by `company-permissions.view` and returns
+only COMPANY/BOTH permissions from `GET /company/permissions`. Both routes share
+a searchable read-only page and permission-filtered navigation. The seed now
+idempotently creates and updates concise permission descriptions; the existing
+nullable column is reused, so no migration was added.
+
+Focused web and API permission/denial tests pass. The exact 1440x900, 1280x800,
+1024x768 and 390x844 responsive visual flow also passes, including one-row and
+tooltip viewport assertions. Its artifacts are under
+`test-results/ui-redesign.visual-capture-95a40--exact-responsive-viewports`.
+Full gate results and the pre-existing aggregate web E2E dark-helper risk are
+recorded in `docs/ui-redesign/POST_WAVE4_TARGETED_VERIFICATION.md`.
+
+## Targeted platform/Company branding and private logo slice — 2026-07-25
+
+The post-Wave-4 shell now uses one shared `Global Smart Solutions` Activity brand in Admin and
+Company headers. The Company sidebar is tenant-owned and loads the authenticated company logo with
+an initials/skeleton fallback. Company Settings and the existing Admin Company Edit dialog share a
+permission-aware preview/upload/replace/remove editor; Company mutations refresh the sidebar
+without a reload.
+
+The API adds a provider-neutral private company-logo boundary with memory test, local development
+and mandatory private S3 production providers. PNG/JPEG/WebP magic-byte validation, 2 MiB limits,
+server-derived ownership, opaque keys, transactional metadata/audit updates, rollback cleanup and
+best-effort superseded-object deletion are implemented. `Company.logoKey` was already present, so
+no Prisma migration is introduced. Public company responses expose `hasLogo`, never the key.
+
+This is a targeted correction only. Phase 14 and a new UI wave remain not started. Production S3
+credentials, bucket provisioning and deployment are not claimed. Verification evidence is recorded
+with the task handoff after the full gates; the existing aggregate web E2E dark-helper timeout
+remains a separately tracked harness risk.
+
+Verification completed for this slice:
+
+- `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` pass;
+- all 65 API E2E tests pass, including logo permission, isolation, validation, ETag and removal
+  coverage;
+- focused Company/Admin branding Playwright passes 2/2 across light/dark desktop, tablet and mobile;
+- screenshots are under the two `test-results/ui-redesign.visual-capture-*light-and-dark-viewports`
+  task folders and were manually inspected after transition settling;
+- the repository-wide Prettier check still reports 99 pre-existing/out-of-scope files; every file
+  changed for this logo slice is formatted;
+- the aggregate web Playwright command still exceeds the six-minute bounded run in the previously
+  documented dark shared-surface harness, while the focused branding run remains green.

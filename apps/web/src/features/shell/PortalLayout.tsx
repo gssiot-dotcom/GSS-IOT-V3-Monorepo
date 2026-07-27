@@ -11,9 +11,9 @@ import {
   Indicator,
   NavLink,
   ScrollArea,
+  Skeleton,
   Stack,
   Text,
-  Title,
   Tooltip,
   UnstyledButton,
   useComputedColorScheme,
@@ -38,12 +38,32 @@ import { readWebEnv } from "../../app/env";
 import { t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import {
+  CompanyBrandingProvider,
+  useCompanyBranding,
+} from "../../shared/branding/company-branding-context";
 import { filterSidebarItems } from "../../shared/rbac/filter-sidebar-items";
 import { hasPermission } from "../../shared/rbac/has-permission";
-import { GssIconButton, RealtimeStatusBadge, type RealtimeConnectionState } from "@gss-iot/ui";
+import {
+  GssIconButton,
+  GssPlatformBrand,
+  RealtimeStatusBadge,
+  type RealtimeConnectionState,
+} from "@gss-iot/ui";
 import { adminNavItems, companyNavItems, routeTitles, type ShellNavItem } from "./navigation";
 
 export function PortalLayout({ children, context }: { children: ReactNode; context: AuthContext }) {
+  if (context === "company-user") {
+    return (
+      <CompanyBrandingProvider>
+        <PortalShell context={context}>{children}</PortalShell>
+      </CompanyBrandingProvider>
+    );
+  }
+  return <PortalShell context={context}>{children}</PortalShell>;
+}
+
+function PortalShell({ children, context }: { children: ReactNode; context: AuthContext }) {
   const [opened, { close, toggle }] = useDisclosure();
   const [unreadCount, setUnreadCount] = useState(0);
   const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("idle");
@@ -125,8 +145,8 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
       padding="md"
     >
       <AppShell.Header className="gss-shell-header">
-        <Group h="100%" justify="space-between" px="lg" wrap="wrap">
-          <Group gap="sm">
+        <Group h="100%" justify="space-between" px={{ base: "sm", sm: "lg" }} wrap="nowrap">
+          <Group className="gss-shell-header-context" gap="sm" wrap="nowrap">
             <Burger
               aria-label={t("shell.toggleNavigation")}
               hiddenFrom="sm"
@@ -134,22 +154,23 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
               opened={opened}
               size="sm"
             />
-            <Stack gap={0}>
-              <Title order={3}>{shellTitle}</Title>
-              <Group gap="xs">
-                <Text c="dimmed" size="xs">
-                  {t("app.name")}
-                </Text>
-                <Text c="dimmed" size="xs">
-                  /
-                </Text>
-                <Text fw={600} size="xs">
-                  {titleKey ? t(titleKey) : t("app.name")}
-                </Text>
-              </Group>
+            <Box className="gss-shell-header-brand-full">
+              <GssPlatformBrand label={t("branding.platformName")} />
+            </Box>
+            <Box className="gss-shell-header-brand-compact">
+              <GssPlatformBrand compact label={t("branding.platformName")} />
+            </Box>
+            <Divider orientation="vertical" />
+            <Stack gap={0} style={{ minWidth: 0 }}>
+              <Text fw={700} lineClamp={1} size="sm">
+                {titleKey ? t(titleKey) : t("app.name")}
+              </Text>
+              <Text c="dimmed" lineClamp={1} size="xs">
+                {shellTitle} / {titleKey ? t(titleKey) : t("app.name")}
+              </Text>
             </Stack>
           </Group>
-          <Group gap="xs">
+          <Group gap="xs" wrap="nowrap">
             {realtimeState !== "idle" && realtimeState !== "connected" ? (
               <RealtimeStatusBadge
                 label={
@@ -265,19 +286,23 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
           type="auto"
         >
           <Stack gap="lg">
-            <Group className="gss-shell-brand" gap="sm" px="xs" py="xs" wrap="nowrap">
-              <Avatar color="gss" radius="md" size="md">
-                G
-              </Avatar>
-              <Stack gap={0} style={{ minWidth: 0 }}>
-                <Text fw={800} size="sm">
-                  {t("app.name")}
-                </Text>
-                <Badge color="gss" size="xs" variant="light">
-                  {shellTitle}
-                </Badge>
-              </Stack>
-            </Group>
+            {context === "company-user" ? (
+              <CompanySidebarBrand companyName={session?.user.company?.name ?? shellTitle} />
+            ) : (
+              <Group className="gss-shell-brand" gap="sm" px="xs" py="xs" wrap="nowrap">
+                <Avatar color="gss" radius="md" size="md">
+                  G
+                </Avatar>
+                <Stack gap={0} style={{ minWidth: 0 }}>
+                  <Text fw={800} size="sm">
+                    {t("app.name")}
+                  </Text>
+                  <Badge color="gss" size="xs" variant="light">
+                    {shellTitle}
+                  </Badge>
+                </Stack>
+              </Group>
+            )}
             <Divider />
             {sections.map((section) => (
               <Stack gap={4} key={section.key}>
@@ -319,5 +344,38 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
         <Box className="gss-main-content">{children}</Box>
       </AppShell.Main>
     </AppShell>
+  );
+}
+
+function CompanySidebarBrand({ companyName }: { companyName: string }) {
+  const { logoUrl, status } = useCompanyBranding();
+  return (
+    <Stack className="gss-company-sidebar-brand" gap="sm" px="xs" py="xs">
+      <Box className="gss-company-sidebar-logo-plate">
+        {status === "loading" ? (
+          <Skeleton height={72} radius="md" width="100%" />
+        ) : logoUrl ? (
+          <img alt={tf("branding.logoAlt", { company: companyName })} src={logoUrl} />
+        ) : (
+          <Avatar color="gss" radius="md" size={64}>
+            {companyInitials(companyName)}
+          </Avatar>
+        )}
+      </Box>
+      <Text fw={800} lineClamp={2} size="sm" title={companyName}>
+        {companyName}
+      </Text>
+    </Stack>
+  );
+}
+
+function companyInitials(name: string): string {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || t("branding.fallbackInitials")
   );
 }

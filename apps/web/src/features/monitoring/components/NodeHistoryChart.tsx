@@ -4,21 +4,19 @@ import type {
   PaginatedSensorHistory,
 } from "@gss-iot/contracts";
 import { Group, Stack, Text } from "@mantine/core";
+import { useState } from "react";
 
-import { t } from "../../../app/i18n";
+import { t, tf } from "../../../app/i18n";
+import {
+  ChartTooltip,
+  chartTooltipPosition,
+  type ChartTooltipState,
+} from "../../../shared/ui/ChartTooltip";
 
-function points(values: number[], min: number, max: number) {
-  return values
-    .map((value, index) => {
-      const x = (index / Math.max(values.length - 1, 1)) * 100;
-      const y = 100 - ((value - min) / Math.max(max - min, 1)) * 86 - 7;
-      return `${x},${y}`;
-    })
-    .join(" ");
-}
+const tooltipId = "node-history-chart-tooltip";
 
-function toChartY(value: number, min: number, max: number) {
-  return 204 - ((value - min) / Math.max(max - min, 1)) * 174;
+function toChartY(value: number, min: number, max: number, top = 30, bottom = 204) {
+  return bottom - ((value - min) / Math.max(max - min, 1)) * (bottom - top);
 }
 
 export function NodeHistoryChart({
@@ -30,47 +28,77 @@ export function NodeHistoryChart({
   nodeType: CanonicalNodeType;
   thresholds?: AlarmLevelThresholds;
 }) {
+  const [tooltip, setTooltip] = useState<ChartTooltipState>();
   if (!history.items.length) return <Text c="dimmed">{t("monitoring.emptyHistory")}</Text>;
+
   const isDoor = nodeType === "door_node";
-  const xValues = history.items.flatMap((item) =>
-    "angleX" in item.values ? [item.values.angleX] : [],
-  );
-  const yValues = history.items.flatMap((item) =>
-    "angleY" in item.values ? [item.values.angleY] : [],
-  );
-  const batteryValues = history.items.flatMap((item) =>
-    "batteryLevel" in item.values && item.values.batteryLevel !== null
-      ? [item.values.batteryLevel]
-      : [],
-  );
-  const doorValues = history.items.map((item) =>
-    "doorState" in item.values ? (item.values.doorState === "open" ? 1 : 0) : 0,
-  );
-  const values = isDoor
-    ? batteryValues.length
-      ? batteryValues
-      : doorValues
-    : [...xValues, ...yValues];
-  const min = isDoor ? 0 : Math.min(...values, -1);
-  const max = isDoor ? 100 : Math.max(...values, 1);
-  const chartX = isDoor ? (batteryValues.length ? batteryValues : doorValues) : xValues;
-  const chartY = isDoor ? [] : yValues;
+  const chartWidth = 520;
+  const left = 52;
+  const right = 16;
+  const plotWidth = chartWidth - left - right;
+  const xPosition = (index: number) =>
+    left + (index / Math.max(history.items.length - 1, 1)) * plotWidth;
   const label = isDoor ? t("monitoring.doorHistoryChart") : t("monitoring.angleHistoryChart");
+  const showTooltip = (target: SVGElement, item: PaginatedSensorHistory["items"][number]) => {
+    const receivedAt = new Date(item.receivedAt).toLocaleString();
+    const content =
+      "angleX" in item.values ? (
+        <Stack gap={2}>
+          <Text fw={650} size="sm">
+            {receivedAt}
+          </Text>
+          <Text size="sm">
+            {tf("monitoring.historyTooltipAngleX", { value: item.values.angleX.toFixed(1) })}
+          </Text>
+          <Text size="sm">
+            {tf("monitoring.historyTooltipAngleY", { value: item.values.angleY.toFixed(1) })}
+          </Text>
+          <Text c="dimmed" size="xs">
+            {tf("monitoring.historyTooltipStatus", { status: t(`status.${item.status}` as never) })}
+          </Text>
+        </Stack>
+      ) : (
+        <Stack gap={2}>
+          <Text fw={650} size="sm">
+            {receivedAt}
+          </Text>
+          <Text size="sm">
+            {tf("monitoring.historyTooltipDoor", {
+              state: t(`monitoring.doorState.${item.values.doorState}` as never),
+            })}
+          </Text>
+          {item.values.batteryLevel !== null ? (
+            <Text size="sm">
+              {tf("monitoring.historyTooltipBattery", { value: item.values.batteryLevel })}
+            </Text>
+          ) : null}
+          <Text c="dimmed" size="xs">
+            {tf("monitoring.historyTooltipStatus", { status: t(`status.${item.status}` as never) })}
+          </Text>
+        </Stack>
+      );
+    setTooltip({ content, ...chartTooltipPosition(target) });
+  };
 
   if (!isDoor) {
-    const chartWidth = 520;
-    const left = 52;
-    const right = 16;
-    const plotWidth = chartWidth - left - right;
-    const xPosition = (index: number) =>
-      left + (index / Math.max(history.items.length - 1, 1)) * plotWidth;
+    const xValues = history.items.map((item) => ("angleX" in item.values ? item.values.angleX : 0));
+    const yValues = history.items.map((item) => ("angleY" in item.values ? item.values.angleY : 0));
+    const values = [...xValues, ...yValues];
+    const min = Math.min(...values, -1);
+    const max = Math.max(...values, 1);
     const zeroY = toChartY(0, min, max);
-    const ticks = [min, 0, max];
+    const ticks = [...new Set([min, 0, max])];
 
     return (
       <Stack gap="xs">
-        <svg aria-label={label} height="250" role="img" viewBox="0 0 520 250" width="100%">
-          <title>{label}</title>
+        <svg
+          aria-label={label}
+          height="250"
+          onMouseLeave={() => setTooltip(undefined)}
+          role="img"
+          viewBox="0 0 520 250"
+          width="100%"
+        >
           <desc>{t("monitoring.historyYAxis")}</desc>
           <line
             stroke="var(--mantine-color-gray-5)"
@@ -159,24 +187,36 @@ export function NodeHistoryChart({
             vectorEffect="non-scaling-stroke"
           />
           {history.items.map((item, index) => {
-            const values = item.values;
-            if (!("angleX" in values)) return null;
+            if (!("angleX" in item.values)) return null;
+            const pointLabel = tf("monitoring.historyPointLabel", {
+              date: new Date(item.receivedAt).toLocaleString(),
+              status: t(`status.${item.status}` as never),
+            });
             return (
               <g key={item.id}>
-                <circle
-                  cx={xPosition(index)}
-                  cy={toChartY(values.angleX, min, max)}
-                  fill="var(--mantine-color-gss-6)"
-                  r="3"
-                >
-                  <title>{`${new Date(item.receivedAt).toLocaleString()} · X ${values.angleX.toFixed(1)}° · Y ${values.angleY.toFixed(1)}° · ${t(`status.${item.status}` as never)}`}</title>
-                </circle>
-                <circle
-                  cx={xPosition(index)}
-                  cy={toChartY(values.angleY, min, max)}
-                  fill="var(--mantine-color-teal-6)"
-                  r="3"
-                />
+                {(
+                  [
+                    ["x", item.values.angleX, "var(--mantine-color-gss-6)"],
+                    ["y", item.values.angleY, "var(--mantine-color-teal-6)"],
+                  ] as const
+                ).map(([series, value, color]) => (
+                  <circle
+                    aria-describedby={tooltip ? tooltipId : undefined}
+                    aria-label={`${pointLabel} · ${series.toUpperCase()}`}
+                    cx={xPosition(index)}
+                    cy={toChartY(value, min, max)}
+                    fill={color}
+                    key={series}
+                    onBlur={() => setTooltip(undefined)}
+                    onFocus={(event) => showTooltip(event.currentTarget, item)}
+                    onMouseEnter={(event) => showTooltip(event.currentTarget, item)}
+                    r="4"
+                    role="button"
+                    stroke="var(--gss-surface)"
+                    strokeWidth="1.5"
+                    tabIndex={0}
+                  />
+                ))}
               </g>
             );
           })}
@@ -198,52 +238,109 @@ export function NodeHistoryChart({
             {t("monitoring.tiltReference")}: 0°
           </Text>
         </Group>
+        <ChartTooltip id={tooltipId} state={tooltip} />
       </Stack>
     );
   }
 
+  const batteryValues = history.items.flatMap((item) =>
+    "batteryLevel" in item.values && item.values.batteryLevel !== null
+      ? [item.values.batteryLevel]
+      : [],
+  );
+  const showBattery = batteryValues.length > 0;
+  const chartValues = history.items.map((item) => {
+    if (!("doorState" in item.values)) return 0;
+    if (showBattery && item.values.batteryLevel !== null) return item.values.batteryLevel;
+    return item.values.doorState === "open" ? 100 : 0;
+  });
+  const min = 0;
+  const max = 100;
+
   return (
     <Stack gap={4}>
-      <svg aria-label={label} height="180" role="img" viewBox="0 0 100 100" width="100%">
-        <line
-          stroke="var(--mantine-color-gray-3)"
-          strokeWidth="0.5"
-          x1="0"
-          x2="100"
-          y1="93"
-          y2="93"
-        />
+      <svg
+        aria-label={label}
+        height="180"
+        onMouseLeave={() => setTooltip(undefined)}
+        role="img"
+        viewBox="0 0 520 180"
+        width="100%"
+      >
+        {[0, 50, 100].map((tick) => {
+          const y = toChartY(tick, min, max, 18, 142);
+          return (
+            <g key={tick}>
+              <line
+                stroke="var(--mantine-color-gray-3)"
+                strokeDasharray={tick === 0 ? undefined : "4 4"}
+                strokeWidth="0.8"
+                x1={left}
+                x2={chartWidth - right}
+                y1={y}
+                y2={y}
+              />
+              <text
+                fill="var(--mantine-color-dimmed)"
+                fontSize="10"
+                textAnchor="end"
+                x={left - 8}
+                y={y + 4}
+              >
+                {tick}
+              </text>
+            </g>
+          );
+        })}
         {thresholds?.cautionThreshold ? (
           <line
             stroke="var(--mantine-color-yellow-6)"
-            strokeDasharray="2 2"
-            strokeWidth="0.7"
-            x1="0"
-            x2="100"
-            y1={100 - ((thresholds.cautionThreshold - min) / Math.max(max - min, 1)) * 86 - 7}
-            y2={100 - ((thresholds.cautionThreshold - min) / Math.max(max - min, 1)) * 86 - 7}
+            strokeDasharray="4 3"
+            strokeWidth="1"
+            x1={left}
+            x2={chartWidth - right}
+            y1={toChartY(thresholds.cautionThreshold, min, max, 18, 142)}
+            y2={toChartY(thresholds.cautionThreshold, min, max, 18, 142)}
           />
         ) : null}
         <polyline
           fill="none"
-          points={points(chartX, min, max)}
+          points={chartValues
+            .map((value, index) => `${xPosition(index)},${toChartY(value, min, max, 18, 142)}`)
+            .join(" ")}
           stroke="var(--mantine-color-gss-6)"
-          strokeWidth="2"
+          strokeWidth="2.5"
           vectorEffect="non-scaling-stroke"
         />
-        {chartY.length ? (
-          <polyline
-            fill="none"
-            points={points(chartY, min, max)}
-            stroke="var(--mantine-color-teal-6)"
-            strokeWidth="2"
-            vectorEffect="non-scaling-stroke"
-          />
-        ) : null}
+        {history.items.map((item, index) => {
+          const pointLabel = tf("monitoring.historyPointLabel", {
+            date: new Date(item.receivedAt).toLocaleString(),
+            status: t(`status.${item.status}` as never),
+          });
+          return (
+            <circle
+              aria-describedby={tooltip ? tooltipId : undefined}
+              aria-label={pointLabel}
+              cx={xPosition(index)}
+              cy={toChartY(chartValues[index] ?? 0, min, max, 18, 142)}
+              fill="var(--gss-surface)"
+              key={item.id}
+              onBlur={() => setTooltip(undefined)}
+              onFocus={(event) => showTooltip(event.currentTarget, item)}
+              onMouseEnter={(event) => showTooltip(event.currentTarget, item)}
+              r="4"
+              role="button"
+              stroke="var(--mantine-color-gss-6)"
+              strokeWidth="2"
+              tabIndex={0}
+            />
+          );
+        })}
       </svg>
       <Text c="dimmed" size="xs">
-        {isDoor && batteryValues.length ? t("monitoring.batteryTrend") : label}
+        {showBattery ? t("monitoring.batteryTrend") : label}
       </Text>
+      <ChartTooltip id={tooltipId} state={tooltip} />
     </Stack>
   );
 }

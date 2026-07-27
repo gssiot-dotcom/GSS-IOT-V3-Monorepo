@@ -57,6 +57,7 @@ const company = {
   address: null,
   code: "ACME",
   email: "ops@example.com",
+  hasLogo: false,
   id: "company-1",
   name: "Acme Safety",
   phone: null,
@@ -229,6 +230,48 @@ describe("auth routing", () => {
     expect(screen.getByText("Platform managers")).toBeTruthy();
   });
 
+  it("keeps company fields savable when a separate admin logo upload fails", async () => {
+    storeSession("gss-admin", "admin-token");
+    const fetchMock = mockFetch((url, init) => {
+      if (url.href === `${apiBaseUrl}/admin/companies/company-1/logo` && init.method === "PUT") {
+        return jsonResponse({ message: "storage unavailable" }, 500);
+      }
+      if (url.href === `${apiBaseUrl}/admin/companies/company-1` && init.method === "PATCH") {
+        return jsonResponse(company);
+      }
+      return undefined;
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:selected-admin-logo");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    renderApp("/admin/companies/company-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit company" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit company" });
+    expect(within(dialog).getByText("Company logo")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Choose logo" }));
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+    fireEvent.change(input!, {
+      target: {
+        files: [
+          new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "logo.png", {
+            type: "image/png",
+          }),
+        ],
+      },
+    });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Upload logo" }));
+    expect(await within(dialog).findByText("Unable to update the company logo.")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await screen.findByText("Platform managers");
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input) === `${apiBaseUrl}/admin/companies/company-1` && init?.method === "PATCH",
+      ),
+    ).toBe(true);
+  });
+
   it("keeps the Admin company workspace mounted while child sections change", async () => {
     storeSession("gss-admin", "admin-token");
     const fetchMock = mockFetch();
@@ -297,6 +340,21 @@ describe("auth routing", () => {
     renderApp("/admin/companies");
 
     expect(await screen.findByText("You do not have access to this page.")).toBeTruthy();
+  });
+
+  it("does not render or request the Admin permission catalog without permissions.view", async () => {
+    storeSession("gss-admin", "limited-token");
+    const fetchMock = mockFetch((url) =>
+      url.href === `${apiBaseUrl}/auth/gss/me`
+        ? jsonResponse({ ...adminSession, user: { ...adminSession.user, permissions: [] } })
+        : undefined,
+    );
+    renderApp("/admin/settings/permissions");
+
+    expect(await screen.findByText("You do not have access to this page.")).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input) === `${apiBaseUrl}/admin/permissions`),
+    ).toBe(false);
   });
 
   it("does not allow auth sessions across portal contexts", async () => {

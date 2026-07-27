@@ -23,8 +23,10 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { t, tf } from "../../app/i18n";
-import { apiRequest } from "../../shared/api/api-client";
+import { apiMultipartRequest, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { useCompanyBranding } from "../../shared/branding/company-branding-context";
+import { CompanyLogoEditor } from "../../shared/branding/CompanyLogoEditor";
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
 
@@ -405,6 +407,7 @@ function BooleanStatus({ value }: { value: boolean }) {
 
 export function CompanySettingsPage() {
   const { session } = useAuth();
+  const branding = useCompanyBranding();
   const canManage = hasPermission(session, "settings.company.manage");
   const [company, setCompany] = useState<CompanyRecord>();
   const [form, setForm] = useState({ address: "", email: "", phone: "" });
@@ -441,6 +444,22 @@ export function CompanySettingsPage() {
     }
   };
 
+  const uploadLogo = async (file: File) => {
+    if (!session || !canManage) return;
+    const body = new FormData();
+    body.append("logo", file);
+    await apiMultipartRequest(session, "/company/settings/logo", body);
+    setCompany((current) => (current ? { ...current, hasLogo: true } : current));
+    await branding.refreshLogo();
+  };
+
+  const removeLogo = async () => {
+    if (!session || !canManage) return;
+    await apiRequest(session, "/company/settings/logo", { method: "DELETE" });
+    setCompany((current) => (current ? { ...current, hasLogo: false } : current));
+    await branding.refreshLogo();
+  };
+
   if (!company && !error) return <LoadingState title={t("common.loading")} />;
   if (error && !company)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
@@ -451,6 +470,16 @@ export function CompanySettingsPage() {
       {saved ? <Alert color="green" title={t("settings.saved")} /> : null}
       {error ? <Alert color="red" title={t("settings.actionFailed")} /> : null}
       <Paper p="lg" withBorder>
+        <CompanyLogoEditor
+          canManage={canManage}
+          companyName={company!.name}
+          logoUrl={branding.logoUrl}
+          onRemove={removeLogo}
+          onUpload={uploadLogo}
+          status={branding.status}
+        />
+      </Paper>
+      <Paper p="lg" withBorder>
         <Stack>
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <TextInput disabled label={t("settings.companyNameReadonly")} value={company!.name} />
@@ -460,11 +489,17 @@ export function CompanySettingsPage() {
               value={company!.code ?? t("settings.notAvailable")}
             />
             <TextInput disabled label={t("settings.companyIdReadonly")} value={company!.id} />
-            <TextInput
-              disabled
-              label={t("settings.companyStatusReadonly")}
-              value={company!.status}
-            />
+            <Stack gap={6}>
+              <Text c="dimmed" fw={500} size="sm">
+                {t("settings.companyStatusReadonly")}
+              </Text>
+              <StatusBadge
+                label={t(
+                  company!.status === "ACTIVE" ? "management.active" : "management.inactive",
+                )}
+                status={company!.status === "ACTIVE" ? "active" : "inactive"}
+              />
+            </Stack>
             <TextInput
               disabled={!canManage}
               label={t("settings.address")}

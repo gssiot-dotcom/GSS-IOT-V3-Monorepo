@@ -76,6 +76,7 @@ Sidebar items permission bo‘yicha filter qilinadi. Deep link route ham `Requir
 - Reports
 - Users
 - Roles
+- Permissions
 - Settings
 
 Platform manager company-wide ko‘radi. Site/building scoped users ro‘yxat va selectorsda faqat ruxsat etilgan resourcesni ko‘radi.
@@ -180,6 +181,21 @@ Optional building plan visualization
 
 Use full-page forms for complex settings. Show last updated by/time and audit history link.
 
+### Permission catalog pages
+
+Admin `/admin/settings/permissions` and Company `/company/permissions` are
+read-only catalogs. The Admin route and sidebar require `permissions.view`; the
+Company route and sidebar require `company-permissions.view`. Admin receives
+only GSS/BOTH records and Company receives only COMPANY/BOTH records from their
+separate backend endpoints. Search covers key, module and API-supplied
+description. Desktop uses a compact accessible table and mobile uses readable
+cards. Neither route exposes checkboxes or create, edit, delete or save actions.
+
+Both pages distinguish loading, empty, search-empty, recoverable API error,
+forbidden and inactive-session states with the shared state components. Route
+guards and backend permissions are independent; hiding a sidebar item is UX,
+not the security boundary.
+
 ## 7. Realtime UX
 
 - Show connected/reconnecting/offline state.
@@ -254,6 +270,46 @@ The active navigation inventory has a concrete route branch for every permission
 - mobile smoke checks verify no horizontal document overflow for the legacy node-type selection surface;
 - login, protected-route redirect and no-placeholder behavior are covered by deterministic Playwright smoke tests.
 
+### Targeted post-Wave-4 chart and responsive contract
+
+- Dashboard KPI and realtime monitoring summary sets remain one row at
+  1280x800 and 1440x900, then wrap deliberately at tablet/mobile widths.
+- Telemetry volume means daily unique `SensorReading` count for the selected UTC
+  range. Its KPI remains the exact total; the chart retains the documented
+  bounded 10,000-timestamp source and labels that limitation when it affects the
+  visible trend.
+- Telemetry and node-history points are keyboard focusable and mouse-hoverable.
+  Their styled portal tooltip gives full date/time and localized values/status,
+  remains inside the viewport and clears on pointer exit or blur.
+- Angle/gangform history keeps both X/Y series and reference/zero semantics;
+  door history keeps its existing bounded history meaning. No chart adds an
+  unbounded query or per-card request.
+- `/company/monitoring` keeps the existing scoped buildings query and navigation
+  path while presenting a three/two/one-column whole-card entry grid with one
+  semantic Active/Inactive badge.
+
 ## 11. Intentionally deferred visual work
 
 Theme switching, full-route authenticated screenshot baselines and production visual-regression tooling remain outside this pre-Phase-14 wave. These are presentation infrastructure decisions, not authorization, scope, MQTT, alarm or reports behavior.
+
+## 12. Company logo workflow and shell branding
+
+The authenticated shell presents one platform identity in the header and, for Company users, one
+tenant identity in the sidebar. Route titles and breadcrumbs remain translated. Existing account,
+theme, notification and realtime controls retain their behavior and priority.
+
+`/company/settings` loads company metadata through `settings.company.view`. Every such viewer sees
+the current logo or fallback. Only `settings.company.manage` exposes choose, upload/replace and
+confirmed remove controls. Selecting a file shows a local preview and cancel action; successful
+mutation refreshes the sidebar immediately. Invalid type/size, API denial and storage failure are
+local recoverable errors and do not discard the contact form.
+
+The Admin Company Detail edit dialog loads the logo with `companies.view` and exposes mutation only
+with `companies.update`. Name/code PATCH and logo multipart/delete calls are deliberately separate:
+a logo error does not prevent a valid name/code save, and a name/code error does not roll back an
+already committed logo operation.
+
+Responsive acceptance covers 1440x900, 768x1024 and 375x812 in light and dark themes. Mobile keeps
+the brand mark and burger visible, hides lower-priority route context when necessary, and shows the
+Company tenant brand when the drawer opens. No viewport may introduce document-level horizontal
+overflow.

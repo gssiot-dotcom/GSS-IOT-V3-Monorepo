@@ -271,3 +271,45 @@ The final pre-Phase-14 UI pass freezes these cross-route conventions:
 The only implementation correction in this pass is package-boundary output: `packages/contracts` now emits ES modules to match its declared package type and Vite consumers. It changes no API or business behavior.
 
 Intentionally deferred visual work is limited to a future design-system theme switcher, production visual-regression infrastructure, and authenticated multi-viewport browser capture for every protected route. The existing deterministic unit/API/E2E checks remain the automated evidence for protected permissions and scope behavior.
+
+## Targeted post-Wave-4 operational corrections
+
+This correction keeps the frozen Wave 4 system and adds the following narrow
+contracts:
+
+- Dashboard and monitoring metric surfaces use one neutral GSS panel/border
+  family. Status color is limited to semantic icons, values and small
+  indicators; rainbow card backgrounds and top rules are not differentiators.
+- Compact KPI and operational-summary cards target 82–100px and 80–96px
+  respectively. At 1280px and 1440px, the six-card dashboard and realtime
+  summary sets stay on one row; smaller viewports wrap without document-level
+  overflow.
+- Operational SVG charts use a GSS-primary line, primary-soft area where
+  applicable, light grid/ticks and visible focusable points. Shared tooltips are
+  rendered through a portal so dashboard cards and monitoring drawers cannot
+  clip them. Hover and keyboard focus expose the same localized reading detail.
+- Company monitoring building entries are neutral whole-card links with one
+  semantic status badge, a compact identity block and a visible open-monitoring
+  cue. Their responsive grid is three, two and one columns.
+- Permission catalogs are read-only information surfaces: compact accessible
+  table on desktop, readable cards on mobile, technical keys in monospace and
+  no create/edit/delete/save controls.
+
+These corrections do not change legacy node-type selection cards, APIs,
+realtime contracts, RBAC/scope enforcement or alarm semantics.
+
+## Targeted platform and Company branding contract
+
+- Admin and Company headers use the shared Mantine/Tabler `GssPlatformBrand`: a cyan-to-blue
+  Activity mark and the `Global Smart Solutions` wordmark. At constrained widths the mark remains
+  and the wordmark collapses before right-side account, theme, notification or realtime controls.
+- Header order is mobile burger, platform brand, divider and translated current-route context.
+  Header groups do not wrap or create document-level horizontal overflow.
+- The Company sidebar brand block is company-owned. It shows a private authenticated logo inside
+  an 88px neutral plate with `object-fit: contain`, then the company name at no more than two
+  lines. It never displays `GSS IoT V3` or `Company Dashboard` as the Company identity.
+- Company logo loading uses a skeleton. Missing/error states use company initials in a semantic
+  avatar. The name retains a title attribute for the full value.
+- The shared logo editor preserves one primary upload action, selected-file preview/cancel,
+  indeterminate progress, inline success/error feedback and a separate destructive confirmation
+  for removal. Read-only users see the same preview without mutation controls.

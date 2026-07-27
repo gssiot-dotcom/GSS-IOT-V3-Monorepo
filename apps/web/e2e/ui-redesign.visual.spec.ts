@@ -7,11 +7,16 @@ const company = {
   address: "Seoul Operations District",
   code: "GSS-001",
   email: "ops@gss.example",
+  hasLogo: true,
   id: "company-1",
   name: "Acme Safety",
   phone: "+82 2 0000 0000",
   status: "ACTIVE",
 };
+const companyLogoPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAKAAAAA8CAYAAADha7EVAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAADrSURBVHhe7dIxDUIBAENBFOACZWhDAqoQATsMnfpL4C7p0vmdnjB0ej/gSAJkSoBMfQR4vt1/anw3ATIlQKYEyJQAmRIgUwJkSoBMCZApATIlQKYEyJQAmRIgUwJkSoBM/W2Al+vDDlgiQKsuEaBVlwjQqksEaNUlArTqEgFadYkArbpEgFZdIkCrLhGgVZcI0KpLBGjVJQK06hIBWnWJAK26RIBWXSJAqy4RoFWXCNCqS/42QL6DAJkSIFMCZEqATAmQKQEyJUCmBMiUAJkSIFMCZEqATAmQKQEyJUCmPgKEIwmQKQEyJUCmXlf26PiRDtnbAAAAAElFTkSuQmCC",
+  "base64",
+);
 const areas = [
   {
     address: "Mapo-gu, Seoul",
@@ -21,7 +26,7 @@ const areas = [
     name: "North Site",
     status: "ACTIVE",
   },
-];
+] as const;
 const buildings = [
   {
     address: "North Site / Tower A",
@@ -43,7 +48,7 @@ const buildings = [
     status: "ACTIVE",
     title: "Tower B",
   },
-];
+] as const;
 const nodeTypes = [
   {
     displayName: "Door Node",
@@ -66,7 +71,7 @@ const nodeTypes = [
     key: "gangform_node",
     numericCode: 2,
   },
-];
+] as const;
 const gatewayCommands = [
   {
     acknowledgedAt: null,
@@ -226,6 +231,7 @@ const wave2Roles = [
 const wave2Permissions = [
   {
     action: "view",
+    description: "View company device inventory within the authenticated company scope.",
     id: "permission-devices",
     key: "company-devices.view",
     module: "company-devices",
@@ -233,10 +239,29 @@ const wave2Permissions = [
   },
   {
     action: "manage",
+    description: "Manage company roles within the authenticated company scope.",
     id: "permission-roles",
     key: "company-roles.manage",
     module: "company-roles",
     scopeType: "COMPANY",
+  },
+];
+const adminCatalogPermissions = [
+  {
+    action: "view",
+    description: "View dashboard analytics within the authorized GSS or company scope.",
+    id: "permission-dashboard",
+    key: "dashboard.view",
+    module: "dashboard",
+    scopeType: "BOTH",
+  },
+  {
+    action: "view",
+    description: "View the GSS permission catalog across the authorized GSS Admin context.",
+    id: "permission-catalog",
+    key: "permissions.view",
+    module: "permissions",
+    scopeType: "GSS",
   },
 ];
 const alarmEvents = [
@@ -314,7 +339,7 @@ const companyUsers = [
   },
 ];
 
-function sessionFor(context: "gss-admin" | "company-user", permissions: string[]) {
+function sessionFor(context: "gss-admin" | "company-user", permissions: readonly string[]) {
   return {
     accessToken: "ui-redesign-fixture-token",
     context,
@@ -340,7 +365,7 @@ function sessionFor(context: "gss-admin" | "company-user", permissions: string[]
 async function installFixture(
   page: Page,
   context: "gss-admin" | "company-user",
-  permissions: string[],
+  permissions: readonly string[],
 ) {
   const session = sessionFor(context, permissions);
   await page.addInitScript(
@@ -354,6 +379,9 @@ async function installFixture(
     const path = new URL(route.request().url()).pathname;
     if (path === "/auth/gss/me" || path === "/auth/company/me")
       return route.fulfill({ json: session });
+    if (path === "/company/branding/logo" || path === "/admin/companies/company-1/logo")
+      return route.fulfill({ body: companyLogoPng, contentType: "image/png" });
+    if (path === "/company/settings") return route.fulfill({ json: company });
     if (path === "/admin/companies" || path === "/admin/companies/company-1")
       return route.fulfill({ json: path.endsWith("company-1") ? company : [company] });
     if (path === "/admin/alarms" || path === "/company/alarms")
@@ -373,6 +401,7 @@ async function installFixture(
       return route.fulfill({ json: { gateways: wave2Gateways, nodes: wave2Nodes } });
     if (path === "/company/roles") return route.fulfill({ json: wave2Roles });
     if (path === "/company/permissions") return route.fulfill({ json: wave2Permissions });
+    if (path === "/admin/permissions") return route.fulfill({ json: adminCatalogPermissions });
     if (path === "/company/areas/area-1") return route.fulfill({ json: areas[0] });
     if (path === "/company/buildings/building-1") return route.fulfill({ json: buildings[0] });
     if (path === "/company/buildings/building-1/plan-images")
@@ -434,8 +463,86 @@ async function installFixture(
           ],
         },
       });
+    if (path === "/company/buildings/building-1/monitoring/angle_node")
+      return route.fulfill({
+        json: {
+          building: buildings[0],
+          historyRetentionDays: 180,
+          nodeType: nodeTypes[1],
+          states: [
+            {
+              areaId: areas[0].id,
+              building: { id: buildings[0].id, title: buildings[0].title },
+              buildingId: buildings[0].id,
+              classificationEvidence: { classification: "warning" },
+              companyId: company.id,
+              faultFiltered: false,
+              gateway: { id: "gateway-1", serialNumber: "0300" },
+              gatewayId: "gateway-1",
+              lastSeenAt: "2026-07-23T08:12:00.000Z",
+              node: { id: "node-2", installedLocation: "Roof", number: "101" },
+              nodeId: "node-2",
+              nodeType: nodeTypes[1],
+              nodeTypeId: nodeTypes[1].id,
+              status: "warning",
+              updatedAt: "2026-07-23T08:12:00.000Z",
+              values: { angleX: 2.4, angleY: -1.1 },
+            },
+          ],
+        },
+      });
     if (path.includes("/monitoring/door_node/nodes/") && path.endsWith("/history"))
-      return route.fulfill({ json: { items: [], page: 1, pageSize: 25, total: 0 } });
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              buildingId: buildings[0].id,
+              classificationEvidence: null,
+              faultFiltered: false,
+              gateway: { id: "gateway-1", serialNumber: "0300" },
+              gatewayId: "gateway-1",
+              id: "door-reading-1",
+              measuredAt: "2026-07-23T08:12:00.000Z",
+              node: { id: "node-1", installedLocation: "North entrance", number: "100" },
+              nodeId: "node-1",
+              nodeType: nodeTypes[0],
+              nodeTypeId: nodeTypes[0].id,
+              receivedAt: "2026-07-23T08:12:00.000Z",
+              status: "safe",
+              values: { batteryLevel: 92, doorState: "closed" },
+            },
+          ],
+          page: 1,
+          pageSize: 25,
+          total: 1,
+        },
+      });
+    if (path.includes("/monitoring/angle_node/nodes/") && path.endsWith("/history"))
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              buildingId: buildings[0].id,
+              classificationEvidence: null,
+              faultFiltered: false,
+              gateway: { id: "gateway-1", serialNumber: "0300" },
+              gatewayId: "gateway-1",
+              id: "angle-reading-1",
+              measuredAt: "2026-07-23T08:12:00.000Z",
+              node: { id: "node-2", installedLocation: "Roof", number: "101" },
+              nodeId: "node-2",
+              nodeType: nodeTypes[1],
+              nodeTypeId: nodeTypes[1].id,
+              receivedAt: "2026-07-23T08:12:00.000Z",
+              status: "warning",
+              values: { angleX: 2.4, angleY: -1.1 },
+            },
+          ],
+          page: 1,
+          pageSize: 25,
+          total: 1,
+        },
+      });
     if (path === "/company/buildings/building-1/alarm-levels")
       return route.fulfill({
         json: {
@@ -471,6 +578,10 @@ async function installFixture(
             unconfigured: 0,
             warning: 0,
           },
+          telemetryTrend: [
+            { count: 4, date: "2026-07-21" },
+            { count: 8, date: "2026-07-23" },
+          ],
         },
       });
     if (path === "/admin/alarm-rules" || path === "/company/alarm-rules")
@@ -520,6 +631,41 @@ async function capture(
     await page.screenshot({
       fullPage: true,
       path: outputPath(`${slug}-${colorScheme}-${width}.png`),
+    });
+  }
+}
+
+async function captureExactViewports(
+  page: Page,
+  path: string,
+  slug: string,
+  viewports: Array<{ height: number; label: string; width: number }>,
+  outputPath: (name: string) => string,
+  singleRowTestId?: string,
+) {
+  for (const viewport of viewports) {
+    await page.setViewportSize({ height: viewport.height, width: viewport.width });
+    await page.goto(path, { waitUntil: "domcontentloaded" });
+    await page.evaluate(({ key }) => window.localStorage.setItem(key, "light"), {
+      key: colorSchemeKey,
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId("app-root")).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+    ).toBe(true);
+    if (singleRowTestId && viewport.width >= 1280) {
+      const rowTops = await page
+        .getByTestId(singleRowTestId)
+        .evaluate((element) =>
+          [...element.children].map((child) => Math.round(child.getBoundingClientRect().top)),
+        );
+      expect(new Set(rowTops).size).toBe(1);
+    }
+    await page.screenshot({
+      fullPage: true,
+      path: outputPath(`${slug}-light-${viewport.label}.png`),
     });
   }
 }
@@ -731,6 +877,219 @@ test("captures protected Admin and Company redesign pages at required widths", a
   await capture(page, "/company/reports", "company-reports", compactWidths, outputPath);
   await capture(page, "/company/users", "company-users", compactWidths, outputPath);
   await capture(page, "/company/roles", "company-roles-form", compactWidths, outputPath);
+});
+
+test("captures Company logo branding and settings at responsive light and dark viewports", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180000);
+  await installFixture(page, "company-user", ["settings.company.view", "settings.company.manage"]);
+  const viewports = [
+    { height: 900, label: "desktop", width: 1440 },
+    { height: 1024, label: "tablet", width: 768 },
+    { height: 812, label: "mobile", width: 375 },
+  ];
+
+  for (const scheme of ["light", "dark"] as const) {
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await page.goto("/company/settings", { waitUntil: "domcontentloaded" });
+      await page.evaluate(({ key, value }) => window.localStorage.setItem(key, value), {
+        key: colorSchemeKey,
+        value: scheme,
+      });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("heading", { name: "Company settings" })).toBeVisible();
+      await expect(page.locator('[aria-label="Global Smart Solutions"]:visible')).toBeVisible();
+      if (viewport.label === "mobile") {
+        await page.getByRole("button", { name: "Toggle navigation" }).click();
+        await expect(page.getByTitle(company.name)).toBeVisible();
+        await page.waitForTimeout(250);
+      }
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        fullPage: viewport.label !== "mobile",
+        path: testInfo.outputPath(`company-branding-${scheme}-${viewport.label}.png`),
+      });
+    }
+  }
+});
+
+test("captures Admin company logo editor at responsive light and dark viewports", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180000);
+  await installFixture(page, "gss-admin", [
+    "companies.view",
+    "companies.update",
+    "areas.view",
+    "buildings.view",
+    "company-users.view",
+    "company-roles.view",
+    "gateways.view",
+    "nodes.view",
+  ]);
+  const viewports = [
+    { height: 900, label: "desktop", width: 1440 },
+    { height: 1024, label: "tablet", width: 768 },
+    { height: 812, label: "mobile", width: 375 },
+  ];
+
+  for (const scheme of ["light", "dark"] as const) {
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await page.goto("/admin/companies/company-1", { waitUntil: "domcontentloaded" });
+      await page.evaluate(({ key, value }) => window.localStorage.setItem(key, value), {
+        key: colorSchemeKey,
+        value: scheme,
+      });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: "Edit company" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit company" })).toBeVisible();
+      await expect(page.getByText("Company logo", { exact: true })).toBeVisible();
+      await page.waitForTimeout(250);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        fullPage: viewport.label !== "mobile",
+        path: testInfo.outputPath(`admin-company-logo-editor-${scheme}-${viewport.label}.png`),
+      });
+    }
+  }
+});
+
+test("captures Wave 4 final evidence at exact responsive viewports", async ({ page }, testInfo) => {
+  test.setTimeout(240000);
+  const viewports = [
+    { height: 900, label: "1440x900", width: 1440 },
+    { height: 800, label: "1280x800", width: 1280 },
+    { height: 768, label: "1024x768", width: 1024 },
+    { height: 844, label: "390x844", width: 390 },
+  ];
+  const outputPath = (name: string) => testInfo.outputPath(name);
+
+  await installFixture(page, "gss-admin", [
+    "dashboard.view",
+    "companies.view",
+    "companies.update",
+    "companies.delete",
+    "mqtt-commands.view",
+    "permissions.view",
+    "reports.view",
+  ]);
+  await captureExactViewports(
+    page,
+    "/admin/dashboard",
+    "admin-dashboard-final",
+    viewports,
+    outputPath,
+    "dashboard-kpi-grid",
+  );
+  await captureExactViewports(
+    page,
+    "/admin/companies",
+    "admin-companies-final",
+    viewports,
+    outputPath,
+  );
+  await captureExactViewports(
+    page,
+    "/admin/gateway-commands",
+    "admin-gateway-commands-final",
+    viewports,
+    outputPath,
+  );
+  await captureExactViewports(page, "/admin/reports", "admin-reports-final", viewports, outputPath);
+  await captureExactViewports(
+    page,
+    "/admin/settings/permissions",
+    "admin-permissions-final",
+    viewports,
+    outputPath,
+  );
+
+  await installFixture(page, "company-user", [
+    "dashboard.view",
+    "areas.view",
+    "buildings.view",
+    "company-permissions.view",
+    "monitoring.view",
+    "reports.view",
+  ]);
+  await captureExactViewports(
+    page,
+    "/company/dashboard",
+    "company-dashboard-final",
+    viewports,
+    outputPath,
+    "dashboard-kpi-grid",
+  );
+  await captureExactViewports(
+    page,
+    "/company/monitoring",
+    "company-monitoring-buildings-final",
+    viewports,
+    outputPath,
+  );
+  await captureExactViewports(
+    page,
+    "/company/buildings/building-1/monitoring/door_node",
+    "company-monitoring-final",
+    viewports,
+    outputPath,
+    "monitoring-summary-grid",
+  );
+  await captureExactViewports(
+    page,
+    "/company/permissions",
+    "company-permissions-final",
+    viewports,
+    outputPath,
+  );
+  await captureExactViewports(
+    page,
+    "/company/reports",
+    "company-reports-final",
+    viewports,
+    outputPath,
+  );
+
+  await page.setViewportSize({ height: 900, width: 1440 });
+  await page.goto("/company/dashboard", { waitUntil: "domcontentloaded" });
+  const telemetryPoint = page.getByRole("button", { name: /8 sensor readings/i });
+  await telemetryPoint.hover();
+  const dashboardTooltip = page.getByRole("tooltip");
+  await expect(dashboardTooltip).toBeVisible();
+  const dashboardTooltipBox = await dashboardTooltip.boundingBox();
+  expect(dashboardTooltipBox).not.toBeNull();
+  expect(dashboardTooltipBox!.x).toBeGreaterThanOrEqual(0);
+  expect(dashboardTooltipBox!.x + dashboardTooltipBox!.width).toBeLessThanOrEqual(1440);
+  await page.screenshot({
+    fullPage: true,
+    path: outputPath("company-dashboard-telemetry-tooltip-1440x900.png"),
+  });
+
+  await page.goto("/company/buildings/building-1/monitoring/angle_node", {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByText("Cards", { exact: true }).click();
+  await page.getByRole("button", { name: /Node 101, Warning/i }).click();
+  const anglePoint = page.getByRole("button", { name: /Reading received.*Warning.*X/i });
+  await anglePoint.hover();
+  const historyTooltip = page.getByRole("tooltip");
+  await expect(historyTooltip).toContainText("X angle: 2.4°");
+  await expect(historyTooltip).toContainText("Y angle: -1.1°");
+  const historyTooltipBox = await historyTooltip.boundingBox();
+  expect(historyTooltipBox).not.toBeNull();
+  expect(historyTooltipBox!.x).toBeGreaterThanOrEqual(0);
+  expect(historyTooltipBox!.x + historyTooltipBox!.width).toBeLessThanOrEqual(1440);
+  await page.screenshot({
+    fullPage: true,
+    path: outputPath("company-angle-detail-tooltip-1440x900.png"),
+  });
 });
 
 test("captures the persisted dark shell and theme-toggle interaction", async ({

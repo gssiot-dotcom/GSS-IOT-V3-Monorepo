@@ -11,6 +11,7 @@ const companySettingsSelect = {
   code: true,
   email: true,
   id: true,
+  logoKey: true,
   name: true,
   phone: true,
   status: true,
@@ -25,7 +26,7 @@ export class CompanySettingsService {
 
   async getForUser(userId: string) {
     const context = await this.getContext(userId);
-    return context.company;
+    return toPublicCompany(context.company);
   }
 
   async updateForUser(actor: AuthTokenPayload, dto: UpdateCompanySettingsDto) {
@@ -46,12 +47,12 @@ export class CompanySettingsService {
           action: "company-settings.update",
           entityId: company.id,
           entityType: "Company",
-          newValue: company,
-          oldValue: context.company,
+          newValue: toPublicCompany(company),
+          oldValue: toPublicCompany(context.company),
         },
         tx,
       );
-      return company;
+      return toPublicCompany(company);
     });
   }
 
@@ -63,4 +64,9 @@ export class CompanySettingsService {
     if (!user) throw new NotFoundException("The authenticated company was not found.");
     return user;
   }
+}
+
+function toPublicCompany<T extends { logoKey: string | null }>(company: T) {
+  const { logoKey, ...record } = company;
+  return { ...record, hasLogo: Boolean(logoKey) };
 }

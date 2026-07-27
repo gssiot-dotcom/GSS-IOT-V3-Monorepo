@@ -40,6 +40,7 @@ import {
   CompanyBuildingPlanPage,
 } from "../features/organizations/CompanyResourceDetailPages";
 import { CompanyResourcesPage } from "../features/organizations/CompanyResourcesPage";
+import { PermissionCatalogPage } from "../features/permissions/PermissionCatalogPage";
 import { AdminReportsPage, CompanyReportsPage } from "../features/reports/ReportsPage";
 import {
   AdminSystemSettingsPage,
@@ -138,6 +139,8 @@ export function AppRouter(): ReactElement {
                       <AdminReportsPage />
                     ) : item.path === "/admin/settings/roles" ? (
                       <GssRolesPage />
+                    ) : item.path === "/admin/settings/permissions" ? (
+                      <PermissionCatalogPage context="gss-admin" />
                     ) : item.path === "/admin/settings/system" ? (
                       <AdminSystemSettingsPage />
                     ) : item.path === "/admin/monitoring" ? (
@@ -228,6 +231,8 @@ export function AppRouter(): ReactElement {
                       <CompanyUsersPage />
                     ) : item.path === "/company/roles" ? (
                       <CompanyRolesPage />
+                    ) : item.path === "/company/permissions" ? (
+                      <PermissionCatalogPage context="company-user" />
                     ) : item.path === "/company/reports" ? (
                       <CompanyReportsPage />
                     ) : item.path === "/company/settings" ? (

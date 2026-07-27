@@ -370,6 +370,176 @@ describe("RBAC e2e", () => {
       .expect(403);
   });
 
+  it("serves context-scoped read-only permission catalogs with explicit denial paths", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const [adminCatalogPermission, companyCatalogPermission] = await Promise.all([
+      prisma.permission.upsert({
+        where: { key: "permissions.view" },
+        create: {
+          action: "view",
+          description: "View the GSS permission catalog across the authorized GSS Admin context.",
+          key: "permissions.view",
+          module: "permissions",
+          scopeType: PermissionScopeType.GSS,
+        },
+        update: {
+          description: "View the GSS permission catalog across the authorized GSS Admin context.",
+          scopeType: PermissionScopeType.GSS,
+        },
+      }),
+      prisma.permission.upsert({
+        where: { key: "company-permissions.view" },
+        create: {
+          action: "view",
+          description:
+            "View the company permission catalog within the authenticated company scope.",
+          key: "company-permissions.view",
+          module: "company-permissions",
+          scopeType: PermissionScopeType.BOTH,
+        },
+        update: {
+          description:
+            "View the company permission catalog within the authenticated company scope.",
+          scopeType: PermissionScopeType.BOTH,
+        },
+      }),
+    ]);
+    await prisma.permission.upsert({
+      where: { key: "catalog-company-only.view" },
+      create: {
+        action: "view",
+        description: "View a company-only catalog fixture within the authenticated company scope.",
+        key: "catalog-company-only.view",
+        module: "catalog-company-only",
+        scopeType: PermissionScopeType.COMPANY,
+      },
+      update: { description: "View a company-only catalog fixture.", scopeType: "COMPANY" },
+    });
+    await prisma.permission.upsert({
+      where: { key: "catalog-gss-only.view" },
+      create: {
+        action: "view",
+        description: "View a GSS-only catalog fixture in the Admin context.",
+        key: "catalog-gss-only.view",
+        module: "catalog-gss-only",
+        scopeType: PermissionScopeType.GSS,
+      },
+      update: { description: "View a GSS-only catalog fixture.", scopeType: "GSS" },
+    });
+    await prisma.permission.updateMany({
+      data: { description: "View authorized E2E catalog data." },
+      where: { OR: [{ description: null }, { description: "" }] },
+    });
+
+    const passwordHash = await hash("test-password", 12);
+    const adminRole = await prisma.gssRole.create({
+      data: {
+        key: "catalog-admin",
+        name: "Catalog Admin",
+        permissions: { create: { permissionId: adminCatalogPermission.id } },
+      },
+    });
+    await prisma.gssAdminUser.create({
+      data: {
+        email: "catalog-admin@example.com",
+        name: "Catalog Admin",
+        passwordHash,
+        roleId: adminRole.id,
+      },
+    });
+    const company = await prisma.company.findFirstOrThrow({ where: { name: "Company A" } });
+    const companyRole = await prisma.companyRole.create({
+      data: {
+        companyId: company.id,
+        key: "catalog-viewer",
+        name: "Catalog Viewer",
+        permissions: { create: { permissionId: companyCatalogPermission.id } },
+      },
+    });
+    const companyUser = await prisma.companyUser.create({
+      data: {
+        companyId: company.id,
+        email: "catalog-company@example.com",
+        name: "Catalog Company User",
+        passwordHash,
+        roleId: companyRole.id,
+      },
+    });
+
+    const adminToken = await login("/auth/gss/login", "catalog-admin@example.com");
+    const companyToken = await login("/auth/company/login", "catalog-company@example.com");
+    const adminCatalog = await request(server)
+      .get("/admin/permissions")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(
+      adminCatalog.body.some(
+        (permission: { key: string }) => permission.key === "catalog-gss-only.view",
+      ),
+    ).toBe(true);
+    expect(
+      adminCatalog.body.some(
+        (permission: { key: string }) => permission.key === "catalog-company-only.view",
+      ),
+    ).toBe(false);
+    expect(
+      adminCatalog.body.every(
+        (permission: Record<string, unknown>) =>
+          ["id", "key", "module", "action", "scopeType", "description"].every(
+            (field) => permission[field] !== undefined && permission[field] !== null,
+          ) && String(permission.description).trim().length > 0,
+      ),
+    ).toBe(true);
+
+    const companyCatalog = await request(server)
+      .get("/company/permissions")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(200);
+    expect(
+      companyCatalog.body.some(
+        (permission: { key: string }) => permission.key === "catalog-company-only.view",
+      ),
+    ).toBe(true);
+    expect(
+      companyCatalog.body.some(
+        (permission: { key: string }) => permission.key === "catalog-gss-only.view",
+      ),
+    ).toBe(false);
+    expect(
+      companyCatalog.body.every((permission: { description: string | null }) =>
+        Boolean(permission.description?.trim()),
+      ),
+    ).toBe(true);
+
+    const noAdminPermissionToken = await login("/auth/gss/login", "gss-none@example.com");
+    await request(server)
+      .get("/admin/permissions")
+      .set("Authorization", `Bearer ${noAdminPermissionToken}`)
+      .expect(403);
+    const noCompanyPermissionToken = await login("/auth/company/login", "company-none@example.com");
+    await request(server)
+      .get("/company/permissions")
+      .set("Authorization", `Bearer ${noCompanyPermissionToken}`)
+      .expect(403);
+    await request(server)
+      .get("/company/permissions")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(403);
+    await request(server)
+      .get("/admin/permissions")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(403);
+
+    await prisma.companyUser.update({
+      data: { isActive: false },
+      where: { id: companyUser.id },
+    });
+    await request(server)
+      .get("/company/permissions")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(401);
+  });
+
   it("enforces Task 06 GSS roles, redacted system settings and Company settings separation", async () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const adminToken = await login("/auth/gss/login", "super@example.com");
@@ -471,6 +641,92 @@ describe("RBAC e2e", () => {
     expect(
       await prisma.auditLog.count({ where: { action: "company-settings.update" } }),
     ).toBeGreaterThanOrEqual(1);
+
+    const noPermissionCompanyToken = await login("/auth/company/login", "company-none@example.com");
+    await request(server)
+      .get("/company/branding/logo")
+      .set("Authorization", `Bearer ${noPermissionCompanyToken}`)
+      .expect(404);
+    await request(server)
+      .put("/company/settings/logo")
+      .set("Authorization", `Bearer ${companyViewToken}`)
+      .attach("logo", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
+        filename: "logo.png",
+        contentType: "image/png",
+      })
+      .expect(403);
+    await request(server)
+      .put("/company/settings/logo")
+      .set("Authorization", `Bearer ${companyManageToken}`)
+      .attach("logo", Buffer.from("<svg></svg>"), {
+        filename: "logo.svg",
+        contentType: "image/svg+xml",
+      })
+      .expect(400);
+    await request(server)
+      .put("/company/settings/logo")
+      .set("Authorization", `Bearer ${companyManageToken}`)
+      .attach("logo", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]), {
+        filename: "logo.png",
+        contentType: "text/plain",
+      })
+      .expect(200)
+      .expect({ hasLogo: true });
+
+    const companyLogo = await request(server)
+      .get("/company/branding/logo")
+      .set("Authorization", `Bearer ${noPermissionCompanyToken}`)
+      .expect(200)
+      .expect("Content-Type", "image/png");
+    expect(companyLogo.headers.etag).toMatch(/^"[a-f0-9]{64}"$/);
+    expect(companyLogo.headers["cache-control"]).toContain("private");
+    await request(server)
+      .get("/company/branding/logo")
+      .set("Authorization", `Bearer ${noPermissionCompanyToken}`)
+      .set("If-None-Match", companyLogo.headers.etag as string)
+      .expect(304);
+    const settingsWithLogo = await request(server)
+      .get("/company/settings")
+      .set("Authorization", `Bearer ${companyViewToken}`)
+      .expect(200);
+    expect(settingsWithLogo.body.hasLogo).toBe(true);
+    expect(settingsWithLogo.body.logoKey).toBeUndefined();
+
+    const companyId = settingsWithLogo.body.id as string;
+    const noAdminPermissionToken = await login("/auth/gss/login", "gss-none@example.com");
+    await request(server)
+      .get(`/admin/companies/${companyId}/logo`)
+      .set("Authorization", `Bearer ${noAdminPermissionToken}`)
+      .expect(403);
+    await request(server)
+      .get(`/admin/companies/${companyId}/logo`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    await request(server)
+      .put(`/admin/companies/${companyId}/logo`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .attach("logo", Buffer.from("RIFF1234WEBPprivate"), {
+        filename: "replacement.webp",
+        contentType: "image/webp",
+      })
+      .expect(200);
+    await request(server)
+      .delete(`/admin/companies/${companyId}/logo`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect({ hasLogo: false });
+    await request(server)
+      .delete(`/admin/companies/${companyId}/logo`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect({ hasLogo: false });
+    await request(server)
+      .get("/company/branding/logo")
+      .set("Authorization", `Bearer ${noPermissionCompanyToken}`)
+      .expect(404);
+    expect(
+      await prisma.auditLog.count({ where: { action: { startsWith: "company-logo." } } }),
+    ).toBeGreaterThanOrEqual(3);
   });
 
   it("allows a GSS super admin without explicit permission rows", async () => {

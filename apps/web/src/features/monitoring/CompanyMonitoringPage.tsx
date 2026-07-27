@@ -15,21 +15,21 @@ import type {
 import {
   DataTable,
   EntityActionMenu,
-  EntityCard,
-  EntityCardGrid,
-  EntityMetric,
-  EntityStatusRow,
   EmptyState,
   ErrorState,
   LoadingState,
   NodeTypeSelectionCard,
   OperationalSummaryCard,
   PageHeader,
+  RealtimeStatusBadge,
   StatusBadge,
+  TintedIconBox,
 } from "@gss-iot/ui";
 import {
   Badge,
+  Box,
   Button,
+  Card,
   Checkbox,
   Group,
   NumberInput,
@@ -39,13 +39,14 @@ import {
   Switch,
   Tabs,
   Text,
+  UnstyledButton,
 } from "@mantine/core";
 import {
   IconActivity,
   IconAlertTriangle,
+  IconArrowRight,
+  IconBuildingSkyscraper,
   IconCircleCheck,
-  IconPlugConnected,
-  IconPlugConnectedX,
   IconRefresh,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
@@ -110,33 +111,51 @@ export function CompanyMonitoringIndexPage() {
     <Stack gap="lg">
       <PageHeader title={t("monitoring.title")} subtitle={t("monitoring.indexSubtitle")} />
       {buildings.length ? (
-        <EntityCardGrid>
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
           {buildings.map((building) => (
-            <EntityCard
-              action={
-                <Button
-                  leftSection={<IconPlugConnected size={16} />}
-                  onClick={() => navigate(`/company/buildings/${building.id}/monitoring`)}
-                  size="xs"
-                  variant="light"
-                >
-                  {t("monitoring.open")}
-                </Button>
-              }
-              description={building.address ?? building.buildingType ?? undefined}
-              eyebrow={t("organizations.buildingsTitle")}
+            <UnstyledButton
+              aria-label={tf("monitoring.openBuilding", { building: building.title })}
+              className="gss-monitoring-building-link"
               key={building.id}
-              title={building.title}
+              onClick={() => navigate(`/company/buildings/${building.id}/monitoring`)}
             >
-              <EntityStatusRow
-                color={building.status === "ACTIVE" ? "green" : "gray"}
-                label={t("organizations.status")}
-                value={building.status}
-              />
-              <EntityMetric label={t("organizations.code")} value={building.number ?? "-"} />
-            </EntityCard>
+              <Card className="gss-monitoring-building-card" h="100%" p="md" shadow="sm">
+                <Group align="flex-start" justify="space-between" wrap="nowrap">
+                  <Group align="flex-start" gap="sm" wrap="nowrap">
+                    <TintedIconBox accent="blue" size="md">
+                      <IconBuildingSkyscraper size={18} />
+                    </TintedIconBox>
+                    <Stack gap={3} style={{ minWidth: 0 }}>
+                      <Text fw={700} lineClamp={1}>
+                        {building.title}
+                      </Text>
+                      <Text c="dimmed" lineClamp={1} size="sm">
+                        {building.address ?? building.buildingType ?? t("common.notAvailable")}
+                      </Text>
+                    </Stack>
+                  </Group>
+                  <StatusBadge
+                    label={t(
+                      building.status === "ACTIVE" ? "management.active" : "management.inactive",
+                    )}
+                    status={building.status === "ACTIVE" ? "active" : "inactive"}
+                  />
+                </Group>
+                <Group className="gss-monitoring-building-footer" justify="space-between" mt="md">
+                  <Text c="dimmed" size="xs">
+                    {tf("monitoring.buildingCode", { code: building.number ?? "-" })}
+                  </Text>
+                  <Group gap={5}>
+                    <Text c="gss" fw={650} size="sm">
+                      {t("monitoring.open")}
+                    </Text>
+                    <IconArrowRight aria-hidden="true" size={16} />
+                  </Group>
+                </Group>
+              </Card>
+            </UnstyledButton>
           ))}
-        </EntityCardGrid>
+        </SimpleGrid>
       ) : (
         <EmptyState description={t("monitoring.emptyBuildings")} title={t("common.emptyTitle")} />
       )}
@@ -304,9 +323,13 @@ export function NodeTypeMonitoringPage() {
       <PageHeader
         title={t(nodeTypeText[canonicalNodeType].title)}
         subtitle={tf("monitoring.nodeTypeSubtitle", { building: response.building.title })}
-        action={<RealtimeBadge status={realtimeStatus} />}
+        action={
+          <Box visibleFrom="sm">
+            <RealtimeBadge status={realtimeStatus} />
+          </Box>
+        }
       />
-      <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }}>
+      <Box className="gss-monitoring-summary-grid" data-testid="monitoring-summary-grid">
         <OperationalSummaryCard
           accent="blue"
           icon={<IconActivity size={18} />}
@@ -325,7 +348,7 @@ export function NodeTypeMonitoringPage() {
             value={<span className={`gss-status-${status}`}>{statusCounts[status] ?? 0}</span>}
           />
         ))}
-      </SimpleGrid>
+      </Box>
       {rows.length ? (
         <Tabs defaultValue="states">
           <Group justify="space-between" wrap="wrap">
@@ -355,54 +378,61 @@ export function NodeTypeMonitoringPage() {
                 ))}
               </SimpleGrid>
             ) : (
-              <DataTable
-                columns={[
-                  {
-                    key: "number",
-                    label: t("monitoring.nodeNumber"),
-                    render: (row) => row.node.number,
-                  },
-                  {
-                    key: "value",
-                    label: t("monitoring.latestValue"),
-                    render: (row) => renderValues(row.values),
-                  },
-                  {
-                    key: "status",
-                    label: t("monitoring.latestStatus"),
-                    render: (row) => (
-                      <StatusBadge label={t(statusKey(row.status))} status={row.status} />
-                    ),
-                  },
-                  {
-                    key: "gateway",
-                    label: t("devices.gateway"),
-                    render: (row) => row.gateway.serialNumber,
-                  },
-                  {
-                    key: "age",
-                    label: t("monitoring.valueAge"),
-                    render: (row) => formatAge(row.lastSeenAt),
-                  },
-                  {
-                    key: "history",
-                    label: t("monitoring.history"),
-                    render: (row) => (
-                      <EntityActionMenu
-                        ariaLabel={`${t("common.moreActions")}: ${row.node.number}`}
-                        items={[
-                          {
-                            key: "history",
-                            label: t("monitoring.openHistory"),
-                            onClick: () => setSelectedNodeId(row.nodeId),
-                          },
-                        ]}
-                      />
-                    ),
-                  },
-                ]}
-                rows={rows}
-              />
+              <>
+                <Box hiddenFrom="sm">
+                  <NodeStateMobileList onOpen={setSelectedNodeId} rows={rows} />
+                </Box>
+                <Box visibleFrom="sm">
+                  <DataTable
+                    columns={[
+                      {
+                        key: "number",
+                        label: t("monitoring.nodeNumber"),
+                        render: (row) => row.node.number,
+                      },
+                      {
+                        key: "value",
+                        label: t("monitoring.latestValue"),
+                        render: (row) => renderValues(row.values),
+                      },
+                      {
+                        key: "status",
+                        label: t("monitoring.latestStatus"),
+                        render: (row) => (
+                          <StatusBadge label={t(statusKey(row.status))} status={row.status} />
+                        ),
+                      },
+                      {
+                        key: "gateway",
+                        label: t("devices.gateway"),
+                        render: (row) => row.gateway.serialNumber,
+                      },
+                      {
+                        key: "age",
+                        label: t("monitoring.valueAge"),
+                        render: (row) => formatAge(row.lastSeenAt),
+                      },
+                      {
+                        key: "history",
+                        label: t("monitoring.history"),
+                        render: (row) => (
+                          <EntityActionMenu
+                            ariaLabel={`${t("common.moreActions")}: ${row.node.number}`}
+                            items={[
+                              {
+                                key: "history",
+                                label: t("monitoring.openHistory"),
+                                onClick: () => setSelectedNodeId(row.nodeId),
+                              },
+                            ]}
+                          />
+                        ),
+                      },
+                    ]}
+                    rows={rows}
+                  />
+                </Box>
+              </>
             )}
           </Tabs.Panel>
           <Tabs.Panel pt="md" value="history">
@@ -851,28 +881,49 @@ function FaultFilterGatewayEditor({
 }
 
 function commandStatusBadge(status: GatewayCommandStatus) {
-  const color =
-    status === "ACKNOWLEDGED"
-      ? "green"
-      : status === "FAILED" || status === "EXPIRED" || status === "CANCELLED"
-        ? "red"
-        : status === "SENT"
-          ? "blue"
-          : "gray";
-  return <Badge color={color}>{status}</Badge>;
+  const statusKey = status.toLowerCase() as Parameters<typeof StatusBadge>[0]["status"];
+  return <StatusBadge label={t(`status.${statusKey}` as never)} status={statusKey} />;
+}
+
+export function NodeStateMobileList({
+  onOpen,
+  rows,
+}: {
+  onOpen: (nodeId: string) => void;
+  rows: MonitoringNodeStateRecord[];
+}) {
+  return (
+    <Stack gap="sm">
+      {rows.map((row) => (
+        <Paper key={row.nodeId} p="sm" withBorder>
+          <Group align="flex-start" justify="space-between" wrap="nowrap">
+            <Stack gap={4} style={{ minWidth: 0 }}>
+              <Text fw={700}>{row.node.number}</Text>
+              <Text c="dimmed" size="xs">
+                {row.gateway.serialNumber} · {formatAge(row.lastSeenAt)}
+              </Text>
+              <Text size="sm">{renderValues(row.values)}</Text>
+              <StatusBadge label={t(statusKey(row.status))} status={row.status} />
+            </Stack>
+            <EntityActionMenu
+              ariaLabel={`${t("common.moreActions")}: ${row.node.number}`}
+              items={[
+                {
+                  key: "history",
+                  label: t("monitoring.openHistory"),
+                  onClick: () => onOpen(row.nodeId),
+                },
+              ]}
+            />
+          </Group>
+        </Paper>
+      ))}
+    </Stack>
+  );
 }
 
 function RealtimeBadge({ status }: { status: RealtimeStatus }) {
-  const connected = status === "connected";
-  return (
-    <Badge
-      color={connected ? "gss" : status === "reconnecting" ? "yellow" : "gray"}
-      leftSection={connected ? <IconPlugConnected size={12} /> : <IconPlugConnectedX size={12} />}
-      variant="light"
-    >
-      {t(realtimeKey(status))}
-    </Badge>
-  );
+  return <RealtimeStatusBadge label={t(realtimeKey(status))} status={status} />;
 }
 
 function HistoryTable({ history }: { history?: PaginatedSensorHistory }) {

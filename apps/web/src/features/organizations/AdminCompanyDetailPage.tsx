@@ -62,11 +62,13 @@ import {
 } from "react-router-dom";
 
 import { t } from "../../app/i18n";
-import { ApiError, apiRequest } from "../../shared/api/api-client";
+import { ApiError, apiMultipartRequest, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { CompanyLogoEditor } from "../../shared/branding/CompanyLogoEditor";
+import { useAuthenticatedLogo } from "../../shared/branding/use-authenticated-logo";
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
-import { deviceStatusLabel, gatewayTypeLabel } from "../devices/device-labels";
+import { deviceLifecycleBadge, gatewayTypeLabel } from "../devices/device-labels";
 
 type CompanyDetailSection = "overview" | "sites" | "buildings" | "users" | "devices";
 
@@ -138,6 +140,10 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
   const [userEmail, setUserEmail] = useState("");
   const [userPassword, setUserPassword] = useState("");
   const [userRoleId, setUserRoleId] = useState<string | null>(null);
+  const adminLogo = useAuthenticatedLogo(
+    `/admin/companies/${companyId}/logo`,
+    Boolean(detail.company?.hasLogo),
+  );
 
   const canLoadAreas = hasPermission(session, "areas.view");
   const canLoadBuildings = hasPermission(session, "buildings.view");
@@ -288,6 +294,28 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const uploadCompanyLogo = async (file: File) => {
+    if (!session || !detail.company) return;
+    const body = new FormData();
+    body.append("logo", file);
+    await apiMultipartRequest(session, `/admin/companies/${detail.company.id}/logo`, body);
+    setDetail((current) => ({
+      ...current,
+      company: current.company ? { ...current.company, hasLogo: true } : current.company,
+    }));
+    await adminLogo.refreshLogo();
+  };
+
+  const removeCompanyLogo = async () => {
+    if (!session || !detail.company) return;
+    await apiRequest(session, `/admin/companies/${detail.company.id}/logo`, { method: "DELETE" });
+    setDetail((current) => ({
+      ...current,
+      company: current.company ? { ...current.company, hasLogo: false } : current.company,
+    }));
+    await adminLogo.refreshLogo();
   };
 
   const createArea = async () => {
@@ -501,6 +529,14 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
             label={t("organizations.code")}
             onChange={(event) => setCompanyCode(event.currentTarget.value)}
             value={companyCode}
+          />
+          <CompanyLogoEditor
+            canManage
+            companyName={detail.company.name}
+            logoUrl={adminLogo.logoUrl}
+            onRemove={removeCompanyLogo}
+            onUpload={uploadCompanyLogo}
+            status={adminLogo.status}
           />
           <ModalFormFooter
             cancelLabel={t("common.cancel")}
@@ -917,7 +953,7 @@ function DevicesSection({
               {
                 key: "status",
                 label: t("devices.status"),
-                render: (gateway) => deviceStatusLabel(gateway.status),
+                render: (gateway) => deviceLifecycleBadge(gateway.status),
               },
               {
                 key: "building",
@@ -944,7 +980,7 @@ function DevicesSection({
               {
                 key: "status",
                 label: t("devices.status"),
-                render: (node) => deviceStatusLabel(node.status),
+                render: (node) => deviceLifecycleBadge(node.status),
               },
               {
                 key: "gateway",

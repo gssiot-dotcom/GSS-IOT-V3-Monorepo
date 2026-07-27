@@ -11,6 +11,7 @@ import {
   IconDevices,
   IconExchange,
   IconHome,
+  IconKey,
   IconReportAnalytics,
   IconSettings,
   IconShield,
@@ -104,6 +105,13 @@ export const adminNavItems: ShellNavItem[] = [
     permission: "admin-roles.view",
     sectionKey: "shell.sectionSettings",
     titleKey: "nav.adminRoles",
+  },
+  {
+    icon: IconKey,
+    path: "/admin/settings/permissions",
+    permission: "permissions.view",
+    sectionKey: "shell.sectionSettings",
+    titleKey: "nav.adminPermissions",
   },
   {
     icon: IconSettings,
@@ -205,6 +213,13 @@ export const companyNavItems: ShellNavItem[] = [
     permission: "company-roles.view",
     sectionKey: "shell.sectionPeople",
     titleKey: "nav.companyRoles",
+  },
+  {
+    icon: IconKey,
+    path: "/company/permissions",
+    permission: "company-permissions.view",
+    sectionKey: "shell.sectionPeople",
+    titleKey: "nav.companyPermissions",
   },
   {
     icon: IconSettings,

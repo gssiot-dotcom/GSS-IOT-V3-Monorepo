@@ -85,3 +85,19 @@ Implemented in Phases 4–5:
 ## Verification log
 
 Detailed command output, screenshot paths, traceability, and independent audit findings are maintained in `VERIFICATION.md` and `REQUIREMENTS_TRACEABILITY.md`.
+
+## Wave 4 final QA — 2026-07-23
+
+Wave 4 completed the final visual consistency and responsive pass. The
+protected exact-viewport fixture covers representative Admin and Company
+routes at 1440x900, 1280x800, 1024x768 and 390x844, with no document overflow
+assertions. Dashboard/report status interpolation, mobile report cards,
+monitoring mobile node state, duplicate realtime indicators and Admin device
+lifecycle presentation were corrected without changing route, API, RBAC,
+scope, realtime or business behavior.
+
+The implementation is ready for UI review. Overall release readiness remains
+conditional because the aggregate web E2E command timed out in the existing
+dark shared-surface evidence helper; isolated protected, exact-viewport,
+no-permission, dark-shell, Wave 1, Wave 2 and dark computed-style checks pass.
+See `WAVE4_FINAL_VERIFICATION.md` for the route/state matrix and evidence.

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const nodeEnvSchema = z.enum(["development", "test", "production"]).default("development");
 const defaultDevelopmentCorsOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"];
+const assetStorageProviderSchema = z.enum(["memory", "local", "s3"]);
 const reportStorageProviderSchema = z.enum(["memory", "local", "s3"]);
 const optionalBooleanStringSchema = z.enum(["true", "false", "1", "0"]).optional();
 
@@ -39,6 +40,14 @@ function parseCorsAllowedOrigins(value: string | undefined, nodeEnv: string): st
 
 const rawApiEnvSchema = z
   .object({
+    ASSET_LOCAL_STORAGE_DIR: z.string().min(1).optional(),
+    ASSET_S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+    ASSET_S3_BUCKET: z.string().min(1).optional(),
+    ASSET_S3_ENDPOINT: z.string().url().optional(),
+    ASSET_S3_FORCE_PATH_STYLE: optionalBooleanStringSchema,
+    ASSET_S3_REGION: z.string().min(1).optional(),
+    ASSET_S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+    ASSET_STORAGE_PROVIDER: assetStorageProviderSchema.optional(),
     CORS_ALLOWED_ORIGINS: z.string().optional(),
     DATABASE_URL: z.string().url(),
     GSS_SUPER_ADMIN_EMAIL: z.string().email(),
@@ -75,6 +84,32 @@ const rawApiEnvSchema = z
     REDIS_URL: z.string().url(),
   })
   .superRefine((env, context) => {
+    const assetProvider =
+      env.ASSET_STORAGE_PROVIDER ?? (env.NODE_ENV === "production" ? "s3" : "local");
+    if (env.NODE_ENV === "production" && assetProvider !== "s3") {
+      context.addIssue({
+        code: "custom",
+        message: "Production asset storage must use the s3 provider.",
+        path: ["ASSET_STORAGE_PROVIDER"],
+      });
+    }
+    if (assetProvider === "s3") {
+      for (const [key, value] of [
+        ["ASSET_S3_ACCESS_KEY_ID", env.ASSET_S3_ACCESS_KEY_ID],
+        ["ASSET_S3_BUCKET", env.ASSET_S3_BUCKET],
+        ["ASSET_S3_REGION", env.ASSET_S3_REGION],
+        ["ASSET_S3_SECRET_ACCESS_KEY", env.ASSET_S3_SECRET_ACCESS_KEY],
+      ] as const) {
+        if (!value) {
+          context.addIssue({
+            code: "custom",
+            message: `${key} is required when ASSET_STORAGE_PROVIDER=s3.`,
+            path: [key],
+          });
+        }
+      }
+    }
+
     const provider =
       env.REPORT_STORAGE_PROVIDER ?? (env.NODE_ENV === "production" ? "s3" : "local");
     if (env.NODE_ENV === "production" && provider !== "s3") {
@@ -104,6 +139,12 @@ const rawApiEnvSchema = z
 
 export const apiEnvSchema = rawApiEnvSchema.transform((env) => ({
   ...env,
+  ASSET_LOCAL_STORAGE_DIR: env.ASSET_LOCAL_STORAGE_DIR ?? ".data/assets",
+  ASSET_S3_FORCE_PATH_STYLE:
+    env.ASSET_S3_FORCE_PATH_STYLE === "true" || env.ASSET_S3_FORCE_PATH_STYLE === "1",
+  ASSET_STORAGE_PROVIDER:
+    env.ASSET_STORAGE_PROVIDER ??
+    (env.NODE_ENV === "production" ? "s3" : env.NODE_ENV === "test" ? "memory" : "local"),
   CORS_ALLOWED_ORIGINS: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS, env.NODE_ENV),
   REPORT_CLEANUP_ENABLED:
     env.REPORT_CLEANUP_ENABLED === undefined

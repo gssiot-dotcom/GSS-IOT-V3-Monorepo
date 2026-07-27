@@ -116,3 +116,16 @@ The focused Playwright output is retained under `apps/web/test-results/ui-redesi
 - `git diff --check` — PASS
 
 The initial parallel unit invocation was discarded because unrelated existing device tests hit their 5-second timeout under concurrent repository load; the authoritative serial web-unit rerun passed 65/65.
+
+### Verification Pass 3 — Wave 4 final QA
+
+Pass 3 reviewed the final Admin and Company route inventory, exact responsive
+viewports, mobile table/card fallbacks, semantic status consistency, realtime
+indicator duplication, report/dashboard overflow, action reachability, and
+existing loading/empty/error/forbidden/session states. The concrete findings
+and fixes are recorded in `WAVE4_FINAL_VERIFICATION.md`.
+
+Focused production checks pass. The aggregate web E2E runner still times out
+inside the pre-existing dark shared-surface multi-route evidence helper, so
+overall redesign release readiness remains conditional until that harness
+issue is resolved or explicitly accepted.

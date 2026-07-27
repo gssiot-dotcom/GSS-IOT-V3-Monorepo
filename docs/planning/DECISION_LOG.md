@@ -875,14 +875,104 @@ report-job fallback. Preserve all current request paths, mutation payloads,
 filters, query behavior, occurrence-count/count-interval semantics and settings
 protections. Do not invent metrics, business rules or new mutations.
 
-**Consequences:** Wave 3 is presentation-only across the requested Admin and
-Company surfaces. Targeted authenticated screenshots and the web Vitest suite
-remain follow-up evidence because the current browser is unauthenticated and
-the focused Vitest runner hung before producing results. Repository-wide visual
-QA and Wave 4 remain deferred.
+**Consequences:** Wave 3 was presentation-only across the requested Admin and
+Company surfaces. Its deferred screenshot and focused-test evidence was
+closed by the final Wave 4 protected fixture and workspace unit run. The
+aggregate web E2E dark-surface helper remains a separate documented harness
+risk.
 
 **Files affected:** `apps/web/src/features/dashboard/`,
 `apps/web/src/features/monitoring/`, `apps/web/src/features/alarms/`,
 `apps/web/src/features/reports/`, `apps/web/src/features/settings/`,
 `packages/ui/src/status-badge.tsx`, `apps/web/src/app/i18n.ts` and the Wave 3
 planning handoff entries.
+
+## DEC-2026-0723 — Wave 4 final visual QA boundary
+
+**Status:** accepted
+
+**Context:** Wave 4 is the final redesign wave and must close visual,
+responsive, accessibility and consistency gaps without broadening scope.
+
+**Decision:** Keep the existing Mantine/GSS visual contract and correct only
+verified presentation defects: semantic status rendering, mobile monitoring
+node cards, duplicate realtime indicator visibility, mobile report/dashboard
+badge sizing and remaining Admin device lifecycle text. Use the existing
+test-only authenticated fixture for exact 1440x900, 1280x800, 1024x768 and
+390x844 evidence. Do not change routes, permissions, API contracts, scope,
+MQTT/realtime, alarms, reports or settings behavior, and do not start Wave 5.
+
+**Consequences:** The final UI slice is review-ready and all focused gates pass.
+The aggregate web E2E command remains a release-readiness risk because the
+existing dark shared-surface multi-route evidence helper hangs; this is
+documented rather than hidden.
+
+**Files affected:** dashboard, monitoring, reports, settings and Admin company
+detail presentation files; focused web tests; the protected visual fixture;
+and `docs/ui-redesign/WAVE4_FINAL_VERIFICATION.md`.
+
+## DEC-2026-0725 — Targeted post-Wave-4 metrics, tooltips and read-only permission catalogs
+
+**Status:** accepted
+
+**Context:** User feedback identified dense-dashboard layout, chart legibility,
+monitoring entry/summary consistency and permission-catalog discoverability gaps
+after Wave 4. DEC-2026-009 already establishes unprefixed permission keys, and
+the existing Company catalog and Admin role-editor catalog have different
+authorization contexts.
+
+**Decision:** Keep the Wave 4 Mantine/GSS contract and make only the targeted
+shared metric, building-card and SVG-tooltip corrections. Preserve bounded
+telemetry and 25-reading node-history requests. Add a separate read-only
+`GET /admin/permissions` endpoint guarded by `permissions.view`, while retaining
+`GET /admin/roles/permissions` for `admin-roles.view`. Keep
+`GET /company/permissions` guarded by `company-permissions.view`. Filter the
+catalogs to GSS/BOTH and COMPANY/BOTH respectively, expose no permission
+mutations, and use one shared read-only frontend page with independently guarded
+routes/sidebar items. Seed every catalog row with an idempotently updated
+description through the existing nullable field; add no migration.
+
+**Consequences:** KPI and realtime summaries fit one desktop row at the approved
+viewports; chart data is accessible by mouse and keyboard without a new
+dependency or unbounded query; Company building entries no longer create nested
+status badges. Admin and Company users can inspect only their authorized catalog
+context, and sidebar filtering remains UX rather than the security boundary.
+Wave 5, Phase 14, MQTT, alarm logic, production storage/deployment and retention
+remain out of scope. The documented aggregate web E2E dark-helper timeout still
+blocks an overall release-ready claim.
+
+**Files affected:** `packages/ui/src/dashboard-primitives.tsx`,
+`apps/web/src/styles/global.css`, dashboard/monitoring/permission presentation,
+shell navigation/router/i18n, `apps/api/src/modules/settings/`,
+`apps/api/prisma/seed.ts`, focused web/API/Playwright tests and the related
+design/planning handoff documents.
+
+## DEC-2026-0725-02 — Private provider-neutral Company logo assets
+
+**Status:** accepted
+
+**Context:** Post-Wave-4 feedback requires a platform header identity and company-owned sidebar
+branding, plus controlled logo management from Company Settings and Admin Company Detail. The
+existing `Company.logoKey` column has no storage contract, and returning it from organization
+selects would leak provider metadata.
+
+**Decision:** Treat company logos as private server-mediated assets behind a dedicated provider
+boundary. Use memory in tests, local filesystem in development and private S3 in production through
+`ASSET_*` configuration; production must fail startup without S3. Accept only magic-byte validated
+PNG/JPEG/WebP up to 2 MiB and generate `company-logos/{companyId}/{uuid}.{extension}` keys. Public
+company contracts expose only `hasLogo`. Company GET is available to every active Company user and
+derives ownership from the principal; Company mutation uses `settings.company.manage`; Admin read
+and mutation use `companies.view` and `companies.update`. Replacement writes first, commits DB and
+audit atomically, cleans the new object on rollback and deletes the old object best-effort after
+commit. Metadata PATCH and logo mutation stay independent.
+
+**Consequences:** The sidebar can refresh immediately from shared authenticated blob state without
+public URLs or storage-key leakage. Object URLs are revoked safely. No Prisma migration is needed.
+The report storage subsystem and unresolved building-plan provider decision are unchanged.
+Production-capable S3 code exists, but no credentials, bucket provisioning or deployment execution
+is claimed. Phase 14 remains not started.
+
+**Files affected:** `packages/config/src/env.ts`, `packages/contracts/src/index.ts`, the new
+`apps/api/src/modules/company-branding/` module, organization/settings serializers, shared web API
+and branding state, `PortalLayout`, Company Settings, Admin Company Detail, shared UI brand,
+focused API/web/Playwright tests and `docs/architecture/COMPANY_LOGO_STORAGE.md`.

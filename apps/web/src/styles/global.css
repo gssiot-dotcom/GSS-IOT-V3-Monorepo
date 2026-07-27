@@ -235,6 +235,71 @@ textarea {
   box-shadow: 0 1px 0 rgb(15 23 42 / 2%);
 }
 
+.gss-shell-header-context {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.gss-shell-header-context > .mantine-Divider-root {
+  align-self: stretch;
+  margin-block: 11px;
+}
+
+.gss-shell-header-brand-compact {
+  display: none;
+}
+
+.gss-company-sidebar-brand {
+  min-width: 0;
+}
+
+.gss-company-sidebar-logo-plate,
+.gss-company-logo-editor-preview {
+  align-items: center;
+  background: light-dark(var(--mantine-color-white), var(--gss-surface-elevated));
+  border: 1px solid var(--gss-border-subtle);
+  border-radius: var(--mantine-radius-md);
+  display: flex;
+  justify-content: center;
+  min-height: 88px;
+  overflow: hidden;
+  padding: var(--mantine-spacing-xs);
+}
+
+.gss-company-sidebar-logo-plate img,
+.gss-company-logo-image {
+  display: block;
+  height: 88px;
+  max-width: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.gss-company-logo-editor-preview {
+  min-height: 128px;
+}
+
+.gss-company-logo-editor-preview .gss-company-logo-image {
+  height: 96px;
+}
+
+@media (max-width: 74em) {
+  .gss-shell-header-brand-full {
+    display: none;
+  }
+
+  .gss-shell-header-brand-compact {
+    display: block;
+  }
+}
+
+@media (max-width: 40em) {
+  .gss-shell-header-context > .mantine-Divider-root,
+  .gss-shell-header-context > .mantine-Stack-root {
+    display: none;
+  }
+}
+
 .gss-shell-header .mantine-ActionIcon-root,
 .gss-shell-header .mantine-UnstyledButton-root {
   min-height: 36px;
@@ -524,18 +589,74 @@ textarea {
 
 .gss-metric-card,
 .gss-dashboard-section {
-  border-color: color-mix(in srgb, var(--gss-tone-color, var(--gss-border)) 22%, var(--gss-border));
+  background: var(--gss-surface);
+  border: 1px solid var(--gss-border);
   position: relative;
 }
 
-.gss-metric-card::before,
-.gss-dashboard-section::before {
-  background: var(--gss-tone-color, var(--gss-accent));
-  border-radius: var(--mantine-radius-md) var(--mantine-radius-md) 0 0;
-  content: "";
-  height: 3px;
-  inset: 0 0 auto;
-  position: absolute;
+.gss-dashboard-kpi-card {
+  min-height: 92px;
+  padding: 12px 14px;
+}
+
+.gss-operational-summary-card {
+  min-height: 88px;
+  padding: 10px 12px;
+}
+
+.gss-dashboard-kpi-card .gss-tinted-icon-box,
+.gss-operational-summary-card .gss-tinted-icon-box {
+  height: 34px;
+  min-height: 34px;
+  min-width: 34px;
+  width: 34px;
+}
+
+.gss-dashboard-kpi-card .gss-metric-value,
+.gss-operational-summary-card .gss-metric-value {
+  font-size: clamp(1.35rem, 1.55vw, 1.65rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.gss-dashboard-kpi-card .gss-metric-label,
+.gss-operational-summary-card .gss-metric-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.035em;
+  line-height: 1.25;
+}
+
+.gss-dashboard-kpi-card .gss-metric-meta,
+.gss-operational-summary-card .gss-metric-meta {
+  line-height: 1.25;
+}
+
+.gss-dashboard-kpi-grid,
+.gss-monitoring-summary-grid {
+  display: grid;
+  gap: var(--mantine-spacing-sm);
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+@media (min-width: 36em) {
+  .gss-dashboard-kpi-grid,
+  .gss-monitoring-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 62em) {
+  .gss-dashboard-kpi-grid,
+  .gss-monitoring-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 75em) {
+  .gss-dashboard-kpi-grid,
+  .gss-monitoring-summary-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }
 
 .gss-tone-blue {
@@ -627,6 +748,47 @@ textarea {
   align-items: center;
   display: inline-flex;
   gap: var(--mantine-spacing-xs);
+}
+
+.gss-monitoring-building-link {
+  border-radius: var(--mantine-radius-md);
+  display: block;
+  height: 100%;
+  text-align: left;
+  width: 100%;
+}
+
+.gss-monitoring-building-card {
+  background: var(--gss-surface);
+  border: 1px solid var(--gss-border);
+  min-height: 142px;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.gss-monitoring-building-footer {
+  border-top: 1px solid var(--gss-subtle-border);
+  padding-top: var(--mantine-spacing-sm);
+}
+
+.gss-monitoring-building-link:hover .gss-monitoring-building-card,
+.gss-monitoring-building-link:focus-visible .gss-monitoring-building-card {
+  border-color: color-mix(in srgb, var(--gss-accent) 45%, var(--gss-border));
+  box-shadow: var(--gss-shadow-elevated);
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gss-monitoring-building-card {
+    transition: none;
+  }
+
+  .gss-monitoring-building-link:hover .gss-monitoring-building-card,
+  .gss-monitoring-building-link:focus-visible .gss-monitoring-building-card {
+    transform: none;
+  }
 }
 
 @media (max-width: 48em) {

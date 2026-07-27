@@ -280,4 +280,51 @@ Wave 2 is complete for review.
 - [ ] Re-run authenticated targeted visual captures and focused web tests when
       a deterministic browser/test session is available.
 
-Wave 3 is implemented for review. Wave 4 remains intentionally unstarted.
+Wave 3 is implemented for review. Wave 4 final visual QA is implemented and
+documented in `docs/ui-redesign/WAVE4_FINAL_VERIFICATION.md`. The protected
+and exact-viewport visual fixtures, unit suite, API E2E retry, lint, typecheck
+and build pass. The aggregate web E2E command still times out in the existing
+dark shared-surface evidence helper; resolve that harness risk before calling
+the overall redesign release-ready. Do not start a Wave 5.
+
+## Targeted post-Wave-4 corrections
+
+- [x] Keep dashboard KPI and realtime monitoring summary sets six-across at
+      1280/1440 with compact neutral shared surfaces and controlled wrapping.
+- [x] Add accessible bounded telemetry and node-history SVG charts with
+      mouse/keyboard portal tooltips and no new chart dependency.
+- [x] Replace generic Company monitoring building entries with compact
+      three/two/one-column semantic whole-card navigation.
+- [x] Add the read-only Admin Permission Catalog at `/admin/permissions` and
+      `/admin/settings/permissions`, guarded by `permissions.view`, without
+      changing the existing role-editor catalog endpoint.
+- [x] Add the shared Company Permission Catalog route/sidebar, retaining
+      `company-permissions.view` and COMPANY/BOTH filtering.
+- [x] Update permission seed descriptions idempotently without a migration or
+      mutation endpoint.
+- [x] Add focused web/API denial, scope-leak, inactive-session, search,
+      read-only, tooltip, responsive and visual coverage.
+- [ ] Resolve the pre-existing aggregate web E2E dark shared-surface helper
+      timeout before declaring the overall redesign release-ready.
+
+No Wave 5 or Phase 14 work is authorized by this correction.
+
+## Targeted platform and Company branding
+
+- [x] Add the shared Mantine/Tabler platform brand to Admin and Company headers without changing
+      existing right-side controls.
+- [x] Replace the Company sidebar product label with authenticated company logo/name branding,
+      skeleton and fallback states.
+- [x] Add Company Settings and Admin Company Edit logo preview/upload/replace/confirmed-remove UX
+      with independent metadata/logo failure boundaries.
+- [x] Add private memory/local/S3 company-logo storage, startup validation, magic-byte/size checks,
+      opaque company-owned keys, audit records and transactional replacement cleanup.
+- [x] Add permission-separated Company/Admin binary endpoints and remove `logoKey` from public
+      company responses in favor of `hasLogo`.
+- [x] Add provider, authorization, malformed/SVG, cache/ETag, object-URL and responsive light/dark
+      coverage.
+- [ ] Provision and verify production private S3 credentials/bucket through the deployment process.
+- [ ] Resolve the pre-existing aggregate web E2E dark shared-surface helper timeout before an
+      overall redesign release-ready claim.
+
+No Prisma migration, Wave 5 or Phase 14 start is part of this slice.

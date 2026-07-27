@@ -20,7 +20,7 @@ import {
   RealtimeStatusBadge,
   StatusBadge,
 } from "@gss-iot/ui";
-import { Button, Card, Group, Select, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Box, Button, Card, Group, Select, SimpleGrid, Stack, Text } from "@mantine/core";
 import {
   IconBuilding,
   IconCircleCheck,
@@ -45,6 +45,7 @@ import {
   isCanonicalNodeType,
   nodeTypeOrder,
   nodeTypeText,
+  NodeStateMobileList,
   upsertState,
 } from "./CompanyMonitoringPage";
 
@@ -208,11 +209,15 @@ export function AdminMonitoringPage() {
   return (
     <Stack gap="lg">
       <PageHeader
-        action={<RealtimeStatusBadge label={realtimeLabel} status={realtimeStatus} />}
+        action={
+          <Box visibleFrom="sm">
+            <RealtimeStatusBadge label={realtimeLabel} status={realtimeStatus} />
+          </Box>
+        }
         subtitle={t("monitoring.adminSubtitle")}
         title={t("monitoring.adminTitle")}
       />
-      <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }}>
+      <Box className="gss-monitoring-summary-grid" data-testid="admin-monitoring-summary-grid">
         <OperationalSummaryCard
           accent="blue"
           icon={<IconActivity size={18} />}
@@ -258,7 +263,7 @@ export function AdminMonitoringPage() {
             }
           />
         ))}
-      </SimpleGrid>
+      </Box>
       <DashboardSection
         accent="blue"
         icon={<IconBuilding size={18} />}
@@ -372,47 +377,54 @@ export function AdminMonitoringPage() {
                     ))}
                   </SimpleGrid>
                 ) : (
-                  <DataTable
-                    columns={[
-                      {
-                        key: "number",
-                        label: t("monitoring.nodeNumber"),
-                        render: (row) => row.node.number,
-                      },
-                      {
-                        key: "status",
-                        label: t("monitoring.latestStatus"),
-                        render: (row) => (
-                          <StatusBadge
-                            label={t(`status.${row.status}` as never)}
-                            status={row.status}
-                          />
-                        ),
-                      },
-                      {
-                        key: "gateway",
-                        label: t("devices.gateway"),
-                        render: (row) => row.gateway.serialNumber,
-                      },
-                      {
-                        key: "open",
-                        label: t("monitoring.history"),
-                        render: (row) => (
-                          <EntityActionMenu
-                            ariaLabel={`${t("common.moreActions")}: ${row.node.number}`}
-                            items={[
-                              {
-                                key: "history",
-                                label: t("monitoring.openHistory"),
-                                onClick: () => setSelectedNodeId(row.nodeId),
-                              },
-                            ]}
-                          />
-                        ),
-                      },
-                    ]}
-                    rows={stateRows}
-                  />
+                  <>
+                    <Box hiddenFrom="sm">
+                      <NodeStateMobileList onOpen={setSelectedNodeId} rows={states} />
+                    </Box>
+                    <Box visibleFrom="sm">
+                      <DataTable
+                        columns={[
+                          {
+                            key: "number",
+                            label: t("monitoring.nodeNumber"),
+                            render: (row) => row.node.number,
+                          },
+                          {
+                            key: "status",
+                            label: t("monitoring.latestStatus"),
+                            render: (row) => (
+                              <StatusBadge
+                                label={t(`status.${row.status}` as never)}
+                                status={row.status}
+                              />
+                            ),
+                          },
+                          {
+                            key: "gateway",
+                            label: t("devices.gateway"),
+                            render: (row) => row.gateway.serialNumber,
+                          },
+                          {
+                            key: "open",
+                            label: t("monitoring.history"),
+                            render: (row) => (
+                              <EntityActionMenu
+                                ariaLabel={`${t("common.moreActions")}: ${row.node.number}`}
+                                items={[
+                                  {
+                                    key: "history",
+                                    label: t("monitoring.openHistory"),
+                                    onClick: () => setSelectedNodeId(row.nodeId),
+                                  },
+                                ]}
+                              />
+                            ),
+                          },
+                        ]}
+                        rows={stateRows}
+                      />
+                    </Box>
+                  </>
                 )}
               </Stack>
             </Card>

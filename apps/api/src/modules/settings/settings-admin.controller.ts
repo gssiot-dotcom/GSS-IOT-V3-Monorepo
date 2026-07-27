@@ -38,6 +38,12 @@ export class SettingsAdminController {
     return this.roles.listPermissions();
   }
 
+  @RequirePermissions("permissions.view")
+  @Get("permissions")
+  listPermissionCatalog() {
+    return this.roles.listPermissions();
+  }
+
   @RequirePermissions("admin-roles.manage")
   @Post("roles")
   createRole(

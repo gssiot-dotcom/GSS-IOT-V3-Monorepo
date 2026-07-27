@@ -76,7 +76,11 @@ export function DashboardKpiCard({
   accent = "blue",
 }: DashboardKpiCardProps) {
   return (
-    <Card className={`gss-metric-card gss-tone-${accent}`} h="100%" shadow="md">
+    <Card
+      className={`gss-metric-card gss-dashboard-kpi-card gss-tone-${accent}`}
+      h="100%"
+      shadow="sm"
+    >
       <Group align="flex-start" justify="space-between" wrap="nowrap">
         <Stack gap={4}>
           <Text className="gss-metric-label" fw={600} size="xs" tt="uppercase">
@@ -151,7 +155,7 @@ export function DashboardSection({
   children,
 }: SectionHeaderProps & { children: ReactNode }) {
   return (
-    <Card className={`gss-dashboard-section gss-tone-${accent ?? "blue"}`} shadow="md">
+    <Card className={`gss-dashboard-section gss-tone-${accent ?? "blue"}`} shadow="sm">
       <SectionHeader
         action={action}
         accent={accent}
@@ -168,6 +172,7 @@ export function DashboardSection({
 
 export function MetricCard({
   accent = "blue",
+  compact = false,
   hint,
   icon,
   label,
@@ -175,6 +180,7 @@ export function MetricCard({
   value,
 }: {
   accent?: DashboardAccent;
+  compact?: boolean;
   hint?: ReactNode;
   icon?: ReactNode;
   label: ReactNode;
@@ -182,7 +188,11 @@ export function MetricCard({
   value: ReactNode;
 }) {
   return (
-    <Card className={`gss-metric-card gss-tone-${accent}`} h="100%" shadow="md">
+    <Card
+      className={`gss-metric-card${compact ? " gss-operational-summary-card" : ""} gss-tone-${accent}`}
+      h="100%"
+      shadow="sm"
+    >
       <Group align="flex-start" justify="space-between" wrap="nowrap">
         <Stack gap={4}>
           <Text className="gss-metric-label" fw={600} size="xs" tt="uppercase">
@@ -221,7 +231,9 @@ export function OperationalSummaryCard({
   label: ReactNode;
   value: ReactNode;
 }) {
-  return <MetricCard accent={accent} hint={helper} icon={icon} label={label} value={value} />;
+  return (
+    <MetricCard accent={accent} compact hint={helper} icon={icon} label={label} value={value} />
+  );
 }
 
 export function SectionIcon({

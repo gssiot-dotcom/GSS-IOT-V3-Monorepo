@@ -191,9 +191,11 @@ function ReportJobsTable({
     return (
       <Paper key={job.id} p="md" withBorder>
         <Stack gap="xs">
-          <Group justify="space-between" wrap="nowrap">
-            <Text fw={700}>{reportLabel(job.reportType)}</Text>
-            {reportStatusBadge(job.status)}
+          <Group align="flex-start" justify="space-between" wrap="nowrap">
+            <Text fw={700} style={{ minWidth: 0 }}>
+              {reportLabel(job.reportType)}
+            </Text>
+            <Box style={{ flexShrink: 0 }}>{reportStatusBadge(job.status)}</Box>
           </Group>
           <Text c="dimmed" size="sm">
             {reportScope(job)}

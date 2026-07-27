@@ -137,6 +137,7 @@ export class MonitoringService implements OnModuleInit {
           code: true,
           email: true,
           id: true,
+          logoKey: true,
           name: true,
           phone: true,
           status: true,
@@ -167,7 +168,14 @@ export class MonitoringService implements OnModuleInit {
         },
       }),
     ]);
-    return { areas, buildings, companies };
+    return {
+      areas,
+      buildings,
+      companies: companies.map(({ logoKey, ...company }) => ({
+        ...company,
+        hasLogo: Boolean(logoKey),
+      })),
+    };
   }
 
   async listAdminSummary(

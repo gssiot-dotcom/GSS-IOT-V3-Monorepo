@@ -64,11 +64,15 @@ export class OrganizationsService {
   ) {}
 
   async listCompanies() {
-    return this.prisma.company.findMany({ orderBy: { name: "asc" }, select: companySelect });
+    const companies = await this.prisma.company.findMany({
+      orderBy: { name: "asc" },
+      select: companySelect,
+    });
+    return companies.map(toPublicCompany);
   }
 
   async getCompany(companyId: string) {
-    return this.getCompanyOrThrow(companyId);
+    return toPublicCompany(await this.getCompanyOrThrow(companyId));
   }
 
   async createCompany(actor: AuthTokenPayload, dto: CreateCompanyDto) {
@@ -113,12 +117,12 @@ export class OrganizationsService {
           action: "company.create",
           entityId: company.id,
           entityType: "Company",
-          newValue: { company, platformManager },
+          newValue: { company: toPublicCompany(company), platformManager },
         },
         tx,
       );
 
-      return { company, platformManager };
+      return { company: toPublicCompany(company), platformManager };
     });
   }
 
@@ -139,12 +143,12 @@ export class OrganizationsService {
           action: "company.update",
           entityId: companyId,
           entityType: "Company",
-          newValue: company,
-          oldValue: oldCompany,
+          newValue: toPublicCompany(company),
+          oldValue: toPublicCompany(oldCompany),
         },
         tx,
       );
-      return company;
+      return toPublicCompany(company);
     });
   }
 
@@ -446,3 +450,8 @@ const imageSelect = {
   height: true,
   createdAt: true,
 } satisfies Prisma.BuildingPlanImageSelect;
+
+function toPublicCompany<T extends { logoKey: string | null }>(company: T) {
+  const { logoKey, ...record } = company;
+  return { ...record, hasLogo: Boolean(logoKey) };
+}

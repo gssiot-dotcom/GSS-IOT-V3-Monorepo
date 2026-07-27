@@ -128,6 +128,7 @@ export interface ClassificationEvidence {
 export interface CompanyRecord {
   id: string;
   name: string;
+  hasLogo: boolean;
   code: string | null;
   status: CompanyStatus;
   address: string | null;

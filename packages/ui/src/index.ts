@@ -61,6 +61,7 @@ export {
   StickyPageActions,
 } from "./layout-primitives";
 export { PageHeader, type PageHeaderProps } from "./page-header";
+export { GssPlatformBrand, type GssPlatformBrandProps } from "./platform-brand";
 export {
   RealtimeStatusBadge,
   type RealtimeConnectionState,

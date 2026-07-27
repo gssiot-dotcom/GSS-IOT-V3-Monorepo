@@ -340,7 +340,9 @@ describe("reports job lifecycle and endpoints", () => {
         return (originalFetch as typeof fetch)(input, init);
       }),
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Download site-report.csv" }));
+    fireEvent.click(
+      (await screen.findAllByRole("button", { name: "Download site-report.csv" }))[0]!,
+    );
     await waitFor(() => expect(downloads).toEqual(["/company/reports/exports/export-1/download"]));
   });
 
@@ -387,7 +389,7 @@ describe("reports job lifecycle and endpoints", () => {
     });
     expect((await screen.findAllByText("Expired")).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Download expired.csv" })).toBeNull();
-    expect(screen.getByText("Export failed at")).toBeTruthy();
+    expect(screen.getAllByText("Export failed at").length).toBeGreaterThan(0);
     expect(screen.queryByText(/secrets/)).toBeNull();
   });
 });

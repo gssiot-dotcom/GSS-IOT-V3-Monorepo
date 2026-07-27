@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   BuildingMonitoringPage,
+  CompanyMonitoringIndexPage,
   NodeTypeMonitoringPage,
 } from "../features/monitoring/CompanyMonitoringPage";
 import { AdminMonitoringPage } from "../features/monitoring/AdminMonitoringPage";
@@ -123,6 +124,60 @@ describe("Phase 6 monitoring UI", () => {
     expect(screen.getByTestId("node-type-card-door_node")).toBeTruthy();
     expect(screen.getByTestId("node-type-card-angle_node")).toBeTruthy();
     expect(screen.getByTestId("node-type-card-gangform_node")).toBeTruthy();
+  });
+
+  it("renders compact semantic building entry cards and preserves monitoring navigation", async () => {
+    vi.mocked(apiRequest).mockImplementation(async (_session, path) => {
+      if (path !== "/company/buildings") throw new Error(`Unexpected request: ${path}`);
+      return [
+        {
+          address: "10 Safety Road",
+          areaId: "area-1",
+          buildingType: "Tower",
+          companyId: "company-1",
+          id: "building-1",
+          number: "BLD-01",
+          status: "ACTIVE",
+          title: "Tower A",
+        },
+        {
+          address: null,
+          areaId: "area-1",
+          buildingType: "Warehouse",
+          companyId: "company-1",
+          id: "building-2",
+          number: "BLD-02",
+          status: "INACTIVE",
+          title: "Warehouse B",
+        },
+      ];
+    });
+
+    render(
+      <MantineProvider theme={gssTheme}>
+        <MemoryRouter initialEntries={["/company/monitoring"]}>
+          <Routes>
+            <Route element={<CompanyMonitoringIndexPage />} path="/company/monitoring" />
+            <Route
+              element={<div>Building monitoring destination</div>}
+              path="/company/buildings/:buildingId/monitoring"
+            />
+          </Routes>
+        </MemoryRouter>
+      </MantineProvider>,
+    );
+
+    const towerCard = await screen.findByRole("button", {
+      name: "Open monitoring for Tower A",
+    });
+    expect(towerCard.textContent).toContain("Active");
+    expect(towerCard.textContent).toContain("10 Safety Road");
+    expect(towerCard.textContent).toContain("BLD-01");
+    expect(
+      screen.getByRole("button", { name: "Open monitoring for Warehouse B" }).textContent,
+    ).toContain("Inactive");
+    fireEvent.click(towerCard);
+    expect(await screen.findByText("Building monitoring destination")).toBeTruthy();
   });
 
   it("renders unconfigured monitoring state and Phase 9 configuration tabs", async () => {
@@ -289,7 +344,11 @@ describe("Phase 6 monitoring UI", () => {
       </MantineProvider>,
     );
 
-    expect(await screen.findByText("Unconfigured")).toBeTruthy();
+    expect((await screen.findAllByText("Unconfigured")).length).toBeGreaterThan(0);
+    const summaryGrid = screen.getByTestId("monitoring-summary-grid");
+    for (const label of ["Total nodes", "Safe", "Caution", "Warning", "Danger", "Offline"]) {
+      expect(summaryGrid.textContent).toContain(label);
+    }
     expect(screen.getByLabelText("Monitoring view")).toBeTruthy();
     expect(screen.getByText("Alarm levels")).toBeTruthy();
     expect(screen.getByText("Fault filters")).toBeTruthy();
@@ -313,7 +372,7 @@ describe("Phase 6 monitoring UI", () => {
     );
   });
 
-  it("restores the card preference and renders door, angle and bounded history presentation", () => {
+  it("restores the card preference and renders door, angle and bounded history presentation", async () => {
     window.localStorage.setItem("gss.monitoring.view", "CARD");
     const now = new Date().toISOString();
     const common = {
@@ -406,6 +465,56 @@ describe("Phase 6 monitoring UI", () => {
     expect(screen.getAllByText("Warning").length).toBeGreaterThan(0);
     expect(screen.getByRole("img", { name: /T-shaped status indicator/i })).toBeTruthy();
     expect(screen.getByRole("img", { name: "X/Y angle history" })).toBeTruthy();
+    fireEvent.mouseEnter(screen.getByRole("button", { name: /Reading received.*Warning.*X/i }));
+    expect((await screen.findByRole("tooltip")).textContent).toContain("X angle: 3.0°");
+    expect((await screen.findByRole("tooltip")).textContent).toContain("Y angle: -1.0°");
+  });
+
+  it("shows complete door reading details on hover and keyboard focus", async () => {
+    const now = "2026-07-22T01:02:03.000Z";
+    render(
+      <MantineProvider theme={gssTheme}>
+        <NodeHistoryChart
+          history={{
+            items: [
+              {
+                buildingId: "building-1",
+                classificationEvidence: null,
+                faultFiltered: false,
+                gateway: { id: "gateway-1", serialNumber: "0300" },
+                gatewayId: "gateway-1",
+                id: "door-reading-1",
+                measuredAt: now,
+                node: { id: "door-1", installedLocation: null, number: "101" },
+                nodeId: "door-1",
+                nodeType: {
+                  displayName: "Door Node",
+                  id: "door",
+                  imageAssetKey: "door.png",
+                  key: "door_node",
+                  numericCode: 0,
+                },
+                nodeTypeId: "door",
+                receivedAt: now,
+                status: "danger",
+                values: { batteryLevel: 42, doorState: "open" },
+              },
+            ],
+            page: 1,
+            pageSize: 25,
+            total: 1,
+          }}
+          nodeType="door_node"
+        />
+      </MantineProvider>,
+    );
+
+    const point = screen.getByRole("button", { name: /Reading received.*Danger/i });
+    fireEvent.focus(point);
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip.textContent).toContain("Door state: Open");
+    expect(tooltip.textContent).toContain("Battery: 42%");
+    expect(tooltip.textContent).toContain("Status: Danger");
   });
 
   it("explains angle deviation and direction in the node detail drawer", async () => {

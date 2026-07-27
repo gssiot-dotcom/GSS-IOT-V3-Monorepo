@@ -53,6 +53,36 @@ export async function apiRequest<T>(
   return (await response.json()) as T;
 }
 
+export async function apiMultipartRequest<T>(
+  session: AuthSession,
+  path: string,
+  body: FormData,
+  method: "POST" | "PUT" = "PUT",
+): Promise<T> {
+  const response = await fetch(`${readWebEnv().apiBaseUrl}${path}`, {
+    body,
+    headers: { authorization: `Bearer ${session.accessToken}` },
+    method,
+  });
+
+  if (!response.ok) throw new ApiError(await readErrorMessage(response), response.status);
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+export async function apiBlob(
+  session: AuthSession,
+  path: string,
+  options: Pick<RequestInit, "cache"> = {},
+): Promise<Blob> {
+  const response = await fetch(`${readWebEnv().apiBaseUrl}${path}`, {
+    ...options,
+    headers: { authorization: `Bearer ${session.accessToken}` },
+  });
+  if (!response.ok) throw new ApiError(await readErrorMessage(response), response.status);
+  return response.blob();
+}
+
 function fileNameFromContentDisposition(value: string | null): string | undefined {
   if (!value) return undefined;
   const encoded = value.match(/filename\*=UTF-8''([^;]+)/i)?.[1];

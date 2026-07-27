@@ -151,7 +151,7 @@ describe("Welcome and profile surfaces", () => {
     storeSession("company-user");
     renderApp("/company/profile");
 
-    expect(await screen.findByText("Acme Safety")).toBeTruthy();
+    expect((await screen.findAllByText("Acme Safety")).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Open account menu" }));
     expect(screen.getByText("Manager")).toBeTruthy();
     fireEvent.click(await screen.findByRole("menuitem", { name: "Sign out" }));

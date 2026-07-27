@@ -98,6 +98,62 @@ const permissionCatalog = [
   ["settings.system.manage", PermissionScopeType.GSS],
 ] as const;
 
+const permissionModuleLabels: Record<string, string> = {
+  "admin-roles": "GSS Admin roles",
+  "admin-users": "GSS Admin users",
+  "alarm-levels": "alarm-level thresholds",
+  "alarm-rules": "alarm occurrence and recipient rules",
+  alarms: "alarm events",
+  areas: "construction sites",
+  "audit-logs": "audit logs",
+  "building-plans": "building plan metadata",
+  buildings: "buildings",
+  "company-devices": "company device inventory",
+  "company-permissions": "the company permission catalog",
+  "company-profile": "the company profile",
+  "company-roles": "company roles",
+  "company-users": "company users and positions",
+  companies: "companies",
+  dashboard: "dashboard analytics",
+  "device-assignments": "device assignment history",
+  devices: "device inventory",
+  "gateway-node-connections": "gateway-node connections",
+  gateways: "gateways",
+  monitoring: "monitoring data",
+  "mqtt-commands": "MQTT command history",
+  nodes: "nodes",
+  notifications: "alarm notifications",
+  permissions: "the GSS permission catalog",
+  reports: "reports",
+  settings: "portal settings",
+  welcome: "the authenticated welcome workspace",
+};
+
+function permissionDescription(key: string, scopeType: PermissionScopeType): string {
+  const [module, action] = key.split(".") as [string, string];
+  const subject = permissionModuleLabels[module] ?? module.replaceAll("-", " ");
+  const scope =
+    scopeType === PermissionScopeType.GSS
+      ? "across the authorized GSS Admin context"
+      : scopeType === PermissionScopeType.COMPANY
+        ? "within the authenticated company scope"
+        : "within the authorized GSS or company scope";
+  const descriptions: Record<string, string> = {
+    acknowledge: `Acknowledge ${subject} ${scope} while preserving the shared event history.`,
+    assign: `Assign ${subject} through audited ownership and resource-scope workflows ${scope}.`,
+    commands: `Issue audited operational commands for ${subject} ${scope}.`,
+    configure: `Configure ${subject} using the approved device and alarm controls ${scope}.`,
+    create: `Create ${subject} ${scope} using validated domain inputs.`,
+    delete: `Delete eligible ${subject} ${scope} after safety checks.`,
+    export: `Export authorized ${subject} ${scope} through the protected download workflow.`,
+    manage: `Manage approved ${subject} actions ${scope}.`,
+    resolve: `Resolve eligible ${subject} ${scope} without bypassing active safety checks.`,
+    update: `Update ${subject} ${scope} using validated and audited changes.`,
+    view: `View ${subject} ${scope}.`,
+  };
+  return descriptions[action] ?? `Access ${subject} ${scope}.`;
+}
+
 const nodeTypeCatalog = [
   {
     displayName: "Door Node",
@@ -164,10 +220,11 @@ async function main(): Promise<void> {
   await Promise.all(
     permissionCatalog.map(async ([key, scopeType]) => {
       const [module, action] = key.split(".");
+      const description = permissionDescription(key, scopeType);
       await prisma.permission.upsert({
         where: { key },
-        create: { action, key, module, scopeType },
-        update: { action, module, scopeType },
+        create: { action, description, key, module, scopeType },
+        update: { action, description, module, scopeType },
       });
     }),
   );

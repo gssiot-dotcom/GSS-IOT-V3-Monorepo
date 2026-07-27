@@ -22,6 +22,7 @@ const role: GssRoleRecord = {
   permissions: [],
 };
 const company: CompanyRecord = {
+  hasLogo: false,
   address: "Seoul",
   code: "ACME",
   email: "ops@acme.example",
@@ -147,12 +148,17 @@ describe("Task 06 settings pages", () => {
   });
 
   it("keeps company contact fields view-only without manage and saves with manage", async () => {
-    setupFetch(sessionFor("company-user", ["settings.company.view"]));
+    const viewOnlyFetch = setupFetch(sessionFor("company-user", ["settings.company.view"]));
     renderRoute("/company/settings");
 
     expect(await screen.findByRole("heading", { level: 1, name: "Company settings" })).toBeTruthy();
     expect((screen.getByLabelText("Address") as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(
+      viewOnlyFetch.mock.calls.some(
+        ([input]) => new URL(String(input)).pathname === "/company/branding/logo",
+      ),
+    ).toBe(true);
 
     cleanup();
     const fetchMock = setupFetch(
@@ -164,5 +170,60 @@ describe("Task 06 settings pages", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.getByText("Company settings saved.")).toBeTruthy());
     expect(fetchMock.mock.calls.some(([, options]) => options?.method === "PATCH")).toBe(true);
+  });
+
+  it("uploads a private logo without a JSON content type and refreshes shared branding", async () => {
+    const session = sessionFor("company-user", [
+      "settings.company.view",
+      "settings.company.manage",
+    ]);
+    let objectUrlIndex = 0;
+    const createObjectUrl = vi
+      .spyOn(URL, "createObjectURL")
+      .mockImplementation(() => `blob:company-logo-${++objectUrlIndex}`);
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/auth/company/me") return new Response(JSON.stringify(session));
+      if (path === "/company/settings") return new Response(JSON.stringify(company));
+      if (path === "/company/branding/logo") {
+        return new Response(new Blob(["private-logo"], { type: "image/png" }), {
+          headers: { "content-type": "image/png" },
+        });
+      }
+      if (path === "/company/settings/logo" && options?.method === "PUT") {
+        return new Response(JSON.stringify({ hasLogo: true }));
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({ accessToken: session.accessToken, context: session.context }),
+    );
+
+    renderRoute("/company/settings");
+    expect(await screen.findByRole("heading", { level: 1, name: "Company settings" })).toBeTruthy();
+    expect(await screen.findAllByAltText("Acme Safety logo")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Replace logo" }));
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).toBeTruthy();
+    const file = new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      "logo.png",
+      { type: "image/png" },
+    );
+    fireEvent.change(input!, { target: { files: [file] } });
+    fireEvent.click(await screen.findByRole("button", { name: "Upload logo" }));
+
+    await waitFor(() => expect(screen.getByText("Company logo saved.")).toBeTruthy());
+    const uploadCall = fetchMock.mock.calls.find(
+      ([input, options]) =>
+        new URL(String(input)).pathname === "/company/settings/logo" && options?.method === "PUT",
+    );
+    expect(uploadCall?.[1]?.body).toBeInstanceOf(FormData);
+    expect(new Headers(uploadCall?.[1]?.headers).has("content-type")).toBe(false);
+    expect(createObjectUrl).toHaveBeenCalledTimes(3);
+    expect(revokeObjectUrl).toHaveBeenCalled();
   });
 });

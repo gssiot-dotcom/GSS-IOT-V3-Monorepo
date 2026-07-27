@@ -1,6 +1,6 @@
 import type { DashboardRange, DashboardSummary, ReportJobRecord } from "@gss-iot/contracts";
 import {
-  Badge,
+  Box,
   Group,
   Paper,
   NativeSelect,
@@ -34,8 +34,13 @@ import {
   ErrorState,
   GssButton,
   PageHeader,
-  ResponsiveContentGrid,
+  StatusBadge,
 } from "@gss-iot/ui";
+import {
+  ChartTooltip,
+  chartTooltipPosition,
+  type ChartTooltipState,
+} from "../../shared/ui/ChartTooltip";
 
 function statusLabel(status: ReportJobRecord["status"]): string {
   return t(`reports.status.${status}` as never);
@@ -86,10 +91,10 @@ export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/comp
     );
 
   const counts = {
-    COMPLETED: jobs.filter((job) => job.status === "COMPLETED").length,
-    FAILED: jobs.filter((job) => job.status === "FAILED").length,
-    PENDING: jobs.filter((job) => job.status === "PENDING").length,
-    PROCESSING: jobs.filter((job) => job.status === "PROCESSING").length,
+    completed: jobs.filter((job) => job.status === "COMPLETED").length,
+    failed: jobs.filter((job) => job.status === "FAILED").length,
+    pending: jobs.filter((job) => job.status === "PENDING").length,
+    processing: jobs.filter((job) => job.status === "PROCESSING").length,
   };
 
   return (
@@ -116,34 +121,79 @@ export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/comp
               {statusLabel(status)}
             </Text>
             <Text fw={700} size="xl">
-              {counts[status]}
+              {counts[status.toLowerCase() as keyof typeof counts]}
             </Text>
           </Paper>
         ))}
       </SimpleGrid>
       {jobs.length ? (
-        <Table.ScrollContainer minWidth={520}>
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>{t("reports.reportType")}</Table.Th>
-                <Table.Th>{t("reports.statusLabel")}</Table.Th>
-                <Table.Th>{t("reports.createdAt")}</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
+        <>
+          <Box hiddenFrom="sm">
+            <Stack gap="xs">
               {jobs.map((job) => (
-                <Table.Tr key={job.id}>
-                  <Table.Td>{t(`reports.type.${job.reportType}` as never)}</Table.Td>
-                  <Table.Td>
-                    <Badge variant="light">{statusLabel(job.status)}</Badge>
-                  </Table.Td>
-                  <Table.Td>{new Date(job.createdAt).toLocaleString()}</Table.Td>
-                </Table.Tr>
+                <Paper key={job.id} p="sm" withBorder>
+                  <Group align="flex-start" justify="space-between" wrap="nowrap">
+                    <Stack gap={4} style={{ minWidth: 0 }}>
+                      <Text fw={700}>{t(`reports.type.${job.reportType}` as never)}</Text>
+                      <Text c="dimmed" size="sm">
+                        {new Date(job.createdAt).toLocaleString()}
+                      </Text>
+                    </Stack>
+                    <Box style={{ flexShrink: 0 }}>
+                      <StatusBadge
+                        label={statusLabel(job.status)}
+                        status={
+                          job.status === "PENDING"
+                            ? "pending"
+                            : job.status === "PROCESSING"
+                              ? "processing"
+                              : job.status === "COMPLETED"
+                                ? "completed"
+                                : "failed"
+                        }
+                      />
+                    </Box>
+                  </Group>
+                </Paper>
               ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+            </Stack>
+          </Box>
+          <Box visibleFrom="sm">
+            <Table.ScrollContainer minWidth={520}>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>{t("reports.reportType")}</Table.Th>
+                    <Table.Th>{t("reports.statusLabel")}</Table.Th>
+                    <Table.Th>{t("reports.createdAt")}</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {jobs.map((job) => (
+                    <Table.Tr key={job.id}>
+                      <Table.Td>{t(`reports.type.${job.reportType}` as never)}</Table.Td>
+                      <Table.Td>
+                        <StatusBadge
+                          label={statusLabel(job.status)}
+                          status={
+                            job.status === "PENDING"
+                              ? "pending"
+                              : job.status === "PROCESSING"
+                                ? "processing"
+                                : job.status === "COMPLETED"
+                                  ? "completed"
+                                  : "failed"
+                          }
+                        />
+                      </Table.Td>
+                      <Table.Td>{new Date(job.createdAt).toLocaleString()}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          </Box>
+        </>
       ) : (
         <EmptyState description={t("reports.emptyDescription")} title={t("reports.emptyTitle")} />
       )}
@@ -171,8 +221,35 @@ function DashboardLoading() {
   );
 }
 
-function TrendChart({ trend }: { trend: NonNullable<DashboardSummary["telemetryTrend"]> }) {
-  if (!trend.length) {
+function telemetryDays(
+  trend: NonNullable<DashboardSummary["telemetryTrend"]>,
+  range: DashboardSummary["range"],
+) {
+  const counts = new Map(trend.map((item) => [item.date, item.count]));
+  const cursor = new Date(range.from);
+  const last = new Date(range.to);
+  cursor.setUTCHours(0, 0, 0, 0);
+  last.setUTCHours(0, 0, 0, 0);
+  const days: Array<{ count: number; date: string }> = [];
+  while (cursor <= last) {
+    const date = cursor.toISOString().slice(0, 10);
+    days.push({ count: counts.get(date) ?? 0, date });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return days;
+}
+
+function TrendChart({
+  range,
+  total,
+  trend,
+}: {
+  range: DashboardSummary["range"];
+  total: number;
+  trend: NonNullable<DashboardSummary["telemetryTrend"]>;
+}) {
+  const [tooltip, setTooltip] = useState<ChartTooltipState>();
+  if (!trend.length && total === 0) {
     return (
       <EmptyState
         description={t("dashboard.emptyTelemetryDescription")}
@@ -180,38 +257,143 @@ function TrendChart({ trend }: { trend: NonNullable<DashboardSummary["telemetryT
       />
     );
   }
-  const max = Math.max(...trend.map((item) => item.count), 1);
-  const points = trend
-    .map(
-      (item, index) =>
-        `${(index / Math.max(trend.length - 1, 1)) * 100},${100 - (item.count / max) * 85}`,
-    )
-    .join(" ");
+
+  const days = telemetryDays(trend, range);
+  const chartWidth = 720;
+  const chartHeight = 260;
+  const left = 52;
+  const right = 18;
+  const top = 18;
+  const bottom = 42;
+  const plotWidth = chartWidth - left - right;
+  const plotHeight = chartHeight - top - bottom;
+  const max = Math.max(...days.map((item) => item.count), 1);
+  const yMax = Math.max(1, Math.ceil(max / 5) * 5);
+  const xPosition = (index: number) => left + (index / Math.max(days.length - 1, 1)) * plotWidth;
+  const yPosition = (count: number) => top + plotHeight - (count / yMax) * plotHeight;
+  const pointList = days.map((item, index) => `${xPosition(index)},${yPosition(item.count)}`);
+  const linePoints = pointList.join(" ");
+  const areaPoints = `${left},${top + plotHeight} ${linePoints} ${left + plotWidth},${top + plotHeight}`;
+  const yTicks = [...new Set([0, Math.ceil(yMax / 2), yMax])];
+  const labelEvery = days.length <= 8 ? 1 : days.length <= 31 ? 5 : 15;
+  const sampledCount = trend.reduce((sum, item) => sum + item.count, 0);
+  const fullDate = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "full",
+    timeZone: "UTC",
+  });
+  const shortDate = new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+
+  const showTooltip = (target: SVGElement, item: (typeof days)[number]) => {
+    setTooltip({
+      content: (
+        <Stack gap={2}>
+          <Text fw={650} size="sm">
+            {fullDate.format(new Date(`${item.date}T00:00:00.000Z`))}
+          </Text>
+          <Text size="sm">{tf("dashboard.telemetryTooltipCount", { count: item.count })}</Text>
+        </Stack>
+      ),
+      ...chartTooltipPosition(target),
+    });
+  };
+
   return (
     <Stack gap="xs">
       <svg
         aria-label={t("dashboard.telemetryChartLabel")}
-        height="180"
+        height="260"
+        onMouseLeave={() => setTooltip(undefined)}
         role="img"
-        viewBox="0 0 100 100"
+        viewBox={`0 0 ${chartWidth} ${chartHeight}`}
         width="100%"
       >
+        <desc>{t("dashboard.telemetryChartDescription")}</desc>
+        <defs>
+          <linearGradient id="telemetry-area-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="var(--mantine-color-gss-5)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--mantine-color-gss-1)" stopOpacity="0.03" />
+          </linearGradient>
+        </defs>
+        {yTicks.map((tick) => {
+          const y = yPosition(tick);
+          return (
+            <g key={tick}>
+              <line
+                stroke="var(--gss-border)"
+                strokeDasharray={tick === 0 ? undefined : "4 4"}
+                strokeWidth="1"
+                x1={left}
+                x2={left + plotWidth}
+                y1={y}
+                y2={y}
+              />
+              <text fill="var(--gss-muted)" fontSize="11" textAnchor="end" x={left - 9} y={y + 4}>
+                {tick}
+              </text>
+            </g>
+          );
+        })}
+        <polygon fill="url(#telemetry-area-fill)" points={areaPoints} />
         <polyline
           fill="none"
-          points={points}
+          points={linePoints}
           stroke="var(--mantine-color-gss-6)"
-          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeWidth="2.5"
           vectorEffect="non-scaling-stroke"
         />
+        {days.map((item, index) => {
+          const date = new Date(`${item.date}T00:00:00.000Z`);
+          const pointLabel = tf("dashboard.telemetryPointLabel", {
+            count: item.count,
+            date: fullDate.format(date),
+          });
+          return (
+            <g key={item.date}>
+              {(index % labelEvery === 0 || index === days.length - 1) && (
+                <text
+                  fill="var(--gss-muted)"
+                  fontSize="11"
+                  textAnchor={index === 0 ? "start" : index === days.length - 1 ? "end" : "middle"}
+                  x={xPosition(index)}
+                  y={chartHeight - 15}
+                >
+                  {shortDate.format(date)}
+                </text>
+              )}
+              <circle
+                aria-label={pointLabel}
+                cx={xPosition(index)}
+                cy={yPosition(item.count)}
+                fill="var(--gss-surface)"
+                onBlur={() => setTooltip(undefined)}
+                onFocus={(event) => showTooltip(event.currentTarget, item)}
+                onMouseEnter={(event) => showTooltip(event.currentTarget, item)}
+                r="4"
+                role="button"
+                stroke="var(--mantine-color-gss-6)"
+                strokeWidth="2"
+                tabIndex={0}
+              />
+            </g>
+          );
+        })}
       </svg>
-      <Group justify="space-between">
+      <Group align="flex-start" justify="space-between" wrap="wrap">
         <Text c="dimmed" size="xs">
-          {trend[0]?.date}
+          {t("dashboard.telemetryUtcHint")}
         </Text>
-        <Text c="dimmed" size="xs">
-          {trend.at(-1)?.date}
-        </Text>
+        {sampledCount < total ? (
+          <Text c="dimmed" size="xs">
+            {tf("dashboard.telemetrySampledHint", { count: sampledCount, total })}
+          </Text>
+        ) : null}
       </Group>
+      <ChartTooltip id="dashboard-telemetry-tooltip" state={tooltip} />
     </Stack>
   );
 }
@@ -355,11 +537,11 @@ function DashboardPage({
         }
         title={context === "admin" ? t("nav.adminDashboard") : t("nav.companyDashboard")}
       />
-      <ResponsiveContentGrid>
+      <Box className="gss-dashboard-kpi-grid" data-testid="dashboard-kpi-grid">
         {kpis.map((item) => (
           <DashboardKpiCard {...item} key={item.label} />
         ))}
-      </ResponsiveContentGrid>
+      </Box>
       {summary.severityDistribution || summary.telemetryTrend ? (
         <SimpleGrid cols={{ base: 1, lg: 2 }}>
           {summary.severityDistribution ? (
@@ -379,7 +561,11 @@ function DashboardPage({
               subtitle={t("dashboard.telemetrySubtitle")}
               title={t("dashboard.telemetryTitle")}
             >
-              <TrendChart trend={summary.telemetryTrend} />
+              <TrendChart
+                range={summary.range}
+                total={summary.kpis.telemetryReadings ?? 0}
+                trend={summary.telemetryTrend}
+              />
             </DashboardSection>
           ) : null}
         </SimpleGrid>

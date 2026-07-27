@@ -36,3 +36,11 @@ This matrix records the implementation and independent verification of the prese
 | Company | `/company/users`, `/company/roles`, `/company/settings`                   | user/role editors and settings form                                                                                     | dense collection tables + structured form workspaces            |
 
 Known documentation/code discrepancies are preserved and documented in `PHASE0_AUDIT.md`; no route or permission migration was performed.
+
+## Wave 4 closure
+
+The final route-by-route, state, responsive, accessibility and release-gate
+assessment is maintained in `WAVE4_FINAL_VERIFICATION.md`. The final fixture
+adds exact 1440x900, 1280x800, 1024x768 and 390x844 evidence without changing
+the production auth/session path. The only unresolved release-gate item is the
+existing aggregate dark shared-surface evidence helper timeout.
