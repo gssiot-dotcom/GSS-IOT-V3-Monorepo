@@ -326,5 +326,63 @@ document-level overflow. `CollectionPagination` belongs in the list header and o
 All intentional overflow surfaces use the shared light/dark blue-gray scrollbar tokens. Native
 scrollbars use `scrollbar-width`, `scrollbar-color` and the WebKit track/thumb states; Mantine
 ScrollArea uses the same tokens. The usable target is 8–10px with a rounded thumb and stronger hover
-state. Do not hide sidebar, drawer, modal, table, tab or permission-list scrollbars when overflow is
-present.
+state. Drawers, modals, tables, tabs and permission lists keep this visible treatment whenever they
+overflow. The main Admin/Company navigation sidebar is the sole product-approved exception: its
+vertical scrollbar is visually hidden with the Mantine `type="never"` contract plus targeted
+Firefox, legacy Edge/IE, WebKit and Mantine-scrollbar rules. Its viewport must retain overflow and
+remain scrollable by wheel, trackpad, touch, keyboard and script.
+
+## Date and calendar inputs
+
+- Calendar dates use the Mantine Dates package at the same version as Mantine Core, including its
+  application-level stylesheet. Native `input[type="date"]` is not the application date-picker
+  primitive.
+- Node history Day mode uses `DatePickerInput`, defaults to the browser-local current date, prevents
+  future dates, closes after selection and portals its dropdown above drawers without clipping.
+- A displayed calendar date remains a local `YYYY-MM-DD` value. API ranges are computed as local
+  midnight through the next local midnight and converted to the UTC half-open `[from, to)` contract;
+  presentation must never round-trip through a UTC date string that can shift the chosen day.
+- Labels, placeholders and accessible calendar text use i18n keys. The full control and calendar
+  trigger are keyboard/focus/touch operable.
+
+## Organization resource cards
+
+Construction Site and Building cards are domain-specific entry surfaces, not generic white boxes.
+Both use the shared GSS border, radius, focus and elevation tokens, with a restrained visual identity
+band and a large resource icon. Site cards emphasize location/context; Building cards emphasize the
+built asset, show their parent Site where available and may expose one high-value footer action such
+as Open monitoring. Status, identifier, parent and address remain readable without opening a menu.
+
+The whole card may be keyboard/click navigable when a detail route exists. Overflow actions remain
+independent and must not trigger card navigation. Grids collapse deliberately from three to two to
+one column, keep equal-height content and introduce no document-level overflow in light or dark
+themes.
+
+## Alarm operations surfaces
+
+- Alarm Rules keep their compact row presentation. Recipient Policies use a real table with Rule,
+  Target, Building, Severity, Required occurrences, Count interval seconds, Channel and Status
+  columns. There is no Actions column or Policy row menu.
+- The complete keyboard-focusable Policy row opens a detail Drawer and uses the shared interactive-
+  descendant guard. The open row has a visible selected state. Edit, activate/deactivate and archive
+  actions live only in the Drawer and remain hidden without `alarm-rules.manage`.
+- Alarm and Notification tables use leading checkboxes. Selection controls and Delete selected sit
+  left of pagination so selection state and collection navigation read as one toolbar.
+- Only resolved Alarm Events are selectable for archive. Disabled checkboxes include an accessible
+  explanation; destructive bulk operations always use a named confirmation.
+
+## Company identity, monitoring viewer and Administrator surfaces
+
+- Admin Company cards use a company-identity layout rather than the Site/Building icon rail: a
+  private logo or initials is primary, followed by code/name/status, existing contact/location and
+  one Open company footer. Equal-height three/two/one-column cards use a whole-card focus target;
+  the overflow menu remains an independent descendant and the table view is preserved.
+- The Company sidebar neutral logo plate has no inner CSS padding. Its authenticated image uses the
+  full 86px-high box with `object-fit: contain`; asset-internal transparent whitespace is never
+  corrected by stretching or cropping.
+- Realtime PLAN/REAL viewers use the shared bordered/checkerboard surface, a 420–760px responsive
+  body (360px/56vh mobile), visible controls and `grab`/`grabbing` feedback. The transform preserves
+  the fitted aspect ratio and clamps recoverable pan/zoom.
+- Administrators, GSS roles and Permissions form one translated Admin sidebar section. The
+  Administrator list uses bounded search/pagination, interactive row details and permission-limited
+  mutation controls without exposing authentication internals.

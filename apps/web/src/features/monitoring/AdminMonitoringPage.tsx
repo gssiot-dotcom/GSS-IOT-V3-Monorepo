@@ -21,6 +21,7 @@ import {
   PageHeader,
   RealtimeStatusBadge,
   StatusBadge,
+  WorkspaceTabs,
 } from "@gss-iot/ui";
 import { Box, Button, Card, Group, Select, SimpleGrid, Stack, Text } from "@mantine/core";
 import {
@@ -40,6 +41,8 @@ import { t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
+import { hasPermission } from "../../shared/rbac/has-permission";
+import { BuildingImageViewerPanel } from "./components/BuildingImageViewer";
 import { NodeDetailDrawer } from "./components/NodeDetailDrawer";
 import { NodeStateCard } from "./components/NodeStateCard";
 import { MonitoringViewToggle, type MonitoringView } from "./components/MonitoringViewToggle";
@@ -63,6 +66,9 @@ export function AdminMonitoringPage() {
   const [nodeResponse, setNodeResponse] = useState<MonitoringNodeTypeResponse>();
   const [history, setHistory] = useState<PaginatedSensorHistory>();
   const [historyChart, setHistoryChart] = useState<SensorHistoryChartResponse>();
+  const [workspaceTab, setWorkspaceTab] = useState<"plan-image" | "real-image" | "states">(
+    "states",
+  );
   const [historyError, setHistoryError] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
@@ -242,7 +248,16 @@ export function AdminMonitoringPage() {
     [states],
   );
   const selectedNode = states.find((state) => state.nodeId === selectedNodeId);
+  const canViewBuildingImages = hasPermission(session, "building-plans.view");
   const realtimeLabel = t(`monitoring.realtime.${realtimeStatus}` as never);
+
+  useEffect(() => {
+    setWorkspaceTab("states");
+  }, [buildingId, nodeType]);
+
+  useEffect(() => {
+    if (!canViewBuildingImages && workspaceTab !== "states") setWorkspaceTab("states");
+  }, [canViewBuildingImages, workspaceTab]);
 
   if (loading || !options || !summary) {
     if (error)
@@ -400,22 +415,48 @@ export function AdminMonitoringPage() {
               );
             })}
           </SimpleGrid>
-          {nodeType && states.length ? (
+          {nodeType && (states.length || canViewBuildingImages) ? (
             <Card>
               <Stack gap="md">
                 <Group justify="space-between">
-                  <Text fw={600}>
-                    {t(nodeTypeText[nodeType as keyof typeof nodeTypeText].title)}
-                  </Text>
-                  <MonitoringViewToggle
-                    onChange={(next) => {
-                      setView(next);
-                      window.localStorage.setItem("gss.monitoring.admin.view", next);
-                    }}
-                    value={view}
+                  <WorkspaceTabs
+                    ariaLabel={t("monitoring.title")}
+                    items={[
+                      { label: t("monitoring.latestStates"), value: "states" },
+                      ...(canViewBuildingImages
+                        ? [
+                            { label: t("monitoring.buildingPlanImage"), value: "plan-image" },
+                            { label: t("monitoring.realImage"), value: "real-image" },
+                          ]
+                        : []),
+                    ]}
+                    onChange={(value) =>
+                      setWorkspaceTab(value as "plan-image" | "real-image" | "states")
+                    }
+                    value={workspaceTab}
                   />
+                  {workspaceTab === "states" ? (
+                    <MonitoringViewToggle
+                      onChange={(next) => {
+                        setView(next);
+                        window.localStorage.setItem("gss.monitoring.admin.view", next);
+                      }}
+                      value={view}
+                    />
+                  ) : null}
                 </Group>
-                {view === "CARD" ? (
+                {workspaceTab === "plan-image" || workspaceTab === "real-image" ? (
+                  <BuildingImageViewerPanel
+                    basePath="/admin"
+                    buildingId={buildingId}
+                    kind={workspaceTab === "plan-image" ? "PLAN" : "REAL"}
+                  />
+                ) : !states.length ? (
+                  <EmptyState
+                    description={t("monitoring.emptyNodes")}
+                    title={t("common.emptyTitle")}
+                  />
+                ) : view === "CARD" ? (
                   <SimpleGrid
                     cols={{ base: 1, xs: 2, sm: 3, lg: 5 }}
                     data-testid="monitoring-node-grid"

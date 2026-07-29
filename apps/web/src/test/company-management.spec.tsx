@@ -109,7 +109,10 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function mockFetch(session: AuthSession = companySession, options: { usersStatus?: number } = {}) {
+function mockFetch(
+  session: AuthSession = companySession,
+  options: { usersStatus?: number; withPositionAssignment?: boolean } = {},
+) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(String(input));
     if (url.href === `${apiBaseUrl}/auth/company/me`) return jsonResponse(session);
@@ -132,7 +135,24 @@ function mockFetch(session: AuthSession = companySession, options: { usersStatus
           isActive: true,
           name: "Worker",
           permissions: [],
-          positionAssignments: [],
+          positionAssignments: options.withPositionAssignment
+            ? [
+                {
+                  areaId: "area-1",
+                  assignedAt: "2026-07-20T00:00:00.000Z",
+                  buildingId: "building-1",
+                  id: "assignment-1",
+                  position: {
+                    companyId: "company-1",
+                    id: "position-1",
+                    isActive: true,
+                    key: "safety_owner",
+                    name: "Safety Owner",
+                  },
+                  positionId: "position-1",
+                },
+              ]
+            : [],
           role: {
             id: "role-custom",
             isCompanyOwnerRole: false,
@@ -238,8 +258,45 @@ function mockFetch(session: AuthSession = companySession, options: { usersStatus
     if (url.pathname.startsWith("/company/building-images/") && init.method === "DELETE") {
       return jsonResponse({});
     }
-    if (url.pathname === "/company/positions")
-      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
+    if (url.pathname === "/company/positions") {
+      const items = options.withPositionAssignment
+        ? [
+            {
+              companyId: "company-1",
+              dependencies: {
+                activeAssignments: 1,
+                activePolicies: 0,
+                historicalAssignments: 0,
+                historicalPolicies: 0,
+              },
+              deletion: {
+                allowed: false,
+                blocker: "Remove 1 active assignment(s) first.",
+                code: "COMPANY_POSITION_HAS_ACTIVE_DEPENDENCIES",
+                mode: "NOT_ALLOWED",
+              },
+              id: "position-1",
+              isActive: true,
+              key: "safety_owner",
+              name: "Safety Owner",
+            },
+          ]
+        : [];
+      return jsonResponse({ items, page: 1, pageSize: 100, total: items.length });
+    }
+    if (url.pathname === "/company/users/user-1/effective-access") {
+      return jsonResponse({
+        assignedAreas: [],
+        assignedBuildings: [],
+        directAllowPermissions: [],
+        directDenyPermissions: [],
+        effectivePermissions: [],
+        inheritedBuildings: [],
+        positionAssignments: [],
+        rolePermissions: [],
+        user: {},
+      });
+    }
     if (url.href === `${apiBaseUrl}/company/roles/role-custom`) return jsonResponse(roles[1]);
     return jsonResponse({}, 200);
   });
@@ -440,6 +497,36 @@ describe("company management UI", () => {
         );
       }),
     ).toBe(true);
+  });
+
+  it("removes a saved position assignment and submits an empty replacement list", async () => {
+    storeCompanySession();
+    const fetchMock = mockFetch(companySession, { withPositionAssignment: true });
+    renderApp("/company/users");
+
+    fireEvent.click(await screen.findByText("Worker"));
+    const userDialog = await screen.findByRole("dialog", { name: "Edit user" });
+    fireEvent.click(within(userDialog).getByRole("button", { name: "Remove position assignment" }));
+    const confirmDialog = await screen.findByRole("dialog", {
+      name: "Remove saved position assignment?",
+    });
+    fireEvent.click(
+      within(confirmDialog).getByRole("button", { name: "Remove position assignment" }),
+    );
+    expect(within(userDialog).getByText(/No active position assignments/)).toBeTruthy();
+    fireEvent.click(within(userDialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([input, init]) => {
+          return (
+            String(input) === `${apiBaseUrl}/company/users/user-1/positions` &&
+            init?.method === "PATCH" &&
+            String(init.body) === JSON.stringify({ assignments: [] })
+          );
+        }),
+      ).toBe(true),
+    );
   });
 
   it("renders roles page from company-roles.view without permission catalog reads", async () => {

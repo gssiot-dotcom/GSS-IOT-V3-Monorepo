@@ -105,7 +105,7 @@ describe("private building-image storage", () => {
   });
 
   it("keeps failed deletions durable and completes them idempotently on retry", async () => {
-    let state = BuildingImageDeletionState.ACTIVE;
+    let state: BuildingImageDeletionState = BuildingImageDeletionState.ACTIVE;
     let deleted = false;
     let attempts = 0;
     const image = {

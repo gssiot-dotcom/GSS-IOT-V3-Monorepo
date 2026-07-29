@@ -55,6 +55,10 @@ describe("Portal sidebar", () => {
     expect(screen.getAllByText("Devices").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "Devices" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Gateway commands" })).toBeTruthy();
+    expect(screen.getAllByText("Administrators").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("link", { name: "Administrators" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "GSS roles" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Permissions" })).toBeTruthy();
     const blueHeaderLogos = (
       screen.getAllByAltText("Global Smart Solutions") as HTMLImageElement[]
     ).filter((logo) => logo.src.endsWith("/assets/gss-logos/Gss-logo-blue.svg"));
@@ -68,6 +72,9 @@ describe("Portal sidebar", () => {
     const viewport = document.querySelector(".gss-sidebar-scrollarea-viewport");
     expect(scrollArea).toBeTruthy();
     expect(viewport).toBeTruthy();
-    expect(viewport?.getAttribute("data-scrollbars")).toBe("xy");
+    expect(viewport?.getAttribute("data-scrollbars")).toBe("y");
+    expect(scrollArea?.querySelector("[data-mantine-scrollbar]")?.getAttribute("data-hidden")).toBe(
+      "true",
+    );
   });
 });

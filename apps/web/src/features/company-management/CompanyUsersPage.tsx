@@ -33,6 +33,7 @@ import {
 } from "@gss-iot/ui";
 import {
   Alert,
+  ActionIcon,
   Badge,
   Button,
   Checkbox,
@@ -40,14 +41,17 @@ import {
   Group,
   Modal,
   MultiSelect,
+  Paper,
   Select,
   SimpleGrid,
   Stack,
   Text,
   TextInput,
+  Tooltip,
 } from "@mantine/core";
 import {
   IconEdit,
+  IconInfoCircle,
   IconPlayerPause,
   IconPlayerPlay,
   IconPlus,
@@ -55,6 +59,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { t, tf } from "../../app/i18n";
 import { hasPermission } from "../../shared/rbac/has-permission";
@@ -67,6 +72,7 @@ interface AccessForm {
 interface PositionAssignmentForm {
   areaId: string | null;
   buildingId: string | null;
+  id?: string;
   positionId: string;
 }
 
@@ -100,6 +106,7 @@ const emptyUserForm: UserFormState = {
 
 export function CompanyUsersPage() {
   const { session } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState<CompanyUserRecord[]>();
   const [roles, setRoles] = useState<CompanyRoleRecord[]>([]);
   const [permissions, setPermissions] = useState<CompanyPermissionRecord[]>([]);
@@ -114,12 +121,17 @@ export function CompanyUsersPage() {
   const [form, setForm] = useState<UserFormState>(emptyUserForm);
   const [positionKey, setPositionKey] = useState("");
   const [positionName, setPositionName] = useState("");
+  const [dependencyPosition, setDependencyPosition] = useState<CompanyPositionRecord | null>(null);
+  const [assignmentRemovalIndex, setAssignmentRemovalIndex] = useState<number | null>(null);
+  const [userFormError, setUserFormError] = useState("");
+  const [savingUser, setSavingUser] = useState(false);
   const [pendingMutation, setPendingMutation] = useState<{
     action: "DELETE" | "STATUS";
     id: string;
     kind: "position" | "user";
     name: string;
     isActive?: boolean;
+    deleteMode?: "HARD_DELETE" | "SOFT_DELETE";
   } | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const [mutationError, setMutationError] = useState<string>();
@@ -234,6 +246,7 @@ export function CompanyUsersPage() {
     setEditingUser(null);
     setPreview(null);
     setForm(emptyUserForm);
+    setUserFormError("");
     setUserModalOpened(true);
   };
 
@@ -267,10 +280,12 @@ export function CompanyUsersPage() {
         user.positionAssignments?.map((assignment) => ({
           areaId: assignment.areaId,
           buildingId: assignment.buildingId,
+          id: assignment.id,
           positionId: assignment.positionId,
         })) ?? [],
       roleId: user.roleId,
     });
+    setUserFormError("");
     if (session) {
       setPreview(
         await apiRequest<CompanyUserEffectiveAccessRecord>(
@@ -304,57 +319,109 @@ export function CompanyUsersPage() {
   };
 
   const saveUser = async () => {
-    if (!session || !form.roleId) return;
-    const directPermissions = [
-      ...form.directAllowIds.map((permissionId) => ({
-        effect: "ALLOW" as PermissionEffect,
-        permissionId,
-      })),
-      ...form.directDenyIds.map((permissionId) => ({
-        effect: "DENY" as PermissionEffect,
-        permissionId,
-      })),
-    ].filter((permission, index, permissions) => {
-      return (
-        permissions.findIndex((candidate) => candidate.permissionId === permission.permissionId) ===
-        index
-      );
-    });
-    const body = JSON.stringify({
-      areaAccess: form.areaAccess.map(({ accessLevel, id }) => ({ accessLevel, areaId: id })),
-      buildingAccess: form.buildingAccess.map(({ accessLevel, id }) => ({
-        accessLevel,
-        buildingId: id,
-      })),
-      directPermissions,
-      email: form.email,
-      isActive: form.isActive,
-      name: form.name,
-      password: form.password || undefined,
-      phone: form.phone || undefined,
-      roleId: form.roleId,
-    });
-    let userId = editingUser?.id;
-    if (editingUser) {
-      await apiRequest(session, `/company/users/${editingUser.id}`, { body, method: "PATCH" });
-    } else {
-      const created = await apiRequest<CompanyUserRecord>(session, "/company/users", {
-        body,
-        method: "POST",
-      });
-      userId = created.id;
+    if (!session || !form.roleId || savingUser) return;
+    setUserFormError("");
+    const assignmentKeys = form.positionAssignments.map(
+      ({ areaId, buildingId, positionId }) =>
+        `${positionId}:${areaId ?? "company"}:${buildingId ?? "company"}`,
+    );
+    if (form.positionAssignments.some(({ positionId }) => !positionId)) {
+      setUserFormError(t("management.positionAssignmentRequired"));
+      return;
     }
-    if (userId) {
-      await apiRequest(session, `/company/users/${userId}/positions`, {
-        body: JSON.stringify({ assignments: form.positionAssignments }),
-        method: "PATCH",
-      });
+    if (new Set(assignmentKeys).size !== assignmentKeys.length) {
+      setUserFormError(t("management.duplicatePositionAssignment"));
+      return;
     }
-    setUserModalOpened(false);
-    setEditingUser(null);
-    setPreview(null);
-    setForm(emptyUserForm);
-    await load();
+    setSavingUser(true);
+    try {
+      const directPermissions = [
+        ...form.directAllowIds.map((permissionId) => ({
+          effect: "ALLOW" as PermissionEffect,
+          permissionId,
+        })),
+        ...form.directDenyIds.map((permissionId) => ({
+          effect: "DENY" as PermissionEffect,
+          permissionId,
+        })),
+      ].filter((permission, index, permissions) => {
+        return (
+          permissions.findIndex(
+            (candidate) => candidate.permissionId === permission.permissionId,
+          ) === index
+        );
+      });
+      const body = JSON.stringify({
+        areaAccess: form.areaAccess.map(({ accessLevel, id }) => ({ accessLevel, areaId: id })),
+        buildingAccess: form.buildingAccess.map(({ accessLevel, id }) => ({
+          accessLevel,
+          buildingId: id,
+        })),
+        directPermissions,
+        email: form.email,
+        isActive: form.isActive,
+        name: form.name,
+        password: form.password || undefined,
+        phone: form.phone || undefined,
+        roleId: form.roleId,
+      });
+      let userId = editingUser?.id;
+      if (editingUser) {
+        await apiRequest(session, `/company/users/${editingUser.id}`, { body, method: "PATCH" });
+      } else {
+        const created = await apiRequest<CompanyUserRecord>(session, "/company/users", {
+          body,
+          method: "POST",
+        });
+        userId = created.id;
+      }
+      if (userId) {
+        await apiRequest(session, `/company/users/${userId}/positions`, {
+          body: JSON.stringify({
+            assignments: form.positionAssignments.map(({ areaId, buildingId, positionId }) => ({
+              areaId,
+              buildingId,
+              positionId,
+            })),
+          }),
+          method: "PATCH",
+        });
+      }
+      setUserModalOpened(false);
+      setEditingUser(null);
+      setPreview(null);
+      setForm(emptyUserForm);
+      await load();
+    } catch (error) {
+      setUserFormError(error instanceof ApiError ? error.message : t("common.errorDescription"));
+    } finally {
+      setSavingUser(false);
+    }
+  };
+
+  const removePositionAssignment = (index: number) => {
+    const assignment = form.positionAssignments[index];
+    if (assignment?.id) {
+      setAssignmentRemovalIndex(index);
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      positionAssignments: current.positionAssignments.filter(
+        (_, itemIndex) => itemIndex !== index,
+      ),
+    }));
+  };
+
+  const confirmAssignmentRemoval = () => {
+    if (assignmentRemovalIndex === null) return;
+    setForm((current) => ({
+      ...current,
+      positionAssignments: current.positionAssignments.filter(
+        (_, itemIndex) => itemIndex !== assignmentRemovalIndex,
+      ),
+    }));
+    setAssignmentRemovalIndex(null);
   };
 
   const createPosition = async () => {
@@ -383,6 +450,7 @@ export function CompanyUsersPage() {
           : { body: JSON.stringify({ isActive: pendingMutation.isActive }), method: "PATCH" },
       );
       await load();
+      if (pendingMutation.kind === "position") setDependencyPosition(null);
       setPendingMutation(null);
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
@@ -688,8 +756,19 @@ export function CompanyUsersPage() {
             ))}
           </FormSection>
           <FormSection title={t("management.positionAssignments")}>
+            {userFormError ? <Alert color="red">{userFormError}</Alert> : null}
+            {!form.positionAssignments.length ? (
+              <Paper bg="gray.0" p="md" radius="md" withBorder>
+                <Text c="dimmed" size="sm">
+                  {t("management.noPositionAssignments")}
+                </Text>
+              </Paper>
+            ) : null}
             {form.positionAssignments.map((assignment, index) => (
-              <SimpleGrid cols={{ base: 1, md: 3 }} key={`${assignment.positionId}-${index}`}>
+              <SimpleGrid
+                cols={{ base: 1, md: 4 }}
+                key={assignment.id ?? `${assignment.positionId}-${index}`}
+              >
                 <Select
                   data={positionOptions}
                   label={t("management.position")}
@@ -734,6 +813,18 @@ export function CompanyUsersPage() {
                   }
                   value={assignment.buildingId}
                 />
+                <Group align="end" justify="flex-end">
+                  <Tooltip label={t("management.removePositionAssignment")}>
+                    <ActionIcon
+                      aria-label={t("management.removePositionAssignment")}
+                      color="red"
+                      onClick={() => removePositionAssignment(index)}
+                      variant="subtle"
+                    >
+                      <IconTrash size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
               </SimpleGrid>
             ))}
             <Button
@@ -780,6 +871,7 @@ export function CompanyUsersPage() {
             </Button>
             <Button
               disabled={!form.name || !form.email || !form.roleId}
+              loading={savingUser}
               onClick={() => void saveUser()}
             >
               {t("organizations.save")}
@@ -810,6 +902,24 @@ export function CompanyUsersPage() {
                 ),
               },
               {
+                key: "dependencies",
+                label: t("management.dependencies"),
+                render: (position) => (
+                  <Group gap={4} wrap="wrap">
+                    <Badge color={position.dependencies?.activeAssignments ? "orange" : "gray"}>
+                      {tf("management.activeAssignmentsCount", {
+                        count: position.dependencies?.activeAssignments ?? 0,
+                      })}
+                    </Badge>
+                    <Badge color={position.dependencies?.activePolicies ? "orange" : "gray"}>
+                      {tf("management.activePoliciesCount", {
+                        count: position.dependencies?.activePolicies ?? 0,
+                      })}
+                    </Badge>
+                  </Group>
+                ),
+              },
+              {
                 key: "action",
                 label: t("organizations.actions"),
                 align: "right",
@@ -818,6 +928,12 @@ export function CompanyUsersPage() {
                     <EntityActionMenu
                       ariaLabel={`${t("common.moreActions")}: ${position.name}`}
                       items={[
+                        {
+                          icon: <IconInfoCircle size={16} />,
+                          key: "dependencies",
+                          label: t("management.reviewDependencies"),
+                          onClick: () => setDependencyPosition(position),
+                        },
                         {
                           icon: position.isActive ? (
                             <IconPlayerPause size={16} />
@@ -846,12 +962,20 @@ export function CompanyUsersPage() {
                           disabledReason: position.deletion?.blocker ?? undefined,
                           icon: <IconTrash size={16} />,
                           key: "delete",
-                          label: t("organizations.deletePermanently"),
+                          label: t(
+                            position.deletion?.mode === "SOFT_DELETE"
+                              ? "management.archivePosition"
+                              : "organizations.deletePermanently",
+                          ),
                           onClick: () =>
                             setPendingMutation({
                               action: "DELETE",
                               kind: "position",
                               id: position.id,
+                              deleteMode:
+                                position.deletion?.mode === "SOFT_DELETE"
+                                  ? "SOFT_DELETE"
+                                  : "HARD_DELETE",
                               name: position.name,
                             }),
                         },
@@ -862,6 +986,57 @@ export function CompanyUsersPage() {
             ]}
             rows={positions}
           />
+          {dependencyPosition ? (
+            <Paper p="md" radius="md" withBorder>
+              <Stack gap="xs">
+                <Group justify="space-between">
+                  <Text fw={600}>
+                    {tf("management.positionDependencyTitle", {
+                      name: dependencyPosition.name,
+                    })}
+                  </Text>
+                  <Button onClick={() => setDependencyPosition(null)} size="xs" variant="subtle">
+                    {t("common.cancel")}
+                  </Button>
+                </Group>
+                <Text c="dimmed" size="sm">
+                  {t("management.positionDependencyHelp")}
+                </Text>
+                <SimpleGrid cols={{ base: 2, md: 4 }}>
+                  <Text size="sm">
+                    {tf("management.activeAssignmentsCount", {
+                      count: dependencyPosition.dependencies?.activeAssignments ?? 0,
+                    })}
+                  </Text>
+                  <Text size="sm">
+                    {tf("management.historicalAssignmentsCount", {
+                      count: dependencyPosition.dependencies?.historicalAssignments ?? 0,
+                    })}
+                  </Text>
+                  <Text size="sm">
+                    {tf("management.activePoliciesCount", {
+                      count: dependencyPosition.dependencies?.activePolicies ?? 0,
+                    })}
+                  </Text>
+                  <Text size="sm">
+                    {tf("management.historicalPoliciesCount", {
+                      count: dependencyPosition.dependencies?.historicalPolicies ?? 0,
+                    })}
+                  </Text>
+                </SimpleGrid>
+                <Group>
+                  <Button onClick={() => setPositionModalOpened(false)} variant="light">
+                    {t("management.reviewUsers")}
+                  </Button>
+                  {hasPermission(session, "alarm-rules.view") ? (
+                    <Button onClick={() => navigate("/company/alarm-rules")} variant="light">
+                      {t("management.reviewAlarmPolicies")}
+                    </Button>
+                  ) : null}
+                </Group>
+              </Stack>
+            </Paper>
+          ) : null}
           <Divider label={t("management.createPosition")} />
           <SimpleGrid cols={{ base: 1, md: 2 }}>
             <TextInput
@@ -891,14 +1066,18 @@ export function CompanyUsersPage() {
         cancelLabel={t("common.cancel")}
         confirmLabel={t(
           pendingMutation?.action === "DELETE"
-            ? "organizations.deletePermanently"
+            ? pendingMutation.deleteMode === "SOFT_DELETE"
+              ? "management.archivePosition"
+              : "organizations.deletePermanently"
             : pendingMutation?.isActive
               ? "organizations.activate"
               : "organizations.deactivate",
         )}
         description={t(
           pendingMutation?.action === "DELETE"
-            ? "organizations.confirmPermanentDeleteImpact"
+            ? pendingMutation.deleteMode === "SOFT_DELETE"
+              ? "management.confirmArchivePositionImpact"
+              : "organizations.confirmPermanentDeleteImpact"
             : pendingMutation?.isActive
               ? "organizations.confirmActivateImpact"
               : "organizations.confirmDeactivateImpact",
@@ -912,11 +1091,30 @@ export function CompanyUsersPage() {
         opened={Boolean(pendingMutation)}
         title={t(
           pendingMutation?.action === "DELETE"
-            ? "organizations.confirmPermanentDeleteTitle"
+            ? pendingMutation.deleteMode === "SOFT_DELETE"
+              ? "management.confirmArchivePositionTitle"
+              : "organizations.confirmPermanentDeleteTitle"
             : pendingMutation?.isActive
               ? "organizations.confirmActivateTitle"
               : "organizations.confirmDeactivateTitle",
         )}
+      />
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("management.removePositionAssignment")}
+        description={t("management.confirmRemovePositionAssignmentImpact")}
+        entityName={
+          assignmentRemovalIndex === null
+            ? ""
+            : (positions.find(
+                (position) =>
+                  position.id === form.positionAssignments[assignmentRemovalIndex]?.positionId,
+              )?.name ?? "")
+        }
+        onClose={() => setAssignmentRemovalIndex(null)}
+        onConfirm={confirmAssignmentRemoval}
+        opened={assignmentRemovalIndex !== null}
+        title={t("management.confirmRemovePositionAssignmentTitle")}
       />
     </Stack>
   );

@@ -47,6 +47,7 @@ import {
   CompanySettingsPage,
   GssRolesPage,
 } from "../features/settings/SettingsPages";
+import { GssAdministratorsPage } from "../features/settings/GssAdministratorsPage";
 import { DesignSystemDemoPage } from "../features/shell/DesignSystemDemoPage";
 import { adminNavItems, companyNavItems } from "../features/shell/navigation";
 import { NotFoundPage } from "../features/shell/NotFoundPage";
@@ -137,6 +138,8 @@ export function AppRouter(): ReactElement {
                       <AdminNotificationsPage />
                     ) : item.path === "/admin/reports" ? (
                       <AdminReportsPage />
+                    ) : item.path === "/admin/settings/admin-users" ? (
+                      <GssAdministratorsPage />
                     ) : item.path === "/admin/settings/roles" ? (
                       <GssRolesPage />
                     ) : item.path === "/admin/settings/permissions" ? (

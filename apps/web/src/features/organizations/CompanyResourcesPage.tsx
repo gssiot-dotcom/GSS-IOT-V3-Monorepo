@@ -14,19 +14,16 @@ import {
   DataViewToggle,
   EmptyState,
   EntityActionMenu,
-  EntityCard,
   EntityCardGrid,
-  EntityMetric,
   EntityPrimaryCell,
   EntityStatusBadge,
-  EntityStatusRow,
   ErrorState,
   LoadingState,
   ConfirmActionModal,
   ModalFormFooter,
   PageHeader,
 } from "@gss-iot/ui";
-import { Alert, Button, Group, Modal, Select, Stack, Text, TextInput } from "@mantine/core";
+import { Alert, Button, Modal, Select, Stack, Text, TextInput } from "@mantine/core";
 import {
   IconArrowUpRight,
   IconPlayerPause,
@@ -39,6 +36,7 @@ import { useNavigate } from "react-router-dom";
 
 import { t, tf } from "../../app/i18n";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { OrganizationResourceCard } from "./OrganizationResourceCard";
 
 export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildings" }) {
   const { session } = useAuth();
@@ -202,8 +200,10 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
                     ? (row.address ?? row.description)
                     : (row.address ?? row.buildingType);
                 const identifier = "name" in row ? row.id.slice(0, 8) : (row.number ?? "-");
+                const parent =
+                  "name" in row ? undefined : areas.find((area) => area.id === row.areaId)?.name;
                 return (
-                  <EntityCard
+                  <OrganizationResourceCard
                     action={
                       <EntityActionMenu
                         ariaLabel={`${t("common.moreActions")}: ${name}`}
@@ -214,16 +214,6 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
                             label: t("organizations.open"),
                             onClick: () => navigate(openPath(row.id)),
                           },
-                          ...(!isAreas && hasPermission(session, "monitoring.view")
-                            ? [
-                                {
-                                  icon: <IconPlugConnected size={16} />,
-                                  key: "monitoring",
-                                  label: t("monitoring.open"),
-                                  onClick: () => navigate(monitoringPath(row.id)),
-                                },
-                              ]
-                            : []),
                           ...(hasPermission(session, updatePermission)
                             ? [
                                 {
@@ -268,33 +258,31 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
                       />
                     }
                     description={detail ?? undefined}
-                    eyebrow={
-                      isAreas ? t("organizations.areasTitle") : t("organizations.buildingsTitle")
+                    footer={
+                      !isAreas && hasPermission(session, "monitoring.view") ? (
+                        <Button
+                          fullWidth
+                          leftSection={<IconPlugConnected size={16} />}
+                          onClick={() => navigate(monitoringPath(row.id))}
+                          size="xs"
+                          variant="light"
+                        >
+                          {t("monitoring.open")}
+                        </Button>
+                      ) : undefined
                     }
+                    identifier={identifier}
                     key={row.id}
+                    kind={isAreas ? "site" : "building"}
+                    kindLabel={isAreas ? t("organizations.area") : t("organizations.building")}
                     onClick={() => navigate(openPath(row.id))}
+                    parent={parent}
+                    status={row.status}
+                    statusLabel={
+                      row.status === "ACTIVE" ? t("management.active") : t("management.inactive")
+                    }
                     title={name}
-                  >
-                    <EntityStatusRow
-                      label={t("organizations.status")}
-                      value={
-                        <EntityStatusBadge
-                          label={
-                            row.status === "ACTIVE"
-                              ? t("management.active")
-                              : t("management.inactive")
-                          }
-                          status={row.status === "ACTIVE" ? "active" : "inactive"}
-                        />
-                      }
-                    />
-                    <Group gap="lg">
-                      <EntityMetric
-                        label={isAreas ? t("organizations.code") : t("devices.nodeNumber")}
-                        value={identifier}
-                      />
-                    </Group>
-                  </EntityCard>
+                  />
                 );
               })}
             </EntityCardGrid>

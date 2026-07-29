@@ -12,6 +12,9 @@ Both routes require `dashboard.view`. The API resolves the Company user's effect
 ## Metric definitions
 
 - `activeCompanies`, `activeSites`, and `activeBuildings` count active organization rows. Company users receive only active sites/buildings represented by their effective scope.
+- `activeCompanyUsers` is returned on the Company Dashboard only. It counts active `CompanyUser`
+  rows belonging to the Company derived from the authenticated principal; the request accepts no
+  Company ID and inactive users are excluded.
 - `gateways` and `nodes` count devices visible to the principal through active company or building assignment. `online` means a gateway has a `lastSeenAt` within five minutes of query time; null or older gateways are `offline`.
 - `unassigned` counts visible gateways/nodes with neither an active company assignment nor an active building/gateway assignment.
 - `nodesByLifecycle` groups visible nodes by the persisted lifecycle status (`ACTIVE`, `INACTIVE`, `RETIRED`).

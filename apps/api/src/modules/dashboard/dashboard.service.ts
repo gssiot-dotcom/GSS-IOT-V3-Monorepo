@@ -57,14 +57,18 @@ export class DashboardService {
       summary.kpis.activeBuildings = activeBuildings;
     } else if (auth.context === AUTH_CONTEXT.companyUser) {
       const locationWhere = this.locationWhere(scope);
-      const [activeSites, activeBuildings] = await Promise.all([
+      const [activeSites, activeBuildings, activeCompanyUsers] = await Promise.all([
         this.prisma.constructionArea.count({
           where: { companyId: scope.companyId, id: { in: scope.areaIds ?? [] }, status: "ACTIVE" },
         }),
         this.prisma.constructionBuilding.count({ where: { ...locationWhere, status: "ACTIVE" } }),
+        this.prisma.companyUser.count({
+          where: { companyId: scope.companyId, isActive: true },
+        }),
       ]);
       summary.kpis.activeSites = activeSites;
       summary.kpis.activeBuildings = activeBuildings;
+      summary.kpis.activeCompanyUsers = activeCompanyUsers;
     }
 
     if (can(auth.context === AUTH_CONTEXT.gssAdmin ? "devices.view" : "company-devices.view")) {

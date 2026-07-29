@@ -68,6 +68,7 @@ type DeleteTarget = {
   id: string;
   kind: "gateway" | "node";
   label: string;
+  mode: "HARD_DELETE" | "SOFT_DELETE";
 };
 
 type UnassignTarget = {
@@ -326,28 +327,15 @@ export function AdminDevicesPage() {
       );
       setDeleteTarget(undefined);
       await load();
-      setSuccessMessage(t("devices.deleted"));
+      setSuccessMessage(
+        t(deleteTarget.mode === "SOFT_DELETE" ? "devices.retired" : "devices.deleted"),
+      );
     } catch (error) {
       setFormError(error instanceof Error ? error.message : t("devices.deleteFailed"));
     }
   };
 
-  const deleteBlockerLabel = (blocker: string | null) => {
-    switch (blocker) {
-      case "companyAssignmentHistory":
-        return t("devices.deleteBlockedCompanyAssignment");
-      case "buildingAssignmentHistory":
-        return t("devices.deleteBlockedBuildingAssignment");
-      case "nodeAssignmentHistory":
-        return t("devices.deleteBlockedNodeAssignment");
-      case "commandHistory":
-        return t("devices.deleteBlockedCommand");
-      case "provisioningHistory":
-        return t("devices.deleteBlockedProvisioning");
-      default:
-        return blocker ? t("devices.deleteBlockedHistory") : t("devices.deleteAllowed");
-    }
-  };
+  const deleteBlockerLabel = (blocker: string | null) => blocker ?? t("devices.deleteAllowed");
 
   const assign = async () => {
     if (!session || !assignmentTarget) return;
@@ -510,13 +498,18 @@ export function AdminDevicesPage() {
               disabledReason: deleteBlockerLabel(row.deletion?.blocker ?? null),
               icon: <IconTrash size={16} />,
               key: "delete",
-              label: t("devices.deleteGateway"),
+              label: t(
+                row.deletion?.mode === "SOFT_DELETE"
+                  ? "devices.retireGateway"
+                  : "devices.deleteGateway",
+              ),
               onClick: () =>
                 setDeleteTarget({
                   blocker: row.deletion?.blocker ?? null,
                   id: row.id,
                   kind: "gateway",
                   label: row.serialNumber,
+                  mode: row.deletion?.mode === "SOFT_DELETE" ? "SOFT_DELETE" : "HARD_DELETE",
                 }),
             },
           ]
@@ -608,13 +601,16 @@ export function AdminDevicesPage() {
               disabledReason: deleteBlockerLabel(row.deletion?.blocker ?? null),
               icon: <IconTrash size={16} />,
               key: "delete",
-              label: t("devices.deleteNode"),
+              label: t(
+                row.deletion?.mode === "SOFT_DELETE" ? "devices.retireNode" : "devices.deleteNode",
+              ),
               onClick: () =>
                 setDeleteTarget({
                   blocker: row.deletion?.blocker ?? null,
                   id: row.id,
                   kind: "node",
                   label: row.number,
+                  mode: row.deletion?.mode === "SOFT_DELETE" ? "SOFT_DELETE" : "HARD_DELETE",
                 }),
             },
           ]
@@ -1111,13 +1107,23 @@ export function AdminDevicesPage() {
       </Modal>
       <ConfirmActionModal
         cancelLabel={t("common.cancel")}
-        confirmLabel={t("devices.confirmDelete")}
-        description={t("devices.confirmDeleteImpact")}
+        confirmLabel={t(
+          deleteTarget?.mode === "SOFT_DELETE" ? "devices.retire" : "devices.confirmDelete",
+        )}
+        description={t(
+          deleteTarget?.mode === "SOFT_DELETE"
+            ? "devices.confirmRetireImpact"
+            : "devices.confirmDeleteImpact",
+        )}
         entityName={deleteTarget?.label ?? ""}
         onClose={() => setDeleteTarget(undefined)}
         onConfirm={() => void deleteDevice()}
         opened={Boolean(deleteTarget)}
-        title={t("devices.confirmDeleteTitle")}
+        title={t(
+          deleteTarget?.mode === "SOFT_DELETE"
+            ? "devices.confirmRetireTitle"
+            : "devices.confirmDeleteTitle",
+        )}
       />
       <ConfirmActionModal
         cancelLabel={t("common.cancel")}

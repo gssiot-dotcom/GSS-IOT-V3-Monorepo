@@ -12,6 +12,24 @@ Phase 12 notifications and alarm operations UI is `PHASE_12_COMPLETE` as of 2026
 
 ## Current repository status
 
+- Targeted 2026-07-28 alarm/organization upgrade: ordinary Alarm Rule/Policy Delete is now an
+  evidence-safe archive that stops evaluation/delivery without cascading alarm, trigger,
+  notification, delivery or audit history. Alarm and Notification lists support atomic scoped bulk
+  archive (resolved-only for events). Policy management now has complete operational columns and a
+  detail/action drawer. Company/Admin Construction Site and Building cards use a shared
+  domain-specific responsive presentation.
+- Database upgrade: forward migration `20260728110000_alarm_rule_policy_archive` adds nullable
+  archive actor/time fields and active-list indexes to Alarm Rules and Recipient Policies.
+  Production order is migrate → API → Web.
+- Targeted 2026-07-27 lifecycle/UI correction: Admin and Company navigation keep an invisible but
+  operable vertical scrollbar; Node Day history uses a real Mantine calendar and preserves local-day
+  UTC half-open ranges in both portals. Gateway/Node Delete now blocks only active operations,
+  hard-deletes pristine inventory and retires history-bearing inventory. Company users can remove
+  the final saved Position assignment, recipient policies can be edited through the existing PATCH
+  APIs, and Position dependency counts guide operators to an evidence-safe hard delete or archive.
+- Database correction: forward migration
+  `20260727220000_device_retirement_position_archive` adds only Position archive actor/time fields
+  and an active-list index. Production order is migrate → API → Web; no `db push` is permitted.
 - Application source: NestJS API keeps the Phase 1 separate GSS Admin and Company JWT contexts, active-user enforcement, permission resolution, decorators and scope guards.
 - Database schema: Prisma RBAC, organization hierarchy, scope-access foundation, Phase 4 device history migration `20260714170000_device_inventory_assignments`, Phase 5 command migration `20260715120000_gateway_command_outbox`, Phase 6 monitoring migration `20260715150000_phase_6_monitoring_realtime`, Phase 8 provisioning migration `20260716120000_phase_8_device_provisioning`, Task 09 migrations `20260722120000_task_09_provisioning_modes` and `20260722121000_task_09_reusable_provisioning_assignment_links`, and the later Phase 9/11/12 migrations are present. The Phase 13 report migrations `20260721150000_phase_13_report_foundation`, `20260721153000_phase_13_report_audit_date_index` and `20260721160000_phase_13_report_storage_cleanup` were applied and verified on the prepared isolated `gss_iot_v3_e2e` schema; the shared `public` schema remains pending until the normal deploy command is run.
 - Seed: permission catalog, default GSS/company roles, canonical node types and environment-configured active GSS super admin seeded idempotently.
@@ -374,3 +392,30 @@ Verification for this correction:
 - every file changed for this correction passes Prettier. The repository-wide
   `pnpm format:check` remains red on 98 pre-existing/out-of-scope files and is not expanded into a
   broad formatting rewrite.
+
+## Targeted operations, media and Administrator correction — 2026-07-28
+
+Recipient Policies now use a focusable whole-row Drawer contract with no Policy Actions column or
+row menu. The pre-fix Admin Alarm browser run captured
+`TypeError: Cannot read properties of null (reading 'checked')`; synchronous checkbox snapshots,
+current-page reconciliation and stable confirmation IDs correct the crash without weakening the
+resolved-only archive invariant.
+
+Admin and Company realtime node workspaces now include permission-gated ordered private PLAN/REAL
+viewers with complete fitted initial display, controls, pointer wheel/pan and bounded recovery. The
+Company Dashboard adds the backend-scoped active Company-user KPI, the sidebar logo fills its
+contained plate, and Admin Companies use distinct private-logo identity cards while retaining table
+view.
+
+The new Administrators navigation group exposes the canonical existing routes. `/admin/gss-users`
+reuses `admin-users.view/create/update/delete`, 50/100 pagination, bcrypt/audit infrastructure and a
+transaction-serialized last-active-Super-Admin recheck for deactivate/demote/delete. It never mixes
+Company RBAC or exposes password/session internals. No schema migration or seed was required.
+
+Final verification passed lint, typecheck and build; the unit suites passed 37 files / 153 tests and
+the API E2E suite passed 8 files / 75 tests. All 21 browser cases are green across the full run and
+corrected-case reruns (19 unaffected cases passed in the full run and both corrected legacy cases
+passed on rerun), with the four targeted correction journeys also passing together. Reviewed light,
+dark, desktop and mobile evidence is preserved under
+`docs/quality/screenshots/2026-07-28-targeted-correction/`. Production deployment and commits remain
+intentionally unperformed.

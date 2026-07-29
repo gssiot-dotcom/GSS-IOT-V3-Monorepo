@@ -30,6 +30,7 @@ const fullSummary: DashboardSummary = {
   gateways: { offline: 1, online: 3, unassigned: 0 },
   kpis: {
     activeBuildings: 2,
+    activeCompanyUsers: 3,
     activeSites: 1,
     gateways: 4,
     gatewaysOffline: 1,
@@ -132,6 +133,8 @@ describe("dashboard analytics", () => {
     expect(screen.getByText("12")).toBeTruthy();
     expect(screen.getByText("Active construction sites")).toBeTruthy();
     expect(screen.getByText("Active buildings")).toBeTruthy();
+    expect(screen.getByText("Company users")).toBeTruthy();
+    expect(screen.getAllByText("3").length).toBeGreaterThan(0);
     expect(screen.getByText("Gateways")).toBeTruthy();
     expect(screen.getByText("Nodes")).toBeTruthy();
 

@@ -28,17 +28,32 @@ import {
   StickyFormActions,
   WorkspaceTabs,
 } from "@gss-iot/ui";
-import { Button, Group, Modal, NumberInput, Select, Stack, Text, TextInput } from "@mantine/core";
+import {
+  Button,
+  Checkbox,
+  Divider,
+  Drawer,
+  Group,
+  Modal,
+  NumberInput,
+  Paper,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import {
   IconBellCheck,
   IconCheck,
+  IconEdit,
   IconEye,
   IconPlayerPause,
   IconPlayerPlay,
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { t, tf } from "../../app/i18n";
@@ -155,6 +170,19 @@ function StatusValue({ value }: { value: string }) {
   );
 }
 
+function PolicyFact({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <Paper p="md" radius="md" withBorder>
+      <Text c="dimmed" size="xs">
+        {label}
+      </Text>
+      <Text component="div" fw={650} mt={4} size="sm">
+        {value}
+      </Text>
+    </Paper>
+  );
+}
+
 function endpoint(basePath: BasePath, path: string) {
   return `${basePath}${path}`;
 }
@@ -201,6 +229,10 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
   const [total, setTotal] = useState(0);
   const [archiveTarget, setArchiveTarget] = useState<AlarmEventRecord | null>(null);
   const [archiving, setArchiving] = useState(false);
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
+  const [bulkArchiveIds, setBulkArchiveIds] = useState<string[]>([]);
+  const [mutationError, setMutationError] = useState<string>();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -212,6 +244,11 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
       );
       setAlarms(response.items);
       setTotal(response.total);
+      setSelectedIds((current) =>
+        current.filter((id) =>
+          response.items.some((item) => item.id === id && item.status === "RESOLVED"),
+        ),
+      );
     } catch {
       setError(true);
     }
@@ -219,6 +256,7 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
 
   const archive = async () => {
     if (!session || !archiveTarget || archiving) return;
+    setMutationError(undefined);
     setArchiving(true);
     try {
       await apiRequest(session, endpoint(basePath, `/alarms/${archiveTarget.id}`), {
@@ -226,6 +264,28 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
       });
       setArchiveTarget(null);
       await load();
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const bulkArchive = async () => {
+    if (!session || !bulkArchiveIds.length || archiving) return;
+    setMutationError(undefined);
+    setArchiving(true);
+    try {
+      await apiRequest(session, endpoint(basePath, "/alarms/bulk-archive"), {
+        body: JSON.stringify({ ids: [...bulkArchiveIds] }),
+        method: "POST",
+      });
+      setBulkArchiveOpen(false);
+      setBulkArchiveIds([]);
+      setSelectedIds([]);
+      await load();
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
       setArchiving(false);
     }
@@ -239,12 +299,49 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
   if (error)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
+  const selectableIds = alarms.filter((alarm) => alarm.status === "RESOLVED").map(({ id }) => id);
+  const allSelectableSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => selectedIds.includes(id));
+  const canArchive = hasPermission(session, "alarms.manage");
+
   return (
     <Stack gap="lg">
       <PageHeader title={t("alarms.title")} subtitle={t("alarms.subtitle")} />
+      {mutationError ? (
+        <Text c="red" role="alert" size="sm">
+          {mutationError}
+        </Text>
+      ) : null}
       {alarms.length ? (
         <Stack gap="sm">
           <CollectionPagination
+            actions={
+              canArchive ? (
+                <Group gap="xs">
+                  <Button
+                    disabled={!selectableIds.length}
+                    onClick={() => setSelectedIds(allSelectableSelected ? [] : [...selectableIds])}
+                    size="xs"
+                    variant="default"
+                  >
+                    {t(allSelectableSelected ? "common.clearSelection" : "common.selectAll")}
+                  </Button>
+                  <Button
+                    color="red"
+                    disabled={!selectedIds.length}
+                    leftSection={<IconTrash size={14} />}
+                    onClick={() => {
+                      setBulkArchiveIds([...selectedIds]);
+                      setBulkArchiveOpen(true);
+                    }}
+                    size="xs"
+                    variant="light"
+                  >
+                    {tf("common.deleteSelected", { count: selectedIds.length })}
+                  </Button>
+                </Group>
+              ) : undefined
+            }
             onPageChange={setPage}
             onPageSizeChange={(value) => {
               setPageSize(Number(value) as CollectionPageSize);
@@ -263,6 +360,33 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
           <DataTable
             rows={alarms}
             columns={[
+              ...(canArchive
+                ? [
+                    {
+                      key: "select",
+                      label: t("common.select"),
+                      render: (row: AlarmEventRecord) => (
+                        <Checkbox
+                          aria-label={`${t("common.select")}: ${row.node?.number ?? row.nodeId}`}
+                          checked={selectedIds.includes(row.id)}
+                          disabled={row.status !== "RESOLVED"}
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked;
+                            setSelectedIds((current) =>
+                              checked
+                                ? [...new Set([...current, row.id])]
+                                : current.filter((id) => id !== row.id),
+                            );
+                          }}
+                          title={
+                            row.status === "RESOLVED" ? undefined : t("alarms.deleteResolvedOnly")
+                          }
+                        />
+                      ),
+                      width: 72,
+                    },
+                  ]
+                : []),
               {
                 key: "building",
                 label: t("organizations.building"),
@@ -313,7 +437,7 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
                                   : t("alarms.deleteResolvedOnly"),
                               icon: <IconTrash size={16} />,
                               key: "delete",
-                              label: t("organizations.deletePermanently"),
+                              label: t("organizations.delete"),
                               onClick: () => setArchiveTarget(row),
                             },
                           ]
@@ -330,7 +454,7 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
       )}
       <ConfirmActionModal
         cancelLabel={t("common.cancel")}
-        confirmLabel={t("organizations.deletePermanently")}
+        confirmLabel={t("organizations.delete")}
         description={t("alarms.confirmArchiveImpact")}
         entityName={archiveTarget?.node?.number ?? archiveTarget?.nodeId ?? ""}
         loading={archiving}
@@ -340,6 +464,22 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
         onConfirm={() => void archive()}
         opened={Boolean(archiveTarget)}
         title={t("alarms.confirmArchiveTitle")}
+      />
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={tf("common.deleteSelected", { count: bulkArchiveIds.length })}
+        description={t("alarms.confirmBulkArchiveImpact")}
+        entityName={tf("alarms.selectedAlarmCount", { count: bulkArchiveIds.length })}
+        loading={archiving}
+        onClose={() => {
+          if (!archiving) {
+            setBulkArchiveOpen(false);
+            setBulkArchiveIds([]);
+          }
+        }}
+        onConfirm={() => void bulkArchive()}
+        opened={bulkArchiveOpen}
+        title={t("alarms.confirmBulkArchiveTitle")}
       />
     </Stack>
   );
@@ -513,8 +653,14 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
   const [providers, setProviders] = useState<ProviderStatus>();
   const [opened, setOpened] = useState(false);
   const [policyRule, setPolicyRule] = useState<AlarmRuleRecord | null>(null);
+  const [editingPolicy, setEditingPolicy] = useState<AlarmPolicyRecord | null>(null);
+  const [viewingPolicy, setViewingPolicy] = useState<
+    (AlarmPolicyRecord & { rule: AlarmRuleRecord; ruleName: string }) | null
+  >(null);
   const [ruleDraft, setRuleDraft] = useState(createEmptyRuleDraft);
   const [policyDraft, setPolicyDraft] = useState(createEmptyPolicyDraft);
+  const [policyFormError, setPolicyFormError] = useState<string | null>(null);
+  const [policySaving, setPolicySaving] = useState(false);
   const [ruleNameError, setRuleNameError] = useState<string | null>(null);
   const [ruleFormError, setRuleFormError] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -522,7 +668,7 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
   const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
   const [total, setTotal] = useState(0);
   const [lifecycleTarget, setLifecycleTarget] = useState<{
-    action: "DELETE" | "STATUS";
+    action: "ARCHIVE" | "STATUS";
     id: string;
     isActive: boolean;
     kind: "policy" | "rule";
@@ -563,7 +709,8 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
 
   const building = options?.buildings.find((item) => item.id === policyDraft.buildingId);
   const targetPositions =
-    options?.positions.filter((item) => item.companyId === building?.companyId) ?? [];
+    options?.positions.filter((item) => item.companyId === building?.companyId && item.isActive) ??
+    [];
   const targetUsers = options?.users.filter((item) => item.companyId === building?.companyId) ?? [];
   const providerText = useMemo(
     () =>
@@ -620,23 +767,35 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
     }
   };
 
-  const createPolicy = async () => {
-    if (!session || !policyRule) return;
-    await apiRequest(session, endpoint(basePath, `/alarm-rules/${policyRule.id}/policies`), {
-      body: JSON.stringify({
-        channel: policyDraft.channel,
-        countIntervalSeconds: policyDraft.countIntervalSeconds,
-        positionId: policyDraft.targetType === "POSITION" ? policyDraft.positionId : undefined,
-        requiredOccurrenceCount: policyDraft.requiredOccurrenceCount,
-        specificUserId:
-          policyDraft.targetType === "SPECIFIC_USER" ? policyDraft.specificUserId : undefined,
-        targetType: policyDraft.targetType,
-      }),
-      method: "POST",
-    });
-    setPolicyRule(null);
-    setPolicyDraft(createEmptyPolicyDraft());
-    await load();
+  const savePolicy = async () => {
+    if (!session || !policyRule || policySaving) return;
+    setPolicySaving(true);
+    setPolicyFormError(null);
+    try {
+      const path = editingPolicy
+        ? `/alarm-policies/${editingPolicy.id}`
+        : `/alarm-rules/${policyRule.id}/policies`;
+      await apiRequest(session, endpoint(basePath, path), {
+        body: JSON.stringify({
+          channel: policyDraft.channel,
+          countIntervalSeconds: policyDraft.countIntervalSeconds,
+          positionId: policyDraft.targetType === "POSITION" ? policyDraft.positionId : undefined,
+          requiredOccurrenceCount: policyDraft.requiredOccurrenceCount,
+          specificUserId:
+            policyDraft.targetType === "SPECIFIC_USER" ? policyDraft.specificUserId : undefined,
+          targetType: policyDraft.targetType,
+        }),
+        method: editingPolicy ? "PATCH" : "POST",
+      });
+      setPolicyRule(null);
+      setEditingPolicy(null);
+      setPolicyDraft(createEmptyPolicyDraft());
+      await load();
+    } catch (error) {
+      setPolicyFormError(error instanceof ApiError ? error.message : t("common.errorDescription"));
+    } finally {
+      setPolicySaving(false);
+    }
   };
 
   const mutateLifecycle = async () => {
@@ -647,16 +806,17 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
       const path = endpoint(
         basePath,
         `/${resource}/${lifecycleTarget.id}${
-          lifecycleTarget.action === "DELETE" ? "/permanent" : "/status"
+          lifecycleTarget.action === "ARCHIVE" ? "" : "/status"
         }`,
       );
       await apiRequest(
         session,
         path,
-        lifecycleTarget.action === "DELETE"
+        lifecycleTarget.action === "ARCHIVE"
           ? { method: "DELETE" }
           : { body: JSON.stringify({ isActive: !lifecycleTarget.isActive }), method: "PATCH" },
       );
+      setViewingPolicy(null);
       setLifecycleTarget(null);
       await load();
     } finally {
@@ -665,8 +825,19 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
   };
 
   const policies = (rules ?? []).flatMap((rule) =>
-    (rule.recipientPolicies ?? []).map((policy) => ({ ...policy, ruleName: rule.name ?? rule.id })),
+    (rule.recipientPolicies ?? []).map((policy) => ({
+      ...policy,
+      rule,
+      ruleName: rule.name ?? rule.id,
+    })),
   );
+  const viewingTarget = viewingPolicy
+    ? viewingPolicy.targetType === "POSITION"
+      ? (options?.positions.find((item) => item.id === viewingPolicy.positionId)?.name ??
+        viewingPolicy.positionId)
+      : (options?.users.find((item) => item.id === viewingPolicy.specificUserId)?.name ??
+        viewingPolicy.specificUserId)
+    : null;
 
   if (!rules || !options) return <LoadingState title={t("common.loading")} />;
   if (error)
@@ -750,6 +921,8 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
                               key: "add-policy",
                               label: t("alarms.addPolicy"),
                               onClick: () => {
+                                setEditingPolicy(null);
+                                setPolicyFormError(null);
                                 setPolicyDraft({
                                   ...createEmptyPolicyDraft(),
                                   buildingId: row.buildingId,
@@ -781,14 +954,12 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
                       {
                         color: "red",
                         destructive: true,
-                        disabled: !row.deletion?.allowed,
-                        disabledReason: row.deletion?.blocker ?? undefined,
                         icon: <IconTrash size={16} />,
-                        key: "delete",
-                        label: t("organizations.deletePermanently"),
+                        key: "archive",
+                        label: t("organizations.delete"),
                         onClick: () =>
                           setLifecycleTarget({
-                            action: "DELETE",
+                            action: "ARCHIVE",
                             id: row.id,
                             isActive: row.isActive,
                             kind: "rule",
@@ -809,69 +980,179 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
         <Stack gap="sm">
           <Text fw={650}>{t("alarms.policies")}</Text>
           <DataTable
+            isRowSelected={(row) => viewingPolicy?.id === row.id}
+            onRowClick={setViewingPolicy}
+            rowAriaLabel={(row) => `${t("organizations.open")}: ${row.ruleName}`}
             rows={policies}
             columns={[
               { key: "rule", label: t("alarms.rulesTitle"), render: (row) => row.ruleName },
+              {
+                key: "target",
+                label: t("alarms.recipientTarget"),
+                render: (row) =>
+                  row.targetType === "POSITION"
+                    ? (options.positions.find((item) => item.id === row.positionId)?.name ??
+                      row.positionId)
+                    : (options.users.find((item) => item.id === row.specificUserId)?.name ??
+                      row.specificUserId),
+              },
+              {
+                key: "building",
+                label: t("organizations.building"),
+                render: (row) => row.rule.building?.title ?? row.rule.buildingId,
+              },
+              {
+                key: "severity",
+                label: t("alarms.severity"),
+                render: (row) => <StatusValue value={row.rule.severity} />,
+              },
+              {
+                key: "occurrences",
+                label: t("alarms.requiredOccurrences"),
+                render: (row) => String(row.requiredOccurrenceCount),
+              },
+              {
+                key: "interval",
+                label: t("alarms.countInterval"),
+                render: (row) => tf("alarms.secondsValue", { count: row.countIntervalSeconds }),
+              },
               { key: "channel", label: t("alarms.channel"), render: (row) => row.channel },
               {
                 key: "status",
                 label: t("organizations.status"),
+                align: "left",
                 render: (row) => <StatusValue value={row.isActive ? "ACTIVE" : "INACTIVE"} />,
-              },
-              {
-                key: "actions",
-                label: t("organizations.actions"),
-                align: "right",
-                render: (row) => (
-                  <Can permission="alarm-rules.manage">
-                    <EntityActionMenu
-                      ariaLabel={`${t("common.moreActions")}: ${row.ruleName}`}
-                      items={[
-                        {
-                          icon: row.isActive ? (
-                            <IconPlayerPause size={16} />
-                          ) : (
-                            <IconPlayerPlay size={16} />
-                          ),
-                          key: "status",
-                          label: t(
-                            row.isActive ? "organizations.deactivate" : "organizations.activate",
-                          ),
-                          onClick: () =>
-                            setLifecycleTarget({
-                              action: "STATUS",
-                              id: row.id,
-                              isActive: row.isActive,
-                              kind: "policy",
-                              name: `${row.ruleName} / ${row.channel}`,
-                            }),
-                        },
-                        {
-                          color: "red",
-                          destructive: true,
-                          disabled: !row.deletion?.allowed,
-                          disabledReason: row.deletion?.blocker ?? undefined,
-                          icon: <IconTrash size={16} />,
-                          key: "delete",
-                          label: t("organizations.deletePermanently"),
-                          onClick: () =>
-                            setLifecycleTarget({
-                              action: "DELETE",
-                              id: row.id,
-                              isActive: row.isActive,
-                              kind: "policy",
-                              name: `${row.ruleName} / ${row.channel}`,
-                            }),
-                        },
-                      ]}
-                    />
-                  </Can>
-                ),
               },
             ]}
           />
         </Stack>
       ) : null}
+      <Drawer
+        opened={Boolean(viewingPolicy)}
+        onClose={() => setViewingPolicy(null)}
+        position="right"
+        size="min(100%, 520px)"
+        title={t("alarms.policyDetails")}
+      >
+        {viewingPolicy ? (
+          <Stack gap="lg">
+            <Stack gap={4}>
+              <Text fw={700} size="lg">
+                {viewingPolicy.ruleName}
+              </Text>
+              <Text c="dimmed" size="sm">
+                {viewingPolicy.rule.building?.company?.name
+                  ? `${viewingPolicy.rule.building.company.name} / `
+                  : ""}
+                {viewingPolicy.rule.building?.area?.name
+                  ? `${viewingPolicy.rule.building.area.name} / `
+                  : ""}
+                {viewingPolicy.rule.building?.title ?? viewingPolicy.rule.buildingId}
+              </Text>
+            </Stack>
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <PolicyFact label={t("alarms.recipientTarget")} value={viewingTarget ?? "-"} />
+              <PolicyFact
+                label={t("alarms.severity")}
+                value={<StatusValue value={viewingPolicy.rule.severity} />}
+              />
+              <PolicyFact
+                label={t("devices.nodeType")}
+                value={viewingPolicy.rule.nodeType?.displayName ?? viewingPolicy.rule.nodeTypeId}
+              />
+              <PolicyFact label={t("alarms.channel")} value={viewingPolicy.channel} />
+              <PolicyFact
+                label={t("alarms.requiredOccurrences")}
+                value={viewingPolicy.requiredOccurrenceCount}
+              />
+              <PolicyFact
+                label={t("alarms.countInterval")}
+                value={tf("alarms.secondsValue", { count: viewingPolicy.countIntervalSeconds })}
+              />
+              <PolicyFact
+                label={t("organizations.status")}
+                value={<StatusValue value={viewingPolicy.isActive ? "ACTIVE" : "INACTIVE"} />}
+              />
+              <PolicyFact
+                label={t("alarms.policyHistory")}
+                value={tf("alarms.policyHistoryCounts", {
+                  counters: viewingPolicy.history?.counters ?? 0,
+                  notifications: viewingPolicy.history?.notifications ?? 0,
+                  triggers: viewingPolicy.history?.triggers ?? 0,
+                })}
+              />
+            </SimpleGrid>
+            <Divider />
+            <Can permission="alarm-rules.manage">
+              <Group justify="space-between" wrap="wrap">
+                <Group>
+                  <Button
+                    leftSection={<IconEdit size={16} />}
+                    onClick={() => {
+                      setPolicyRule(viewingPolicy.rule);
+                      setEditingPolicy(viewingPolicy);
+                      setPolicyDraft({
+                        buildingId: viewingPolicy.rule.buildingId,
+                        channel: viewingPolicy.channel,
+                        countIntervalSeconds: viewingPolicy.countIntervalSeconds,
+                        positionId: viewingPolicy.positionId ?? "",
+                        requiredOccurrenceCount: viewingPolicy.requiredOccurrenceCount,
+                        specificUserId: viewingPolicy.specificUserId ?? "",
+                        targetType: viewingPolicy.targetType,
+                      });
+                      setViewingPolicy(null);
+                    }}
+                    variant="default"
+                  >
+                    {t("organizations.edit")}
+                  </Button>
+                  <Button
+                    leftSection={
+                      viewingPolicy.isActive ? (
+                        <IconPlayerPause size={16} />
+                      ) : (
+                        <IconPlayerPlay size={16} />
+                      )
+                    }
+                    onClick={() =>
+                      setLifecycleTarget({
+                        action: "STATUS",
+                        id: viewingPolicy.id,
+                        isActive: viewingPolicy.isActive,
+                        kind: "policy",
+                        name: `${viewingPolicy.ruleName} / ${viewingPolicy.channel}`,
+                      })
+                    }
+                    variant="light"
+                  >
+                    {t(
+                      viewingPolicy.isActive
+                        ? "organizations.deactivate"
+                        : "organizations.activate",
+                    )}
+                  </Button>
+                </Group>
+                <Button
+                  color="red"
+                  leftSection={<IconTrash size={16} />}
+                  onClick={() =>
+                    setLifecycleTarget({
+                      action: "ARCHIVE",
+                      id: viewingPolicy.id,
+                      isActive: viewingPolicy.isActive,
+                      kind: "policy",
+                      name: `${viewingPolicy.ruleName} / ${viewingPolicy.channel}`,
+                    })
+                  }
+                  variant="light"
+                >
+                  {t("organizations.delete")}
+                </Button>
+              </Group>
+            </Can>
+          </Stack>
+        ) : null}
+      </Drawer>
       <Modal opened={opened} onClose={closeCreateRule} size="lg" title={t("alarms.createRule")}>
         <FormWorkspace>
           <FormSection title={t("alarms.rulesTitle")}>
@@ -945,9 +1226,11 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
         opened={Boolean(policyRule)}
         onClose={() => {
           setPolicyRule(null);
+          setEditingPolicy(null);
+          setPolicyFormError(null);
           setPolicyDraft(createEmptyPolicyDraft());
         }}
-        title={t("alarms.addPolicy")}
+        title={t(editingPolicy ? "alarms.editPolicy" : "alarms.addPolicy")}
       >
         <Stack>
           <Select
@@ -1015,26 +1298,49 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
             }
             value={policyDraft.countIntervalSeconds}
           />
+          {policyFormError ? (
+            <Text c="red" size="sm">
+              {policyFormError}
+            </Text>
+          ) : null}
           <StickyFormActions>
-            <Button variant="default" onClick={() => setPolicyRule(null)}>
+            <Button
+              variant="default"
+              onClick={() => {
+                setPolicyRule(null);
+                setEditingPolicy(null);
+              }}
+            >
               {t("common.cancel")}
             </Button>
-            <Button onClick={() => void createPolicy()}>{t("organizations.save")}</Button>
+            <Button
+              disabled={
+                policyDraft.targetType === "POSITION"
+                  ? !policyDraft.positionId
+                  : !policyDraft.specificUserId
+              }
+              loading={policySaving}
+              onClick={() => void savePolicy()}
+            >
+              {t("organizations.save")}
+            </Button>
           </StickyFormActions>
         </Stack>
       </Modal>
       <ConfirmActionModal
         cancelLabel={t("common.cancel")}
         confirmLabel={t(
-          lifecycleTarget?.action === "DELETE"
-            ? "organizations.deletePermanently"
+          lifecycleTarget?.action === "ARCHIVE"
+            ? "organizations.delete"
             : lifecycleTarget?.isActive
               ? "organizations.deactivate"
               : "organizations.activate",
         )}
         description={t(
-          lifecycleTarget?.action === "DELETE"
-            ? "organizations.confirmPermanentDeleteImpact"
+          lifecycleTarget?.action === "ARCHIVE"
+            ? lifecycleTarget.kind === "rule"
+              ? "alarms.confirmRuleArchiveImpact"
+              : "alarms.confirmPolicyArchiveImpact"
             : lifecycleTarget?.isActive
               ? "organizations.confirmDeactivateImpact"
               : "organizations.confirmActivateImpact",
@@ -1047,8 +1353,8 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
         onConfirm={() => void mutateLifecycle()}
         opened={Boolean(lifecycleTarget)}
         title={t(
-          lifecycleTarget?.action === "DELETE"
-            ? "organizations.confirmPermanentDeleteTitle"
+          lifecycleTarget?.action === "ARCHIVE"
+            ? "alarms.confirmConfigurationArchiveTitle"
             : lifecycleTarget?.isActive
               ? "organizations.confirmDeactivateTitle"
               : "organizations.confirmActivateTitle",
@@ -1068,6 +1374,8 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
   const [total, setTotal] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<AlarmNotificationRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -1086,6 +1394,9 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
       setNotifications(items.items);
       setTotal(items.total);
       setUnreadCount(count.unreadCount);
+      setSelectedIds((current) =>
+        current.filter((id) => items.items.some((item) => item.id === id)),
+      );
     } catch {
       setError(true);
     }
@@ -1121,6 +1432,22 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
     }
   };
 
+  const bulkArchiveNotifications = async () => {
+    if (!session || !selectedIds.length || deleting) return;
+    setDeleting(true);
+    try {
+      await apiRequest(session, endpoint(basePath, "/notifications/bulk-archive"), {
+        body: JSON.stringify({ ids: selectedIds }),
+        method: "POST",
+      });
+      setBulkDeleteOpen(false);
+      setSelectedIds([]);
+      await load();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (!notifications) return <LoadingState title={t("common.loading")} />;
   if (error)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
@@ -1141,6 +1468,39 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
         }
       />
       <CollectionPagination
+        actions={
+          notifications.length ? (
+            <Group gap="xs">
+              <Button
+                onClick={() =>
+                  setSelectedIds(
+                    selectedIds.length === notifications.length
+                      ? []
+                      : notifications.map(({ id }) => id),
+                  )
+                }
+                size="xs"
+                variant="default"
+              >
+                {t(
+                  selectedIds.length === notifications.length
+                    ? "common.clearSelection"
+                    : "common.selectAll",
+                )}
+              </Button>
+              <Button
+                color="red"
+                disabled={!selectedIds.length}
+                leftSection={<IconTrash size={14} />}
+                onClick={() => setBulkDeleteOpen(true)}
+                size="xs"
+                variant="light"
+              >
+                {tf("common.deleteSelected", { count: selectedIds.length })}
+              </Button>
+            </Group>
+          ) : undefined
+        }
         onPageChange={setPage}
         onPageSizeChange={(value) => {
           setPageSize(Number(value) as CollectionPageSize);
@@ -1160,6 +1520,24 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
         <DataTable
           rows={notifications}
           columns={[
+            {
+              key: "select",
+              label: t("common.select"),
+              render: (row) => (
+                <Checkbox
+                  aria-label={`${t("common.select")}: ${row.title}`}
+                  checked={selectedIds.includes(row.id)}
+                  onChange={(event) =>
+                    setSelectedIds((current) =>
+                      event.currentTarget.checked
+                        ? [...new Set([...current, row.id])]
+                        : current.filter((id) => id !== row.id),
+                    )
+                  }
+                />
+              ),
+              width: 72,
+            },
             { key: "title", label: t("alarms.notification"), render: (row) => row.title },
             { key: "body", label: t("alarms.message"), render: (row) => row.body },
             {
@@ -1191,7 +1569,7 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
                       destructive: true,
                       icon: <IconTrash size={16} />,
                       key: "delete",
-                      label: t("organizations.deletePermanently"),
+                      label: t("organizations.delete"),
                       onClick: () => setDeleteTarget(row),
                     },
                   ]}
@@ -1205,7 +1583,7 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
       )}
       <ConfirmActionModal
         cancelLabel={t("common.cancel")}
-        confirmLabel={t("organizations.deletePermanently")}
+        confirmLabel={t("organizations.delete")}
         description={t("alarms.confirmNotificationArchiveImpact")}
         entityName={deleteTarget?.title ?? ""}
         loading={deleting}
@@ -1215,6 +1593,19 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
         onConfirm={() => void archiveNotification()}
         opened={Boolean(deleteTarget)}
         title={t("alarms.confirmNotificationArchiveTitle")}
+      />
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={tf("common.deleteSelected", { count: selectedIds.length })}
+        description={t("alarms.confirmBulkNotificationArchiveImpact")}
+        entityName={tf("alarms.selectedNotificationCount", { count: selectedIds.length })}
+        loading={deleting}
+        onClose={() => {
+          if (!deleting) setBulkDeleteOpen(false);
+        }}
+        onConfirm={() => void bulkArchiveNotifications()}
+        opened={bulkDeleteOpen}
+        title={t("alarms.confirmBulkNotificationArchiveTitle")}
       />
     </Stack>
   );

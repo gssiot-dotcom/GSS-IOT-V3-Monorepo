@@ -76,12 +76,13 @@ export class AlarmOccurrenceEvaluatorService {
       include: {
         recipientPolicies: {
           orderBy: { createdAt: "asc" },
-          where: { isActive: true },
+          where: { deletedAt: null, isActive: true },
         },
       },
       where: {
         activeKey: "active",
         buildingId: input.buildingId,
+        deletedAt: null,
         isActive: true,
         nodeTypeId: input.nodeTypeId,
         severity,

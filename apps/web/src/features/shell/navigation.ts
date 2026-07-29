@@ -17,6 +17,7 @@ import {
   IconShield,
   IconSitemap,
   IconUsers,
+  IconUserShield,
 } from "@tabler/icons-react";
 import type { ComponentType } from "react";
 
@@ -100,17 +101,24 @@ export const adminNavItems: ShellNavItem[] = [
     titleKey: "nav.adminReports",
   },
   {
+    icon: IconUserShield,
+    path: "/admin/settings/admin-users",
+    permission: "admin-users.view",
+    sectionKey: "shell.sectionAdministrators",
+    titleKey: "nav.adminUsers",
+  },
+  {
     icon: IconShield,
     path: "/admin/settings/roles",
     permission: "admin-roles.view",
-    sectionKey: "shell.sectionSettings",
+    sectionKey: "shell.sectionAdministrators",
     titleKey: "nav.adminRoles",
   },
   {
     icon: IconKey,
     path: "/admin/settings/permissions",
     permission: "permissions.view",
-    sectionKey: "shell.sectionSettings",
+    sectionKey: "shell.sectionAdministrators",
     titleKey: "nav.adminPermissions",
   },
   {

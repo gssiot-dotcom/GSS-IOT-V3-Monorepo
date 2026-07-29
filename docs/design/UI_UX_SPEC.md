@@ -334,3 +334,52 @@ reset page one.
 - Dense chart ranges show sampled-data metadata rather than silently dropping points.
 - Create Alarm Rule uses a large responsive modal, the shared two-column desktop form grid and a
   single column on small screens.
+
+## Alarm configuration and bulk history workflow
+
+Alarm Rule summaries remain row-based. The Policies collection is a columnar table showing Rule,
+Target, Building, Severity, Required occurrences, Count interval seconds, Channel, Status and
+no Actions column. Its complete keyboard-focusable row opens the Policy and ignores nested
+interactive descendants. The open row has a visible selected state. Opening a Policy shows its
+Rule, Company/Site/Building scope, target, severity, node type, channel, counter settings, lifecycle
+status and counter/trigger/notification history counts in a responsive Drawer. The Drawer is the
+only Policy mutation surface and owns permission-aware Edit, Activate/Deactivate and Delete actions.
+
+Delete Rule/Policy means archive: the confirmation explains that evaluation and future delivery
+stop while prior alarm, notification and audit evidence stays available. Operators never have to
+delete immutable history to retire configuration.
+
+Alarm and Notification lists provide row selection and Delete selected immediately left of the
+shared pagination controls. Select all means selectable rows on the current loaded page. Unresolved
+Alarm Events cannot be selected or archived; mixed invalid selections fail atomically rather than
+partially disappearing. Every successful mutation clears selection and refreshes counts/list state.
+
+## Construction Site and Building card workflow
+
+Card view uses the shared domain-specific organization resource card. Construction Sites expose
+location identity, code, address and status. Buildings expose the parent Site, building code,
+address/status and one prominent Open monitoring footer action where monitoring is available.
+Overflow menus contain secondary lifecycle and management actions and never activate the card.
+
+## 13. Targeted Administrator, Company identity and monitoring media correction
+
+`/admin/settings/admin-users` is a responsive operational list with search, 50/100 pagination,
+loading/empty/search-empty/error/forbidden/session states and a readable row Drawer. Create/Edit use
+one modal; role/status/password fields never echo stored credentials. Lifecycle confirmations keep
+backend blocker/error text usable, and actions are absent when their exact `admin-users.*`
+permission is absent.
+
+The Admin Companies card view now leads with private Company logo/initials, code/name/status and
+existing contact/location information. The full card opens Company detail with click, Enter or
+Space; any overflow descendant is excluded from card activation. The existing table remains the
+alternate view.
+
+Realtime node workspaces add Building plan image and Real image `WorkspaceTabs` beside their
+existing state/history/configuration tabs when `building-plans.view` is present. Each type resolves
+its own ordered image/empty/loading/error state. Initial fit shows the complete image without crop;
+zoom in/out, pointer-centered wheel zoom, pointer-capture drag pan, Reset and Fit remain touch and
+keyboard accessible. The viewer contains overscroll and pan without introducing document overflow.
+
+The Company Dashboard compact KPI set includes Company users, defined as active users in the
+authenticated Company. The Company logo plate removes CSS padding and enlarges contained visible
+content while retaining skeleton, initials, missing and error states in light/dark desktop/mobile.

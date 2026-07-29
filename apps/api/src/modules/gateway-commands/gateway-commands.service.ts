@@ -10,6 +10,7 @@ import { loadApiEnv } from "@gss-iot/config";
 import {
   AssignmentStatus,
   AuditActorType,
+  DeviceLifecycleStatus,
   GatewayCommandStatus,
   ProvisioningMode,
 } from "@prisma/client";
@@ -135,6 +136,7 @@ export class GatewayCommandsService {
 
   async createRegisterNodesCommand(actor: AuthTokenPayload, dto: RegisterNodesCommandDto) {
     return this.prisma.$transaction(async (tx) => {
+      await this.lockGateway(dto.gatewayId, tx);
       const gateway = await this.getGatewayProvisioningContext(dto.gatewayId, dto.buildingId, tx);
       const nodeType = await this.getNodeTypeOrThrow(dto.nodeTypeId, tx);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${gateway.id}:${nodeType.id}`}))`;
@@ -143,7 +145,13 @@ export class GatewayCommandsService {
         where: {
           gatewayId: gateway.id,
           nodeTypeId: nodeType.id,
-          status: { in: [GatewayCommandStatus.PENDING, GatewayCommandStatus.SENT] },
+          status: {
+            in: [
+              GatewayCommandStatus.PENDING,
+              GatewayCommandStatus.SENT,
+              GatewayCommandStatus.FAILED,
+            ],
+          },
         },
       });
       if (activeRequest) {
@@ -447,6 +455,8 @@ export class GatewayCommandsService {
   async retryCommand(actor: AuthTokenPayload, commandId: string) {
     return this.prisma.$transaction(async (tx) => {
       const command = await this.getCommandOrThrow(commandId, tx);
+      await this.lockGateway(command.gatewayId, tx);
+      await this.assertGatewayNotRetired(command.gatewayId, tx);
       if (command.status !== GatewayCommandStatus.FAILED) {
         throw new BadRequestException("Only failed commands can be retried.");
       }
@@ -894,7 +904,7 @@ export class GatewayCommandsService {
     }
     const nodeIds = request.items.map((item) => item.nodeId);
     const nodes = await executor.node.findMany({
-      where: { id: { in: nodeIds } },
+      where: { id: { in: nodeIds }, status: { not: DeviceLifecycleStatus.RETIRED } },
       select: {
         id: true,
         nodeTypeId: true,
@@ -1156,6 +1166,7 @@ export class GatewayCommandsService {
     }>,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      await this.lockGateway(gatewayId, tx);
       const gateway = await this.getGatewayCommandContext(gatewayId, tx);
       const built = await build(tx, gateway);
       const expiresAt = new Date(
@@ -1200,6 +1211,7 @@ export class GatewayCommandsService {
       select: {
         id: true,
         serialNumber: true,
+        status: true,
         companyAssignments: {
           where: { status: AssignmentStatus.ACTIVE },
           select: { companyId: true },
@@ -1209,6 +1221,9 @@ export class GatewayCommandsService {
     });
     if (!gateway) {
       throw new NotFoundException("The gateway was not found.");
+    }
+    if (gateway.status === DeviceLifecycleStatus.RETIRED) {
+      throw new ConflictException("Retired gateways cannot receive commands.");
     }
     const companyId = gateway.companyAssignments[0]?.companyId;
     if (!companyId) {
@@ -1227,6 +1242,7 @@ export class GatewayCommandsService {
       select: {
         id: true,
         serialNumber: true,
+        status: true,
         companyAssignments: {
           where: { status: AssignmentStatus.ACTIVE },
           select: { companyId: true },
@@ -1244,6 +1260,9 @@ export class GatewayCommandsService {
     });
     if (!gateway) {
       throw new NotFoundException("The gateway was not found.");
+    }
+    if (gateway.status === DeviceLifecycleStatus.RETIRED) {
+      throw new ConflictException("Retired gateways cannot be provisioned.");
     }
     const companyId = gateway.companyAssignments[0]?.companyId;
     if (!companyId) {
@@ -1276,12 +1295,16 @@ export class GatewayCommandsService {
   private async getNodesForGatewayCommand(
     nodeIds: string[],
     companyId: string,
-    executor: PrismaExecutor,
+    executor: Prisma.TransactionClient,
   ) {
     const uniqueNodeIds = [...new Set(nodeIds)];
+    for (const nodeId of [...uniqueNodeIds].sort()) {
+      await this.lockNode(nodeId, executor);
+    }
     const nodes = await executor.node.findMany({
       where: {
         id: { in: uniqueNodeIds },
+        status: { not: DeviceLifecycleStatus.RETIRED },
         companyAssignments: { some: { companyId, status: AssignmentStatus.ACTIVE } },
       },
       select: {
@@ -1296,10 +1319,31 @@ export class GatewayCommandsService {
       },
     });
     if (nodes.length !== uniqueNodeIds.length) {
-      throw new BadRequestException("All nodes must exist and belong to the gateway company.");
+      throw new BadRequestException(
+        "All nodes must be active inventory devices and belong to the gateway company.",
+      );
     }
     const nodesById = new Map(nodes.map((node) => [node.id, node]));
     return nodeIds.map((nodeId) => nodesById.get(nodeId)!);
+  }
+
+  private async assertGatewayNotRetired(gatewayId: string, executor: PrismaExecutor) {
+    const gateway = await executor.gateway.findUnique({
+      where: { id: gatewayId },
+      select: { status: true },
+    });
+    if (!gateway) throw new NotFoundException("The gateway was not found.");
+    if (gateway.status === DeviceLifecycleStatus.RETIRED) {
+      throw new ConflictException("Retired gateways cannot receive commands.");
+    }
+  }
+
+  private async lockGateway(gatewayId: string, tx: Prisma.TransactionClient) {
+    await tx.$queryRaw`SELECT "id" FROM "Gateway" WHERE "id" = ${gatewayId}::uuid FOR UPDATE`;
+  }
+
+  private async lockNode(nodeId: string, tx: Prisma.TransactionClient) {
+    await tx.$queryRaw`SELECT "id" FROM "Node" WHERE "id" = ${nodeId}::uuid FOR UPDATE`;
   }
 
   private async getCommandOrThrow(commandId: string, executor: PrismaExecutor) {

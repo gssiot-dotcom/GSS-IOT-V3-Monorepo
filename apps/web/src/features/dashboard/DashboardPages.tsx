@@ -19,6 +19,7 @@ import {
   IconChartBar,
   IconDeviceDesktopAnalytics,
   IconReportAnalytics,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -477,6 +478,13 @@ function DashboardPage({
         label: t("dashboard.activeBuildings"),
         value: summary.kpis.activeBuildings,
       });
+    if (summary.kpis.activeCompanyUsers !== undefined)
+      items.push({
+        accent: "indigo" as const,
+        icon: <IconUsers size={19} />,
+        label: t("dashboard.activeCompanyUsers"),
+        value: summary.kpis.activeCompanyUsers,
+      });
     if (summary.kpis.gateways !== undefined)
       items.push({
         accent: "cyan" as const,
@@ -537,7 +545,10 @@ function DashboardPage({
         }
         title={context === "admin" ? t("nav.adminDashboard") : t("nav.companyDashboard")}
       />
-      <Box className="gss-dashboard-kpi-grid" data-testid="dashboard-kpi-grid">
+      <Box
+        className={`gss-dashboard-kpi-grid gss-dashboard-kpi-grid--${context}`}
+        data-testid="dashboard-kpi-grid"
+      >
         {kpis.map((item) => (
           <DashboardKpiCard {...item} key={item.label} />
         ))}

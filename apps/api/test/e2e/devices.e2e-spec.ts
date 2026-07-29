@@ -489,18 +489,24 @@ describe("Phase 4 device inventory e2e", () => {
     expect(
       inventory.body.items.find((item: { id: string }) => item.id === pristineGateway.body.id)
         .deletion,
-    ).toEqual({
-      allowed: true,
-      blocker: null,
-    });
+    ).toEqual(
+      expect.objectContaining({
+        allowed: true,
+        blocker: null,
+        code: null,
+        mode: "HARD_DELETE",
+      }),
+    );
     await request(server)
       .delete(`/admin/devices/gateways/${pristineGateway.body.id}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(200);
+      .expect(200)
+      .expect(({ body }) => expect(body.mode).toBe("HARD_DELETE"));
     await request(server)
       .delete(`/admin/devices/nodes/${pristineNode.body.id}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(200);
+      .expect(200)
+      .expect(({ body }) => expect(body.mode).toBe("HARD_DELETE"));
     expect(
       await prisma.auditLog.count({ where: { action: { in: ["gateway.delete", "node.delete"] } } }),
     ).toBeGreaterThanOrEqual(2);
@@ -514,11 +520,20 @@ describe("Phase 4 device inventory e2e", () => {
     await request(server)
       .delete(`/admin/devices/gateways/${currentlyAssignedGateway.id}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(409);
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("GATEWAY_ACTIVE_COMPANY_ASSIGNMENT");
+        expect(body.blocker).toBe("Unassign the company first.");
+        expect(body.counts.activeCompanyAssignments).toBeGreaterThan(0);
+      });
     await request(server)
       .delete(`/admin/devices/nodes/${currentlyAssignedNode.id}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(409);
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("NODE_ACTIVE_COMPANY_ASSIGNMENT");
+        expect(body.blocker).toBe("Unassign the company first.");
+      });
 
     const historicalGateway = await request(server)
       .post("/admin/devices/gateways")
@@ -551,19 +566,44 @@ describe("Phase 4 device inventory e2e", () => {
     await request(server)
       .delete(`/admin/devices/gateways/${historicalGateway.body.id}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(409)
+      .expect(200)
       .expect(({ body }) => {
-        expect(body.code).toBe("DEVICE_HISTORY_EXISTS");
-        expect(body.lifecycle).toBe("INACTIVE_OR_RETIRED");
+        expect(body.mode).toBe("SOFT_DELETE");
+        expect(body.status).toBe("RETIRED");
       });
     await request(server)
       .delete(`/admin/devices/nodes/${historicalNode.body.id}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(409);
+      .expect(200)
+      .expect(({ body }) => expect(body.mode).toBe("SOFT_DELETE"));
     expect(
       await prisma.gateway.findUnique({ where: { id: historicalGateway.body.id } }),
-    ).not.toBeNull();
-    expect(await prisma.node.findUnique({ where: { id: historicalNode.body.id } })).not.toBeNull();
+    ).toMatchObject({ status: "RETIRED" });
+    expect(await prisma.node.findUnique({ where: { id: historicalNode.body.id } })).toMatchObject({
+      status: "RETIRED",
+    });
+    const retiredInventory = await request(server)
+      .get("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(
+      retiredInventory.body.items.some(
+        (item: { id: string }) => item.id === historicalGateway.body.id,
+      ),
+    ).toBe(false);
+    await request(server)
+      .post(`/admin/devices/gateways/${historicalGateway.body.id}/company-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ companyId: companyAId })
+      .expect(409);
+    await request(server)
+      .patch(`/admin/devices/nodes/${historicalNode.body.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ status: "ACTIVE" })
+      .expect(409);
+    expect(
+      await prisma.auditLog.count({ where: { action: { in: ["gateway.retire", "node.retire"] } } }),
+    ).toBeGreaterThanOrEqual(2);
 
     const referencedGateway = await request(server)
       .post("/admin/devices/gateways")
@@ -611,6 +651,41 @@ describe("Phase 4 device inventory e2e", () => {
     expect(
       await prisma.nodeGatewayProvisioningItem.count({ where: { nodeId: referencedNode.body.id } }),
     ).toBe(1);
+  });
+
+  it("serializes a pristine gateway delete against a new assignment", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const token = await login("/auth/gss/login", "phase4-device@example.com");
+    const gateway = await request(server)
+      .post("/admin/devices/gateways")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-RACE" })
+      .expect(201);
+
+    const [deletion, assignment] = await Promise.all([
+      request(server)
+        .delete(`/admin/devices/gateways/${gateway.body.id}`)
+        .set("Authorization", `Bearer ${token}`),
+      request(server)
+        .post(`/admin/devices/gateways/${gateway.body.id}/company-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ companyId: companyAId }),
+    ]);
+    const persisted = await prisma.gateway.findUnique({ where: { id: gateway.body.id } });
+    const activeAssignments = await prisma.companyDeviceAssignment.count({
+      where: { gatewayId: gateway.body.id, status: "ACTIVE" },
+    });
+
+    if (persisted) {
+      expect(assignment.status).toBe(201);
+      expect(deletion.status).toBe(409);
+      expect(activeAssignments).toBe(1);
+      expect(persisted.status).not.toBe("RETIRED");
+    } else {
+      expect(deletion.status).toBe(200);
+      expect(assignment.status).toBe(404);
+      expect(activeAssignments).toBe(0);
+    }
   });
 
   it("keeps update and delete permissions separate", async () => {

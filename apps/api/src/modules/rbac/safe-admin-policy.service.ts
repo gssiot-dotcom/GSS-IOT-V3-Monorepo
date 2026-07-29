@@ -13,6 +13,13 @@ export class SafeAdminPolicyService {
     userId: string,
     executor: PrismaExecutor = this.prisma,
   ): Promise<void> {
+    return this.assertGssAdminCanLoseSuperAdmin(userId, executor);
+  }
+
+  async assertGssAdminCanLoseSuperAdmin(
+    userId: string,
+    executor: PrismaExecutor = this.prisma,
+  ): Promise<void> {
     const user = await executor.gssAdminUser.findUnique({
       where: { id: userId },
       include: { role: true },
@@ -27,7 +34,9 @@ export class SafeAdminPolicyService {
     });
 
     if (activeSuperAdmins <= 1) {
-      throw new ForbiddenException("The last active GSS super admin cannot be deactivated.");
+      throw new ForbiddenException(
+        "The last active GSS super admin cannot be deactivated, demoted or deleted.",
+      );
     }
   }
 

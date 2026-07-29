@@ -282,7 +282,8 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
           classNames={{ viewport: "gss-sidebar-scrollarea-viewport" }}
           px="sm"
           py="md"
-          type="auto"
+          scrollbars="y"
+          type="never"
         >
           <Stack gap="lg">
             {context === "company-user" ? (

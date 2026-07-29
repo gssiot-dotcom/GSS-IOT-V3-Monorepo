@@ -10,7 +10,17 @@ GSS role mutations are limited to non-system, non-super-admin roles. Permission 
 transactional and accepts only `GSS` or `BOTH` permissions; Company-only permissions are rejected.
 Roles assigned to users cannot be deleted, and every create/update/delete is recorded in `AuditLog`.
 System and super-admin roles remain readable but immutable. Existing last-safe-admin protections remain
-owned by the safe-admin policy used by admin-user mutations; Task 06 does not add admin-user mutation UX.
+owned by the safe-admin policy used by admin-user mutations.
+
+The canonical GSS Administrator extension is `/admin/gss-users`: list/search and the bounded GSS
+role options require `admin-users.view`, create requires `admin-users.create`, identity/role/status/
+password update requires `admin-users.update`, and permanent identity deletion requires
+`admin-users.delete`. The API uses 50/100 pagination, never returns password hashes or token versions,
+and records safe create/update/delete audit snapshots. Passwords use bcrypt cost 12; password or
+status changes invalidate existing sessions. Deactivation, Super Admin demotion and deletion share a
+transaction-scoped advisory lock and recheck that another active Super Admin remains. Company-user
+RBAC, positions and scope are not reachable through this module. No schema migration or seed change
+is required because the model and permission catalog already exist.
 
 The system page is intentionally read-only. Its DTO exposes only application version/environment,
 MQTT enabled/connected/readiness and subscription count, report provider/worker readiness, bounded

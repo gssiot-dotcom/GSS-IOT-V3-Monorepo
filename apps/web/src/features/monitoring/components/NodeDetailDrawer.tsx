@@ -17,8 +17,9 @@ import {
   SimpleGrid,
   Stack,
   Text,
-  TextInput,
 } from "@mantine/core";
+import { DatePickerInput } from "@mantine/dates";
+import { IconCalendar } from "@tabler/icons-react";
 
 import { t, tf } from "../../../app/i18n";
 import {
@@ -141,12 +142,30 @@ export function NodeDetailDrawer({
                   value={String(hours)}
                 />
               ) : (
-                <TextInput
+                <DatePickerInput
                   aria-label={t("monitoring.historyDate")}
-                  max={maxDate}
-                  onChange={(event) => onDateChange(event.currentTarget.value)}
-                  type="date"
+                  ariaLabels={{
+                    monthLevelControl: t("monitoring.calendarChooseMonth"),
+                    nextDecade: t("monitoring.calendarNextDecade"),
+                    nextMonth: t("monitoring.calendarNextMonth"),
+                    nextYear: t("monitoring.calendarNextYear"),
+                    previousDecade: t("monitoring.calendarPreviousDecade"),
+                    previousMonth: t("monitoring.calendarPreviousMonth"),
+                    previousYear: t("monitoring.calendarPreviousYear"),
+                    yearLevelControl: t("monitoring.calendarChooseYear"),
+                  }}
+                  closeOnChange
+                  label={t("monitoring.historyDate")}
+                  leftSection={<IconCalendar aria-hidden="true" size={18} />}
+                  leftSectionPointerEvents="none"
+                  maxDate={localDate(maxDate)}
+                  onChange={(value) => {
+                    if (value) onDateChange(value);
+                  }}
+                  placeholder={t("monitoring.historyDatePlaceholder")}
+                  popoverProps={{ withinPortal: true, zIndex: 1000 }}
                   value={date}
+                  valueFormat="YYYY-MM-DD"
                 />
               )}
             </Stack>
@@ -227,6 +246,11 @@ export function NodeDetailDrawer({
       ) : null}
     </Drawer>
   );
+}
+
+function localDate(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year!, month! - 1, day!);
 }
 
 export function mergeRealtimePoint(

@@ -827,6 +827,9 @@ model CompanyPosition {
   key                    String
   name                   String
   isActive               Boolean                         @default(true)
+  deletedAt              DateTime?
+  deletedByType          AuditActorType?
+  deletedById            String?                         @db.Uuid
   assignments            CompanyUserPositionAssignment[]
   alarmRecipientPolicies AlarmRecipientPolicy[]
   createdAt              DateTime                        @default(now())
@@ -834,6 +837,7 @@ model CompanyPosition {
 
   @@unique([companyId, key])
   @@index([companyId, isActive, name, id])
+  @@index([companyId, deletedAt, isActive, name, id])
 }
 
 model AlarmRule {
@@ -854,6 +858,9 @@ model AlarmRule {
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
   disabledAt        DateTime?
+  deletedAt         DateTime?
+  deletedByType     AuditActorType?
+  deletedById       String?                @db.Uuid
   company           Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
   area              ConstructionArea       @relation(fields: [areaId], references: [id], onDelete: Restrict)
   building          ConstructionBuilding   @relation(fields: [buildingId], references: [id], onDelete: Restrict)
@@ -868,6 +875,7 @@ model AlarmRule {
   @@index([areaId])
   @@index([nodeTypeId, severity])
   @@index([companyId, isActive, createdAt, id])
+  @@index([companyId, deletedAt, createdAt, id])
 }
 
 model AlarmRecipientPolicy {
@@ -892,6 +900,9 @@ model AlarmRecipientPolicy {
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
   disabledAt              DateTime?
+  deletedAt               DateTime?
+  deletedByType           AuditActorType?
+  deletedById             String?              @db.Uuid
   rule                    AlarmRule            @relation(fields: [ruleId], references: [id], onDelete: Restrict)
   position                CompanyPosition?     @relation(fields: [positionId], references: [id], onDelete: Restrict)
   specificUser            CompanyUser?         @relation("AlarmPolicySpecificUser", fields: [specificUserId], references: [id], onDelete: Restrict)
@@ -904,6 +915,7 @@ model AlarmRecipientPolicy {
   @@index([specificUserId])
   @@index([ruleId, isActive])
   @@index([ruleId, isActive, createdAt, id])
+  @@index([ruleId, deletedAt, createdAt, id])
 }
 
 model AlarmCounterState {

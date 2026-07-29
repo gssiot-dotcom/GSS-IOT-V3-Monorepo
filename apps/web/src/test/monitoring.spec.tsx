@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -50,6 +50,16 @@ vi.mock("socket.io-client", () => ({
     on: vi.fn(),
   }),
 }));
+
+function tomorrowCalendarLabel() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(tomorrow);
+}
 
 describe("Phase 6 monitoring UI", () => {
   it("builds exact rolling-hour and local-calendar half-open ranges", () => {
@@ -413,13 +423,14 @@ describe("Phase 6 monitoring UI", () => {
     }
     fireEvent.click(screen.getByText("Day"));
     const dateInput = await screen.findByLabelText("History date");
-    const today = new Date();
-    expect(dateInput.getAttribute("max")).toBe(
-      `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`,
+    expect(dateInput.getAttribute("type")).not.toBe("date");
+    fireEvent.click(dateInput);
+    expect(await screen.findByRole("button", { name: tomorrowCalendarLabel() })).toHaveProperty(
+      "disabled",
+      true,
     );
-    fireEvent.change(dateInput, {
-      target: { value: "2026-07-20" },
-    });
+    fireEvent.click(screen.getByText("20", { selector: "button" }));
+    expect(dateInput.textContent).toContain("2026-07-20");
     const selectedDay = localDayRange("2026-07-20");
     await waitFor(() =>
       expect(
@@ -783,6 +794,21 @@ describe("Phase 6 monitoring UI", () => {
           ],
         };
       }
+      if (path.includes("/nodes/node-1/history/chart?")) {
+        const query = new URL(path, "http://local").searchParams;
+        return {
+          from: query.get("from"),
+          items: [],
+          returnedPointCount: 0,
+          sampled: false,
+          sampleLimit: 500,
+          to: query.get("to"),
+          totalRawPointCount: 0,
+        };
+      }
+      if (path.includes("/nodes/node-1/history?")) {
+        return { items: [], page: 1, pageSize: 50, total: 0 };
+      }
       if (path.includes("/node-types/door_node")) {
         return {
           building: { id: "building-1", title: "Tower A" },
@@ -839,6 +865,48 @@ describe("Phase 6 monitoring UI", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Building" }));
     fireEvent.click(screen.getAllByText("Tower A")[0]!);
     expect(await screen.findByText("Tower A")).toBeTruthy();
-    expect(await screen.findByTestId("node-type-card-door_node")).toBeTruthy();
+    fireEvent.click(await screen.findByTestId("node-type-card-door_node"));
+    fireEvent.click(await screen.findByRole("radio", { name: "Cards" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Node 100, Safe" }));
+    const drawer = await screen.findByRole("dialog", { name: "Node 100 detail" });
+    fireEvent.click(within(drawer).getByText("Day"));
+    const dateInput = await within(drawer).findByLabelText("History date");
+    fireEvent.click(dateInput);
+    expect(await screen.findByRole("button", { name: tomorrowCalendarLabel() })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    fireEvent.click(screen.getByText("20", { selector: "button" }));
+    expect(dateInput.textContent).toContain("2026-07-20");
+    const selectedDay = localDayRange("2026-07-20");
+    await waitFor(() => {
+      const historyPaths = vi
+        .mocked(apiRequest)
+        .mock.calls.map(([, path]) => path)
+        .filter(
+          (path): path is string =>
+            typeof path === "string" && path.includes("/nodes/node-1/history"),
+        );
+      expect(
+        historyPaths.some((path) => {
+          const query = new URL(path, "http://local").searchParams;
+          return (
+            path.includes("/chart?") &&
+            query.get("from") === selectedDay.from &&
+            query.get("to") === selectedDay.to
+          );
+        }),
+      ).toBe(true);
+      expect(
+        historyPaths.some((path) => {
+          const query = new URL(path, "http://local").searchParams;
+          return (
+            !path.includes("/chart?") &&
+            query.get("from") === selectedDay.from &&
+            query.get("to") === selectedDay.to
+          );
+        }),
+      ).toBe(true);
+    });
   });
 });

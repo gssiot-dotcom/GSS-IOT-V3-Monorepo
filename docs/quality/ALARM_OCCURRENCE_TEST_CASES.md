@@ -168,3 +168,25 @@ As of Phase 11, `apps/api/test/e2e/alarms.e2e-spec.ts` covers:
 Phase 12 automated coverage now adds recipient-specific in-app notification rows, delivery logs, unread/read inbox behavior, acknowledgement, conservative unsafe manual resolve rejection, safe-state auto-resolve while acknowledged and deterministic provider retry/terminal failure without duplicate notification rows.
 
 Remaining expanded coverage after Phase 12 includes same-position/different-building negative manual acceptance, inactive/ended assignment manual acceptance, large-volume load testing, real external provider drills after vendor approval and live hardware/manual sensor-flow acceptance.
+
+## 2026-07-28 archive and bulk-operation coverage
+
+- Normal Rule/Policy Delete archives configuration even when counter, trigger or notification
+  history exists; physical evidence rows remain queryable and archive actor/time is recorded.
+- Archived Rules/Policies are absent from normal configuration lists and cannot participate in new
+  occurrence evaluation or dispatch. A trigger claimed after archive is skipped deterministically.
+- Bulk Alarm Event archive is atomic, scoped and resolved-only; one unresolved selection rejects the
+  whole request with a stable conflict code.
+- Bulk Notification archive is atomic and recipient/scoped-manager constrained. Alarm and
+  Notification rows remain physically present after leaving normal lists.
+
+## 2026-07-28 resolved-row selection regression
+
+The Admin crash was reproduced before correction as
+`TypeError: Cannot read properties of null (reading 'checked')` at the Alarm checkbox handler. The
+handler read React's `event.currentTarget.checked` later inside a functional state updater, after the
+synthetic event's `currentTarget` was cleared. The corrected handler snapshots `checked`
+synchronously, reconciles selection to resolved IDs present on the loaded page, snapshots a stable
+ID array when confirmation opens, and clears/reloads only after successful archive. Unit and browser
+coverage exercises one/multiple/current-page select-all, unresolved disabled rows, cancel/complete,
+refresh pruning, localized API failure and zero console/page errors in both portal contexts.

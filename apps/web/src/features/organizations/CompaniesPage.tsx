@@ -5,27 +5,33 @@ import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
   CollectionPagination,
+  ConfirmActionModal,
   DataToolbar,
   DataViewToggle,
   EmptyState,
   EntityActionMenu,
-  EntityCard,
   EntityCardGrid,
-  EntityMetric,
   EntityPrimaryCell,
   EntityStatusBadge,
-  EntityStatusRow,
   ErrorState,
   LoadingState,
   ModalFormFooter,
   PageHeader,
 } from "@gss-iot/ui";
-import { Alert, Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
-import { IconArrowUpRight } from "@tabler/icons-react";
+import { Alert, Button, Modal, Stack, Text, TextInput } from "@mantine/core";
+import {
+  IconArrowUpRight,
+  IconEdit,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { t, tf } from "../../app/i18n";
+import { hasPermission } from "../../shared/rbac/has-permission";
+import { CompanyIdentityCard } from "./CompanyIdentityCard";
 
 export function CompaniesPage() {
   const { session } = useAuth();
@@ -43,6 +49,17 @@ export function CompaniesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
   const [total, setTotal] = useState(0);
+  const [editTarget, setEditTarget] = useState<CompanyRecord>();
+  const [editForm, setEditForm] = useState({
+    address: "",
+    code: "",
+    email: "",
+    name: "",
+    phone: "",
+  });
+  const [statusTarget, setStatusTarget] = useState<CompanyRecord>();
+  const [deleteTarget, setDeleteTarget] = useState<CompanyRecord>();
+  const [mutationError, setMutationError] = useState<string>();
 
   const load = async () => {
     if (!session) return;
@@ -104,6 +121,123 @@ export function CompaniesPage() {
     }
   };
 
+  const openEdit = (company: CompanyRecord) => {
+    setMutationError(undefined);
+    setEditTarget(company);
+    setEditForm({
+      address: company.address ?? "",
+      code: company.code ?? "",
+      email: company.email ?? "",
+      name: company.name,
+      phone: company.phone ?? "",
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!session || !editTarget || !editForm.name.trim() || isSaving) return;
+    setIsSaving(true);
+    setMutationError(undefined);
+    try {
+      await apiRequest(session, `/admin/companies/${editTarget.id}`, {
+        body: JSON.stringify({
+          address: editForm.address.trim() || undefined,
+          code: editForm.code.trim() || undefined,
+          email: editForm.email.trim() || undefined,
+          name: editForm.name.trim(),
+          phone: editForm.phone.trim() || undefined,
+        }),
+        method: "PATCH",
+      });
+      setEditTarget(undefined);
+      await load();
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const changeStatus = async () => {
+    if (!session || !statusTarget || isSaving) return;
+    setIsSaving(true);
+    setMutationError(undefined);
+    try {
+      await apiRequest(session, `/admin/companies/${statusTarget.id}/status`, {
+        body: JSON.stringify({ status: statusTarget.status === "ACTIVE" ? "INACTIVE" : "ACTIVE" }),
+        method: "PATCH",
+      });
+      setStatusTarget(undefined);
+      await load();
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!session || !deleteTarget || isSaving) return;
+    setIsSaving(true);
+    setMutationError(undefined);
+    try {
+      await apiRequest(session, `/admin/companies/${deleteTarget.id}/permanent`, {
+        method: "DELETE",
+      });
+      setDeleteTarget(undefined);
+      await load();
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const companyActions = (company: CompanyRecord) => [
+    {
+      icon: <IconArrowUpRight size={16} />,
+      key: "open",
+      label: t("organizations.openCompany"),
+      onClick: () => void navigate(`/admin/companies/${company.id}`),
+    },
+    ...(hasPermission(session, "companies.update")
+      ? [
+          {
+            icon: <IconEdit size={16} />,
+            key: "edit",
+            label: t("organizations.edit"),
+            onClick: () => openEdit(company),
+          },
+          {
+            icon:
+              company.status === "ACTIVE" ? (
+                <IconPlayerPause size={16} />
+              ) : (
+                <IconPlayerPlay size={16} />
+              ),
+            key: "status",
+            label: t(
+              company.status === "ACTIVE" ? "organizations.deactivate" : "organizations.activate",
+            ),
+            onClick: () => setStatusTarget(company),
+          },
+        ]
+      : []),
+    ...(hasPermission(session, "companies.delete")
+      ? [
+          {
+            color: "red" as const,
+            destructive: true,
+            disabled: company.deletion?.allowed !== true,
+            disabledReason: company.deletion?.blocker ?? undefined,
+            icon: <IconTrash size={16} />,
+            key: "delete",
+            label: t("organizations.delete"),
+            onClick: () => setDeleteTarget(company),
+          },
+        ]
+      : []),
+  ];
+
   if (!companies && !error) return <LoadingState title={t("common.loading")} />;
   if (error)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
@@ -119,6 +253,11 @@ export function CompaniesPage() {
           </Can>
         }
       />
+      {mutationError ? (
+        <Alert color="red" title={t("organizations.actionFailed")}>
+          {mutationError}
+        </Alert>
+      ) : null}
       {companies?.length ? (
         <Stack gap="md">
           <CollectionPagination
@@ -153,47 +292,27 @@ export function CompaniesPage() {
           {view === "cards" ? (
             <EntityCardGrid>
               {companies.map((company) => (
-                <EntityCard
+                <CompanyIdentityCard
                   action={
                     <EntityActionMenu
                       ariaLabel={`${t("common.moreActions")}: ${company.name}`}
-                      items={[
-                        {
-                          icon: <IconArrowUpRight size={16} />,
-                          key: "open",
-                          label: t("organizations.open"),
-                          onClick: () => void navigate(`/admin/companies/${company.id}`),
-                        },
-                      ]}
+                      items={companyActions(company)}
                     />
                   }
-                  description={company.address ?? company.email ?? undefined}
-                  eyebrow={company.code ?? t("organizations.companiesTitle")}
+                  company={company}
                   key={company.id}
-                  onClick={() => void navigate(`/admin/companies/${company.id}`)}
-                  title={company.name}
-                >
-                  <EntityStatusRow
-                    label={t("organizations.status")}
-                    value={
-                      <EntityStatusBadge
-                        label={
-                          company.status === "ACTIVE"
-                            ? t("management.active")
-                            : t("management.inactive")
-                        }
-                        status={company.status === "ACTIVE" ? "active" : "inactive"}
-                      />
-                    }
-                  />
-                  <Group gap="lg">
-                    <EntityMetric
-                      label={t("organizations.managerEmail")}
-                      value={company.email ?? "-"}
+                  onOpen={() => void navigate(`/admin/companies/${company.id}`)}
+                  status={
+                    <EntityStatusBadge
+                      label={
+                        company.status === "ACTIVE"
+                          ? t("management.active")
+                          : t("management.inactive")
+                      }
+                      status={company.status === "ACTIVE" ? "active" : "inactive"}
                     />
-                    <EntityMetric label={t("organizations.phone")} value={company.phone ?? "-"} />
-                  </Group>
-                </EntityCard>
+                  }
+                />
               ))}
             </EntityCardGrid>
           ) : (
@@ -237,14 +356,7 @@ export function CompaniesPage() {
                   render: (company) => (
                     <EntityActionMenu
                       ariaLabel={`${t("common.moreActions")}: ${company.name}`}
-                      items={[
-                        {
-                          icon: <IconArrowUpRight size={16} />,
-                          key: "open",
-                          label: t("organizations.open"),
-                          onClick: () => void navigate(`/admin/companies/${company.id}`),
-                        },
-                      ]}
+                      items={companyActions(company)}
                     />
                   ),
                 },
@@ -312,6 +424,91 @@ export function CompaniesPage() {
           />
         </Stack>
       </Modal>
+      <Modal
+        onClose={() => !isSaving && setEditTarget(undefined)}
+        opened={Boolean(editTarget)}
+        title={t("organizations.editCompany")}
+      >
+        <Stack>
+          <TextInput
+            label={t("organizations.name")}
+            onChange={(event) =>
+              setEditForm((value) => ({ ...value, name: event.currentTarget.value }))
+            }
+            required
+            value={editForm.name}
+          />
+          <TextInput
+            label={t("organizations.code")}
+            onChange={(event) =>
+              setEditForm((value) => ({ ...value, code: event.currentTarget.value }))
+            }
+            value={editForm.code}
+          />
+          <TextInput
+            label={t("organizations.managerEmail")}
+            onChange={(event) =>
+              setEditForm((value) => ({ ...value, email: event.currentTarget.value }))
+            }
+            type="email"
+            value={editForm.email}
+          />
+          <TextInput
+            label={t("organizations.phone")}
+            onChange={(event) =>
+              setEditForm((value) => ({ ...value, phone: event.currentTarget.value }))
+            }
+            value={editForm.phone}
+          />
+          <TextInput
+            label={t("organizations.address")}
+            onChange={(event) =>
+              setEditForm((value) => ({ ...value, address: event.currentTarget.value }))
+            }
+            value={editForm.address}
+          />
+          <ModalFormFooter
+            cancelLabel={t("common.cancel")}
+            onCancel={() => setEditTarget(undefined)}
+            onSubmit={() => void saveEdit()}
+            submitDisabled={!editForm.name.trim()}
+            submitLabel={t("organizations.save")}
+            submitLoading={isSaving}
+          />
+        </Stack>
+      </Modal>
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t(
+          statusTarget?.status === "ACTIVE" ? "organizations.deactivate" : "organizations.activate",
+        )}
+        description={t(
+          statusTarget?.status === "ACTIVE"
+            ? "organizations.confirmDeactivateImpact"
+            : "organizations.confirmActivateImpact",
+        )}
+        entityName={statusTarget?.name ?? ""}
+        loading={isSaving}
+        onClose={() => !isSaving && setStatusTarget(undefined)}
+        onConfirm={() => void changeStatus()}
+        opened={Boolean(statusTarget)}
+        title={t(
+          statusTarget?.status === "ACTIVE"
+            ? "organizations.confirmDeactivateTitle"
+            : "organizations.confirmActivateTitle",
+        )}
+      />
+      <ConfirmActionModal
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("organizations.delete")}
+        description={t("organizations.confirmDeleteCompanyImpact")}
+        entityName={deleteTarget?.name ?? ""}
+        loading={isSaving}
+        onClose={() => !isSaving && setDeleteTarget(undefined)}
+        onConfirm={() => void remove()}
+        opened={Boolean(deleteTarget)}
+        title={t("organizations.confirmDeleteCompanyTitle")}
+      />
     </Stack>
   );
 }

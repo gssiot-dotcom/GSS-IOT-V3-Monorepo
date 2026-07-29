@@ -31,6 +31,35 @@
 - [x] Implement immutable legacy node-type selection card.
 - [x] Add visual/browser checks for core components.
 
+## 2026-07-27 lifecycle and operator-flow correction
+
+- [x] Hide only the portal sidebar scrollbar while retaining wheel, trackpad, touch, keyboard and
+      programmatic scrolling in Admin and Company responsive shells.
+- [x] Replace the native Node Day date field with the matched Mantine Dates calendar and verify the
+      local-midnight UTC half-open request contract in both portal contexts.
+- [x] Split Gateway/Node active blockers from immutable history; hard-delete pristine inventory and
+      retire history-bearing inventory without deleting evidence.
+- [x] Add transaction locks and a delete-versus-assignment race regression test.
+- [x] Allow a Company user Position assignment list to become empty while preserving ended history.
+- [x] Add recipient-policy editing and evaluation reset/audit coverage.
+- [x] Add Position dependency counts, guided resolution UI, pristine hard delete and historical
+      archive with actor/time metadata.
+- [x] Exclude inactive/archived Positions and inactive/scope-mismatched recipients from dispatch.
+- [ ] Production deployment remains an operations task: migrate → API → Web. Do not use `db push`.
+
+## 2026-07-28 alarm lifecycle, bulk operations and organization cards
+
+- [x] Archive history-bearing Alarm Rules and Recipient Policies through the normal Delete flow;
+      retain alarm, trigger, notification, delivery and audit evidence.
+- [x] Stop evaluation/dispatch for archived configuration and reset mutable counter state.
+- [x] Add atomic 1–100 item bulk archive for resolved Alarm Events and scoped Notifications.
+- [x] Replace the Policy summary rows with complete columns and an operational detail/action drawer.
+- [x] Place current-page selection actions left of shared pagination on Alarm and Notification lists.
+- [x] Replace generic Construction Site and Building cards with responsive domain-specific cards.
+- [x] Add focused API E2E and Web unit regression coverage for the new workflows.
+- [ ] Production deployment and real-provider smoke test remain operations tasks: migrate → API →
+      Web. Do not use `db push` or cascade-delete evidence.
+
 ## Phase 2
 
 - [x] Export shared GSS theme and reusable UI primitives from `packages/ui`.
@@ -366,3 +395,23 @@ Phase 14 remains not started.
       backups during Phase 14 deployment work.
 
 Phase 14 remains not started by this correction.
+
+## 2026-07-28 targeted operations correction
+
+- [x] Make Recipient Policy rows the sole table entry to the readable, permission-aware Drawer and
+      remove duplicate Policy action columns/menus.
+- [x] Add private ordered PLAN/REAL viewers to Admin/Company realtime monitoring with fit, bounded
+      zoom, wheel, pan, reset, independent states and permission-safe request suppression.
+- [x] Add the authenticated-Company active-user KPI and enlarge the contained Company sidebar logo.
+- [x] Replace Admin Company generic cards with a distinct private-logo identity card while keeping
+      table view and lifecycle actions.
+- [x] Reproduce and correct the React Alarm checkbox `currentTarget` crash; stabilize/prune bulk
+      selection and preserve localized failure feedback.
+- [x] Add the Administrators navigation group and full existing-permission GSS Administrator CRUD,
+      safe-admin transaction policy, redacted responses and audit evidence.
+- [x] Add focused API/Web/browser coverage and update architecture, design, planning and quality
+      contracts.
+- [ ] Provision production backups/private S3 and apply the already-existing forward migrations in
+      the documented migrate → API → Web order during the separately authorized deployment.
+
+No new Prisma migration or seed is introduced by this correction. Phase 14 remains not started.

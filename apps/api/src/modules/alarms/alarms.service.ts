@@ -35,7 +35,16 @@ import type {
 } from "./dto/alarms.dto";
 
 const ruleInclude = {
-  building: { select: { areaId: true, companyId: true, id: true, title: true } },
+  building: {
+    select: {
+      area: { select: { id: true, name: true } },
+      areaId: true,
+      company: { select: { id: true, name: true } },
+      companyId: true,
+      id: true,
+      title: true,
+    },
+  },
   nodeType: { select: { displayName: true, id: true, key: true, numericCode: true } },
   recipientPolicies: {
     include: {
@@ -43,6 +52,7 @@ const ruleInclude = {
         select: { alarmNotifications: true, counterStates: true, policyTriggers: true },
       },
     },
+    where: { deletedAt: null },
   },
   _count: {
     select: { counterStates: true, events: true, policyTriggers: true, recipientPolicies: true },
@@ -65,8 +75,8 @@ export class AlarmsService {
   async listRules(auth: AuthTokenPayload, query: ListAlarmsQueryDto) {
     await this.assertPermission(auth, "alarm-rules.view");
     const where: Prisma.AlarmRuleWhereInput = query.buildingId
-      ? { buildingId: query.buildingId }
-      : {};
+      ? { buildingId: query.buildingId, deletedAt: null }
+      : { deletedAt: null };
     if (auth.context === AUTH_CONTEXT.companyUser) {
       const scope = await this.companyScope(auth.sub);
       where.companyId = scope.companyId;
@@ -109,7 +119,10 @@ export class AlarmsService {
           include: { area: true, company: true },
           orderBy: [{ companyId: "asc" }, { title: "asc" }],
         }),
-        this.prisma.companyPosition.findMany({ orderBy: [{ companyId: "asc" }, { name: "asc" }] }),
+        this.prisma.companyPosition.findMany({
+          orderBy: [{ companyId: "asc" }, { name: "asc" }],
+          where: { deletedAt: null, isActive: true },
+        }),
         this.prisma.companyUser.findMany({
           orderBy: [{ companyId: "asc" }, { name: "asc" }],
           where: { isActive: true },
@@ -127,7 +140,7 @@ export class AlarmsService {
       }),
       this.prisma.companyPosition.findMany({
         orderBy: { name: "asc" },
-        where: { companyId: scope.companyId, isActive: true },
+        where: { companyId: scope.companyId, deletedAt: null, isActive: true },
       }),
       this.prisma.companyUser.findMany({
         orderBy: { name: "asc" },
@@ -332,11 +345,76 @@ export class AlarmsService {
     });
   }
 
+  async archiveRule(auth: AuthTokenPayload, ruleId: string) {
+    await this.assertPermission(auth, "alarm-rules.manage");
+    const current = await this.getRuleOrThrow(ruleId);
+    await this.assertRuleScope(auth, current);
+    const archivedAt = new Date();
+    const archived = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AlarmRule" WHERE "id" = ${ruleId}::uuid FOR UPDATE`;
+      const policies = await tx.alarmRecipientPolicy.findMany({
+        select: { id: true },
+        where: { deletedAt: null, ruleId },
+      });
+      await Promise.all(
+        policies.map((policy) =>
+          tx.alarmRecipientPolicy.update({
+            data: {
+              activeKey: policy.id,
+              deletedAt: archivedAt,
+              deletedById: auth.sub,
+              deletedByType: this.actorType(auth),
+              disabledAt: archivedAt,
+              isActive: false,
+              updatedById: auth.sub,
+              updatedByType: this.actorType(auth),
+            },
+            where: { id: policy.id },
+          }),
+        ),
+      );
+      await tx.alarmCounterState.updateMany({
+        data: { currentCount: 0, status: "RESET", version: { increment: 1 } },
+        where: { ruleId },
+      });
+      const rule = await tx.alarmRule.update({
+        data: {
+          activeKey: ruleId,
+          deletedAt: archivedAt,
+          deletedById: auth.sub,
+          deletedByType: this.actorType(auth),
+          disabledAt: archivedAt,
+          isActive: false,
+          updatedById: auth.sub,
+          updatedByType: this.actorType(auth),
+        },
+        where: { id: ruleId, deletedAt: null },
+      });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-rule.archive",
+          entityId: ruleId,
+          entityType: "AlarmRule",
+          newValue: {
+            archivedPolicyIds: policies.map((policy) => policy.id),
+            deletedAt: archivedAt.toISOString(),
+          },
+          oldValue: current,
+        },
+        tx,
+      );
+      return rule;
+    });
+    await this.evaluator.resetRuleStates(ruleId, AlarmResolutionReason.RULE_DISABLED);
+    return { archived: true, id: archived.id };
+  }
+
   async listPolicies(auth: AuthTokenPayload, ruleId: string, query: PaginationQueryDto) {
     const rule = await this.getRuleOrThrow(ruleId);
     await this.assertRuleScope(auth, rule);
     await this.assertPermission(auth, "alarm-rules.view");
-    const where = { ruleId } satisfies Prisma.AlarmRecipientPolicyWhereInput;
+    const where = { deletedAt: null, ruleId } satisfies Prisma.AlarmRecipientPolicyWhereInput;
     const [policies, total] = await this.prisma.$transaction([
       this.prisma.alarmRecipientPolicy.findMany({
         include: {
@@ -361,33 +439,39 @@ export class AlarmsService {
     await this.assertPermission(auth, "alarm-rules.manage");
     const rule = await this.getRuleOrThrow(ruleId);
     await this.assertRuleScope(auth, rule);
-    const target = await this.validateTarget(rule.companyId, dto);
     const actorType = this.actorType(auth);
-    const policy = await this.prisma.alarmRecipientPolicy.create({
-      data: {
-        channel: dto.channel,
-        channelKey: this.channelKey(dto.channel),
-        channelMetadata: (dto.channelMetadata ?? {}) as Prisma.InputJsonValue,
-        countIntervalSeconds: dto.countIntervalSeconds,
-        createdById: auth.sub,
-        createdByType: actorType,
-        positionId: target.positionId,
-        requiredOccurrenceCount: dto.requiredOccurrenceCount,
-        ruleId,
-        specificUserId: target.specificUserId,
-        targetKey: target.targetKey,
-        targetType: dto.targetType,
-        updatedById: auth.sub,
-        updatedByType: actorType,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const target = await this.validateTarget(rule.companyId, dto, tx);
+      const policy = await tx.alarmRecipientPolicy.create({
+        data: {
+          channel: dto.channel,
+          channelKey: this.channelKey(dto.channel),
+          channelMetadata: (dto.channelMetadata ?? {}) as Prisma.InputJsonValue,
+          countIntervalSeconds: dto.countIntervalSeconds,
+          createdById: auth.sub,
+          createdByType: actorType,
+          positionId: target.positionId,
+          requiredOccurrenceCount: dto.requiredOccurrenceCount,
+          ruleId,
+          specificUserId: target.specificUserId,
+          targetKey: target.targetKey,
+          targetType: dto.targetType,
+          updatedById: auth.sub,
+          updatedByType: actorType,
+        },
+      });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-recipient-policy.create",
+          entityId: policy.id,
+          entityType: "AlarmRecipientPolicy",
+          newValue: policy,
+        },
+        tx,
+      );
+      return this.mapPolicy(policy);
     });
-    await this.auditLog.record(auth, {
-      action: "alarm-recipient-policy.create",
-      entityId: policy.id,
-      entityType: "AlarmRecipientPolicy",
-      newValue: policy,
-    });
-    return this.mapPolicy(policy);
   }
 
   async updatePolicy(auth: AuthTokenPayload, policyId: string, dto: UpdateAlarmRecipientPolicyDto) {
@@ -410,7 +494,6 @@ export class AlarmsService {
           : undefined,
       targetType,
     };
-    const target = await this.validateTarget(rule.companyId, merged);
     const material =
       merged.channel !== current.channel ||
       merged.countIntervalSeconds !== current.countIntervalSeconds ||
@@ -419,36 +502,45 @@ export class AlarmsService {
       merged.specificUserId !== current.specificUserId ||
       merged.targetType !== current.targetType ||
       dto.channelMetadata !== undefined;
-    const policy = await this.prisma.alarmRecipientPolicy.update({
-      data: {
-        channel: merged.channel,
-        channelKey: this.channelKey(merged.channel),
-        channelMetadata:
-          dto.channelMetadata === undefined
-            ? undefined
-            : (dto.channelMetadata as Prisma.InputJsonValue),
-        countIntervalSeconds: merged.countIntervalSeconds,
-        evaluationVersion: material ? { increment: 1 } : undefined,
-        positionId: target.positionId,
-        requiredOccurrenceCount: merged.requiredOccurrenceCount,
-        specificUserId: target.specificUserId,
-        targetKey: target.targetKey,
-        targetType: merged.targetType,
-        updatedById: auth.sub,
-        updatedByType: this.actorType(auth),
-      },
-      where: { id: policyId },
+    const policy = await this.prisma.$transaction(async (tx) => {
+      const target = await this.validateTarget(rule.companyId, merged, tx);
+      await tx.$queryRaw`SELECT "id" FROM "AlarmRecipientPolicy" WHERE "id" = ${policyId}::uuid FOR UPDATE`;
+      const updated = await tx.alarmRecipientPolicy.update({
+        data: {
+          channel: merged.channel,
+          channelKey: this.channelKey(merged.channel),
+          channelMetadata:
+            dto.channelMetadata === undefined
+              ? undefined
+              : (dto.channelMetadata as Prisma.InputJsonValue),
+          countIntervalSeconds: merged.countIntervalSeconds,
+          evaluationVersion: material ? { increment: 1 } : undefined,
+          positionId: target.positionId,
+          requiredOccurrenceCount: merged.requiredOccurrenceCount,
+          specificUserId: target.specificUserId,
+          targetKey: target.targetKey,
+          targetType: merged.targetType,
+          updatedById: auth.sub,
+          updatedByType: this.actorType(auth),
+        },
+        where: { id: policyId },
+      });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-recipient-policy.update",
+          entityId: updated.id,
+          entityType: "AlarmRecipientPolicy",
+          newValue: updated,
+          oldValue: current,
+        },
+        tx,
+      );
+      return updated;
     });
     if (material) {
       await this.evaluator.resetPolicyStates(policyId, AlarmResolutionReason.CONFIGURATION_CHANGED);
     }
-    await this.auditLog.record(auth, {
-      action: "alarm-recipient-policy.update",
-      entityId: policy.id,
-      entityType: "AlarmRecipientPolicy",
-      newValue: policy,
-      oldValue: current,
-    });
     return this.mapPolicy(policy);
   }
 
@@ -579,6 +671,48 @@ export class AlarmsService {
     });
   }
 
+  async archivePolicy(auth: AuthTokenPayload, policyId: string) {
+    await this.assertPermission(auth, "alarm-rules.manage");
+    const current = await this.getPolicyOrThrow(policyId);
+    const rule = await this.getRuleOrThrow(current.ruleId);
+    await this.assertRuleScope(auth, rule);
+    const archivedAt = new Date();
+    const archived = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AlarmRecipientPolicy" WHERE "id" = ${policyId}::uuid FOR UPDATE`;
+      const policy = await tx.alarmRecipientPolicy.update({
+        data: {
+          activeKey: policyId,
+          deletedAt: archivedAt,
+          deletedById: auth.sub,
+          deletedByType: this.actorType(auth),
+          disabledAt: archivedAt,
+          isActive: false,
+          updatedById: auth.sub,
+          updatedByType: this.actorType(auth),
+        },
+        where: { deletedAt: null, id: policyId },
+      });
+      await tx.alarmCounterState.updateMany({
+        data: { currentCount: 0, status: "RESET", version: { increment: 1 } },
+        where: { policyId },
+      });
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-recipient-policy.archive",
+          entityId: policyId,
+          entityType: "AlarmRecipientPolicy",
+          newValue: { deletedAt: archivedAt.toISOString() },
+          oldValue: current,
+        },
+        tx,
+      );
+      return policy;
+    });
+    await this.evaluator.resetPolicyStates(policyId, AlarmResolutionReason.POLICY_DISABLED);
+    return { archived: true, id: archived.id };
+  }
+
   async listCounters(auth: AuthTokenPayload, query: ListAlarmsQueryDto) {
     await this.assertPermission(auth, "alarms.view");
     const where = await this.alarmReadRuleWhere(auth, query.buildingId);
@@ -644,6 +778,52 @@ export class AlarmsService {
       total,
       query,
     );
+  }
+
+  async bulkArchiveAlarmEvents(auth: AuthTokenPayload, alarmEventIds: string[]) {
+    await this.assertPermission(auth, "alarms.manage");
+    const ids = [...new Set(alarmEventIds)];
+    const scopedWhere = await this.alarmReadEventWhere(auth);
+    const events = await this.prisma.alarmEvent.findMany({
+      select: { id: true, status: true },
+      where: { AND: [scopedWhere, { id: { in: ids } }] },
+    });
+    if (events.length !== ids.length) {
+      throw new NotFoundException("One or more alarm events were not found in the assigned scope.");
+    }
+    const unresolved = events.filter((event) => event.status !== AlarmEventStatus.RESOLVED);
+    if (unresolved.length) {
+      throw new ConflictException({
+        blocker: "Only resolved alarm events can be archived.",
+        code: "ALARM_BULK_ARCHIVE_HAS_UNRESOLVED",
+        counts: { requested: ids.length, unresolved: unresolved.length },
+        message: "Resolve the selected active alarms before archiving them.",
+      });
+    }
+    const archivedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.alarmEvent.updateMany({
+        data: {
+          deletedAt: archivedAt,
+          deletedById: auth.sub,
+          deletedByType: this.actorType(auth),
+        },
+        where: { deletedAt: null, id: { in: ids }, status: AlarmEventStatus.RESOLVED },
+      });
+      if (result.count !== ids.length) {
+        throw new ConflictException("The selected alarms changed before they could be archived.");
+      }
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-event.bulk-archive",
+          entityType: "AlarmEvent",
+          newValue: { deletedAt: archivedAt.toISOString(), ids },
+        },
+        tx,
+      );
+      return { archivedCount: result.count, ids };
+    });
   }
 
   async getAlarm(auth: AuthTokenPayload, alarmEventId: string) {
@@ -838,6 +1018,53 @@ export class AlarmsService {
     }
     this.realtime.emitToPrincipal(auth, "notifications:update", { unreadCount: 0 });
     return { unreadCount: 0 };
+  }
+
+  async bulkArchiveNotifications(auth: AuthTokenPayload, notificationIds: string[]) {
+    await this.assertPermission(auth, "notifications.view");
+    const ids = [...new Set(notificationIds)];
+    const where: Prisma.AlarmNotificationWhereInput = {
+      deletedAt: null,
+      id: { in: ids },
+    };
+    if (auth.context === AUTH_CONTEXT.companyUser) {
+      where.recipientUserId = auth.sub;
+    } else {
+      await this.assertPermission(auth, "notifications.manage");
+    }
+    const notifications = await this.prisma.alarmNotification.findMany({
+      select: { id: true },
+      where,
+    });
+    if (notifications.length !== ids.length) {
+      throw new NotFoundException("One or more notifications were not found.");
+    }
+    const archivedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.alarmNotification.updateMany({
+        data: {
+          deletedAt: archivedAt,
+          deletedById: auth.sub,
+          deletedByType: this.actorType(auth),
+        },
+        where,
+      });
+      if (result.count !== ids.length) {
+        throw new ConflictException(
+          "The selected notifications changed before they could be archived.",
+        );
+      }
+      await this.auditLog.record(
+        auth,
+        {
+          action: "alarm-notification.bulk-archive",
+          entityType: "AlarmNotification",
+          newValue: { deletedAt: archivedAt.toISOString(), ids },
+        },
+        tx,
+      );
+      return { archivedCount: result.count, ids };
+    });
   }
 
   providersStatus(auth: AuthTokenPayload) {
@@ -1192,36 +1419,47 @@ export class AlarmsService {
       specificUserId?: string;
       targetType: AlarmTargetType;
     },
-  ): Promise<{ positionId?: string; specificUserId?: string; targetKey: string }> {
+    executor: Prisma.TransactionClient,
+  ): Promise<{ positionId: string | null; specificUserId: string | null; targetKey: string }> {
     if (dto.targetType === AlarmTargetType.POSITION) {
       if (!dto.positionId || dto.specificUserId) {
         throw new BadRequestException(
           "A position-targeted alarm policy requires exactly one position.",
         );
       }
-      const position = await this.prisma.companyPosition.findUnique({
+      await executor.$queryRaw`SELECT "id" FROM "CompanyPosition" WHERE "id" = ${dto.positionId}::uuid FOR UPDATE`;
+      const position = await executor.companyPosition.findUnique({
         where: { id: dto.positionId },
       });
-      if (!position || position.companyId !== companyId || !position.isActive) {
+      if (
+        !position ||
+        position.companyId !== companyId ||
+        !position.isActive ||
+        position.deletedAt
+      ) {
         throw new BadRequestException(
           "The alarm recipient position is not active in this company.",
         );
       }
-      return { positionId: position.id, targetKey: `position:${position.id}` };
+      return {
+        positionId: position.id,
+        specificUserId: null,
+        targetKey: `position:${position.id}`,
+      };
     }
     if (!dto.specificUserId || dto.positionId) {
       throw new BadRequestException("A specific-user alarm policy requires exactly one user.");
     }
-    const user = await this.prisma.companyUser.findUnique({ where: { id: dto.specificUserId } });
-    if (!user || user.companyId !== companyId) {
+    const user = await executor.companyUser.findUnique({ where: { id: dto.specificUserId } });
+    if (!user || user.companyId !== companyId || !user.isActive) {
       throw new BadRequestException("The alarm recipient user does not belong to this company.");
     }
-    return { specificUserId: user.id, targetKey: `user:${user.id}` };
+    return { positionId: null, specificUserId: user.id, targetKey: `user:${user.id}` };
   }
 
   private getRuleOrThrow(ruleId: string) {
     return this.prisma.alarmRule
-      .findUnique({ include: ruleInclude, where: { id: ruleId } })
+      .findFirst({ include: ruleInclude, where: { deletedAt: null, id: ruleId } })
       .then((rule) => {
         if (!rule) throw new NotFoundException("The alarm rule was not found.");
         return rule;
@@ -1230,7 +1468,7 @@ export class AlarmsService {
 
   private getPolicyOrThrow(policyId: string) {
     return this.prisma.alarmRecipientPolicy
-      .findUnique({ where: { id: policyId } })
+      .findFirst({ where: { deletedAt: null, id: policyId } })
       .then((policy) => {
         if (!policy) throw new NotFoundException("The alarm recipient policy was not found.");
         return policy;
@@ -1301,6 +1539,11 @@ export class AlarmsService {
       ...(dependencies === undefined
         ? {}
         : {
+            history: {
+              counters: policy._count?.counterStates ?? 0,
+              notifications: policy._count?.alarmNotifications ?? 0,
+              triggers: policy._count?.policyTriggers ?? 0,
+            },
             deletion:
               dependencies === 0
                 ? { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const }

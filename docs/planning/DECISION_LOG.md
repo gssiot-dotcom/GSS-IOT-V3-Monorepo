@@ -1060,3 +1060,132 @@ logic, RBAC separation and MQTT behavior are unchanged.
 **Files affected:** Prisma schema/migration, private-assets and organization modules, monitoring
 DTO/service/controllers, shared contracts, Admin/Company image/history UI, focused API/Web tests and
 `docs/architecture/BUILDING_IMAGES_AND_NODE_HISTORY.md`.
+
+## DEC-2026-0727-03 — Evidence-safe retirement/archive and the hidden navigation scrollbar exception
+
+**Status:** accepted; supersedes only the history-blocking deletion portion of DEC-2026-0727
+
+**Context:** DEC-2026-0727 correctly required immutable assignment, command, monitoring and alarm
+evidence to survive, but its capability implementation counted ended history as a permanent delete
+blocker. Operators could resolve every live relationship and still never use Delete. The Company
+user editor also could not submit an empty Position assignment list, and recipient policies could
+not use the already-existing update API. Separately, product review requires the main navigation
+scrollbar to be invisible and the native Node Day date field is unusable in the target browser.
+
+**Decision:** Active dependencies and unfinished operations remain `NOT_ALLOWED` and are checked
+again under row locks. A truly pristine Gateway, Node or Position is `HARD_DELETE`. A Gateway or
+Node with immutable history but no active blocker is `SOFT_DELETE` to `RETIRED`; a Position in the
+same state is archived through additive `deletedAt`, `deletedByType` and `deletedById` fields. All
+assignment, command, reading, alarm, notification and audit evidence stays intact. Retired devices
+and archived Positions are excluded from active inventory, selectors and recipient resolution and
+cannot be assigned, commanded or reactivated through ordinary lifecycle operations.
+
+Saved Position assignments can be explicitly removed and the replacement endpoint accepts an
+empty list while ending rows. Recipient policies can move between active Positions and specific
+users, change channel/count settings, increment evaluation version, reset counters and preserve
+before/after audit snapshots. Audited old Position targets count as historical policy evidence even
+after a policy moves.
+
+All intentional scroll surfaces keep the shared visible scrollbar except the Admin/Company main
+navigation sidebar, whose visual scrollbar is hidden without disabling overflow. Node Day history
+uses the matched Mantine `DatePickerInput`, prevents future days and maps the selected local calendar
+day to a UTC half-open range.
+
+**Consequences:** The old decision remains authoritative for lifecycle permissions, evidence
+retention, assignment ending and pagination. Only its implication that ended Gateway/Node/Position
+history permanently disables Delete is superseded. Migration
+`20260727220000_device_retirement_position_archive` is forward-only and deployment order is
+**migrate → API → Web**. Frontend capability/count data remains advisory; backend permissions,
+company scope and transaction-time checks are authoritative.
+
+**Files affected:** device, gateway-command, Company-management, alarm evaluation/dispatch and
+Prisma modules; contracts; Admin Devices, Company Users/Positions, Alarm Rules, monitoring drawer,
+portal shell/styles/i18n; unit/API/Playwright tests; and the required architecture, design, planning
+and security documents.
+
+## DEC-2026-0728-01 — Archive alarm configuration; retain operational evidence
+
+**Status:** accepted
+
+**Context:** Operators could not delete a Rule or Recipient Policy after it created counters,
+triggers or notifications. Clearing those immutable rows individually would make routine
+configuration management difficult and would destroy the evidence needed for incident review,
+delivery diagnosis and audit. Alarm/Notification lists also supported only one-row archive, while
+Policy summaries omitted the scope and counter settings needed to manage them safely.
+
+**Decision:** Normal Rule and Policy Delete is an archive operation. It records actor/time, marks the
+configuration inactive, resets mutable counter state and excludes it from normal lists, occurrence
+evaluation and notification dispatch. Rule archive archives its active Policies in the same
+transaction. Alarm Events, Policy Triggers, Notifications, delivery attempts and audit rows are not
+cascaded. A trigger claimed after configuration archive is terminally skipped.
+
+Alarm Events and Notifications gain scoped atomic bulk archive for 1–100 selected IDs. Events are
+resolved-only; a mixed or invalid selection rejects the whole request. The UI shows current-page
+selection controls left of pagination. Policies use a columnar table and a complete detail/action
+drawer. Construction Site and Building lists use one shared but domain-distinct organization card
+contract.
+
+**Consequences:** Operators can retire configuration without manually destroying history. Storage
+retention remains a separate future policy/job decision, never an implicit side effect of UI
+Delete. Backend permissions and company/building scope remain authoritative. Migration
+`20260728110000_alarm_rule_policy_archive` is additive and forward-only; production deployment is
+**migrate → API → Web**.
+
+**Files affected:** Prisma schema/migration; alarm DTO/controllers/service/evaluator/dispatcher;
+contracts and shared pagination; Alarm Operations and organization card UI/styles/i18n; API/Web
+tests; architecture, design, planning and quality documents.
+
+## DEC-2026-0728-02 — Recipient Policy rows open one Drawer-owned action surface
+
+**Status:** accepted
+
+**Context:** The targeted 2026-07-28 alarm design text retained an Actions column and Policy row
+menus, while the current product correction requires one discoverable detail surface and no
+duplicate mutation entry points. The evidence-safe Rule/Policy archive decision remains unchanged.
+
+**Decision:** Recipient Policies keep the operational Rule, Target, Building, Severity, Required
+occurrences, Count interval seconds, Channel and Status columns. The Actions column and every row
+menu are removed. The complete row is a keyboard-focusable interactive row that opens the existing
+Policy Drawer with click, Enter or Space and ignores activation from nested interactive descendants.
+The Drawer is readable with `alarm-rules.view`; Edit, Activate/Deactivate and Delete/archive are
+rendered only with `alarm-rules.manage`. The active Drawer row has a visible selected state.
+
+**Consequences:** Policy mutation has one permission-aware UI surface while backend permission,
+Company scope, archive transactions, counter reset, evaluation/dispatch exclusion and immutable
+alarm/trigger/notification/delivery/audit evidence remain authoritative and unchanged. This
+decision supersedes only the Actions-column and duplicate-row-menu wording in the design documents;
+it does not change the Rule table or any API/schema contract.
+
+**Files affected:** `docs/design/DESIGN_SYSTEM.md`, `docs/design/UI_UX_SPEC.md`,
+`apps/web/src/features/alarms/AlarmOperationsPages.tsx`, `packages/ui/src/data-table.tsx`, focused
+Web/Playwright tests and the planning/quality handoff documents.
+
+## DEC-2026-0728-03 — GSS Administrator management uses the existing Admin-user permission family
+
+**Status:** accepted
+
+**Context:** GSS roles, permissions, password hashing and last-active-Super-Admin protection already
+exist, but there is no operator-facing GSS Administrator API or page. The permission catalog already
+defines `admin-users.view`, `admin-users.create`, `admin-users.update`, `admin-users.delete` and
+`admin-users.manage`; inventing an `administrators.*` family or reusing Company-user permissions
+would create a third authorization vocabulary for the same platform identity.
+
+**Decision:** The canonical management resource is `/admin/gss-users`. Listing and the bounded GSS
+role selector require `admin-users.view`; creation requires `admin-users.create`; identity, role,
+status and password changes require `admin-users.update`; permanent deletion requires
+`admin-users.delete`. `admin-users.manage` remains reserved for a future explicitly defined bulk or
+delegated-management workflow. Responses never expose password hashes, token versions or secrets.
+New and replaced passwords use the repository's existing bcrypt cost.
+
+Changing a password or active status increments the authentication token version. Deactivation,
+demotion from a Super Admin role and deletion take the same transaction-scoped PostgreSQL advisory
+lock and recheck that another active Super Admin remains. Audit snapshots contain only safe identity,
+role and status values; independent audit evidence is retained after an Administrator is deleted.
+
+**Consequences:** Administrator management uses the existing separate GSS Admin RBAC context and
+does not affect Company-user roles, positions or scope. No Prisma schema change, migration or seed is
+required. Backend permission checks and the transactional safe-admin policy remain authoritative;
+frontend controls are discoverability and UX only.
+
+**Files affected:** settings controller/service/DTO/module, safe-admin policy tests, shared contracts,
+Admin routing/navigation/page/i18n, focused API/Web/Playwright tests, RBAC and planning documents.

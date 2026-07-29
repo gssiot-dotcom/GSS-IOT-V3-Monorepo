@@ -4,6 +4,17 @@ import { Buffer } from "node:buffer";
 const apiOrigin = "http://localhost:3000";
 const storageKey = "gss-iot-v3-auth-session";
 const colorSchemeKey = "mantine-color-scheme-value";
+
+function tomorrowCalendarLabel() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(tomorrow);
+}
+
 const company = {
   address: "Seoul Operations District",
   code: "GSS-001",
@@ -71,6 +82,40 @@ const nodeTypes = [
     imageAssetKey: "gangform.png",
     key: "gangform_node",
     numericCode: 2,
+  },
+] as const;
+const alarmRules = [
+  {
+    building: {
+      ...buildings[0],
+      area: { id: areas[0].id, name: areas[0].name },
+      company: { id: company.id, name: company.name },
+    },
+    buildingId: buildings[0].id,
+    createdAt: "2026-07-23T08:00:00.000Z",
+    id: "rule-1",
+    isActive: true,
+    name: "Tower A danger rule",
+    nodeType: nodeTypes[2],
+    nodeTypeId: nodeTypes[2].id,
+    recipientPolicies: [
+      {
+        channel: "IN_APP",
+        countIntervalSeconds: 180,
+        createdAt: "2026-07-23T08:00:00.000Z",
+        history: { counters: 1, notifications: 8, triggers: 8 },
+        id: "policy-1",
+        isActive: true,
+        positionId: "position-1",
+        requiredOccurrenceCount: 3,
+        ruleId: "rule-1",
+        specificUserId: null,
+        targetType: "POSITION",
+        updatedAt: "2026-07-23T08:00:00.000Z",
+      },
+    ],
+    severity: "DANGER",
+    updatedAt: "2026-07-23T08:00:00.000Z",
   },
 ] as const;
 const gatewayCommands = [
@@ -339,6 +384,31 @@ const companyUsers = [
     roleId: "role-1",
   },
 ];
+const gssAdministrators = [
+  {
+    createdAt: "2026-07-23T08:00:00.000Z",
+    deletion: {
+      allowed: false,
+      blocker: "The last active GSS super admin cannot be deleted.",
+      code: "LAST_ACTIVE_GSS_SUPER_ADMIN",
+      mode: "NOT_ALLOWED",
+    },
+    email: "admin@gss.example",
+    id: "gss-admin-1",
+    isActive: true,
+    lastLoginAt: "2026-07-28T07:00:00.000Z",
+    name: "GSS Operator",
+    phone: "+82 2 1000 1000",
+    role: {
+      id: "gss-role-1",
+      isSuperAdmin: true,
+      isSystem: true,
+      key: "super-admin",
+      name: "Super Admin",
+    },
+    updatedAt: "2026-07-28T07:00:00.000Z",
+  },
+] as const;
 
 function sessionFor(context: "gss-admin" | "company-user", permissions: readonly string[]) {
   return {
@@ -388,8 +458,20 @@ async function installFixture(
       return route.fulfill({
         json: { items: [company], page: 1, pageSize: 100, total: 1 },
       });
+    if (path === "/admin/gss-users/options")
+      return route.fulfill({ json: gssAdministrators.map(({ role }) => role) });
+    if (path === "/admin/gss-users") {
+      if (route.request().method() === "POST") return route.fulfill({ json: gssAdministrators[0] });
+      return route.fulfill({
+        json: { items: gssAdministrators, page: 1, pageSize: 50, total: 1 },
+      });
+    }
+    if (path === "/admin/gss-users/gss-admin-1")
+      return route.fulfill({ json: gssAdministrators[0] });
     if (path === "/admin/alarms" || path === "/company/alarms")
-      return route.fulfill({ json: { items: alarmEvents } });
+      return route.fulfill({
+        json: { items: alarmEvents, page: 1, pageSize: 50, total: alarmEvents.length },
+      });
     if (path === "/admin/reports" || path === "/company/reports")
       return route.fulfill({ json: { items: reportJobs, page: 1, pageSize: 50, total: 1 } });
     if (path === "/company/users" || path === "/admin/companies/company-1/users")
@@ -687,6 +769,7 @@ async function installFixture(
           gateways: { offline: 0, online: 1, unassigned: 0 },
           kpis: {
             activeBuildings: 2,
+            ...(path.startsWith("/company") ? { activeCompanyUsers: 1 } : {}),
             activeCompanies: 1,
             activeSites: 1,
             gateways: 1,
@@ -712,9 +795,26 @@ async function installFixture(
         },
       });
     if (path === "/admin/alarm-rules" || path === "/company/alarm-rules")
-      return route.fulfill({ json: { items: [] } });
+      return route.fulfill({
+        json: { items: alarmRules, page: 1, pageSize: 50, total: alarmRules.length },
+      });
     if (path === "/admin/alarm-rules/options" || path === "/company/alarm-rules/options")
-      return route.fulfill({ json: { buildings: [], nodeTypes: [], positions: [], users: [] } });
+      return route.fulfill({
+        json: {
+          buildings,
+          nodeTypes,
+          positions: [
+            {
+              companyId: company.id,
+              id: "position-1",
+              isActive: true,
+              key: "site_manager",
+              name: "Site manager",
+            },
+          ],
+          users: [],
+        },
+      });
     if (path === "/admin/gateway-commands")
       return route.fulfill({
         json: { items: gatewayCommands, page: 1, pageSize: 50, total: gatewayCommands.length },
@@ -735,6 +835,45 @@ async function installFixture(
       });
     return route.fulfill({ json: [] });
   });
+}
+
+async function expectHiddenScrollableSidebar(page: Page) {
+  const sidebar = page.locator(".gss-sidebar-scrollarea:visible").first();
+  const viewport = sidebar.locator(".gss-sidebar-scrollarea-viewport");
+  await expect(viewport).toBeVisible();
+  const initial = await viewport.evaluate((element) => {
+    element.scrollTop = 0;
+    const style = getComputedStyle(element);
+    return {
+      clientHeight: element.clientHeight,
+      msOverflowStyle: style.getPropertyValue("-ms-overflow-style"),
+      overflowY: style.overflowY,
+      scrollHeight: element.scrollHeight,
+      scrollbarWidth: style.getPropertyValue("scrollbar-width"),
+    };
+  });
+  expect(initial.scrollHeight).toBeGreaterThan(initial.clientHeight);
+  expect(initial.overflowY).not.toBe("hidden");
+  expect(initial.scrollbarWidth).toBe("none");
+  // Chromium does not expose the legacy Edge-only property through computed style.
+  expect(["", "none"]).toContain(initial.msOverflowStyle);
+  expect(
+    await sidebar.locator("[data-mantine-scrollbar]").evaluateAll(
+      (elements) =>
+        elements.filter((element) => {
+          const style = getComputedStyle(element);
+          return style.display !== "none" && style.visibility !== "hidden";
+        }).length,
+    ),
+  ).toBe(0);
+
+  await viewport.hover();
+  await page.mouse.wheel(0, 240);
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await viewport.evaluate((element) => {
+    element.scrollTop = 120;
+  });
+  expect(await viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 }
 
 async function capture(
@@ -904,6 +1043,123 @@ async function captureSurfaceEvidence(
     });
   }
 }
+
+test("keeps both portal sidebars scrollable without a visible scrollbar and opens the drawer calendar", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120000);
+  const adminPermissions = [
+    "welcome.view",
+    "dashboard.view",
+    "companies.view",
+    "devices.view",
+    "mqtt-commands.view",
+    "monitoring.view",
+    "alarms.view",
+    "alarm-rules.view",
+    "notifications.view",
+    "reports.view",
+    "admin-roles.view",
+    "permissions.view",
+    "settings.system.view",
+  ];
+  const companyPermissions = [
+    "welcome.view",
+    "dashboard.view",
+    "areas.view",
+    "buildings.view",
+    "company-devices.view",
+    "monitoring.view",
+    "alarms.view",
+    "alarm-rules.view",
+    "notifications.view",
+    "reports.view",
+    "company-users.view",
+    "company-roles.view",
+    "company-permissions.view",
+    "settings.company.view",
+  ];
+
+  await installFixture(page, "gss-admin", adminPermissions);
+  for (const viewport of [
+    { height: 420, label: "desktop", width: 1440 },
+    { height: 420, label: "mobile", width: 390 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/admin/gateway-commands", { waitUntil: "domcontentloaded" });
+    if (viewport.label === "mobile") {
+      await page.getByRole("button", { name: "Toggle navigation" }).click();
+    }
+    await expectHiddenScrollableSidebar(page);
+    await page.screenshot({
+      fullPage: false,
+      path: testInfo.outputPath(`admin-hidden-sidebar-${viewport.label}.png`),
+    });
+  }
+
+  await installFixture(page, "company-user", companyPermissions);
+  for (const viewport of [
+    { height: 420, label: "desktop", width: 1440 },
+    { height: 420, label: "mobile", width: 390 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/company/dashboard", { waitUntil: "domcontentloaded" });
+    if (viewport.label === "mobile") {
+      await page.getByRole("button", { name: "Toggle navigation" }).click();
+    }
+    await expectHiddenScrollableSidebar(page);
+    await page.screenshot({
+      fullPage: false,
+      path: testInfo.outputPath(`company-hidden-sidebar-${viewport.label}.png`),
+    });
+  }
+
+  await page.setViewportSize({ height: 900, width: 1440 });
+  const historyRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/monitoring/angle_node/nodes/node-2/history")) {
+      historyRequests.push(request.url());
+    }
+  });
+  await page.goto("/company/buildings/building-1/monitoring/angle_node", {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByText("Cards", { exact: true }).click();
+  await page.getByRole("button", { name: /Node 101, Warning/i }).click();
+  const drawer = page.getByRole("dialog", { name: "Node 101 detail" });
+  await drawer.getByText("Day", { exact: true }).click();
+  const dateInput = drawer.getByRole("button", { name: "History date" });
+  await dateInput.click();
+  await expect(page.getByRole("button", { name: tomorrowCalendarLabel() })).toBeDisabled();
+  await page.screenshot({
+    fullPage: false,
+    path: testInfo.outputPath("company-node-day-calendar-in-drawer.png"),
+  });
+  await page.getByRole("button", { name: /20 July 2026/i }).click();
+  await expect(dateInput).toContainText("2026-07-20");
+  const selectedRange = await page.evaluate(() => ({
+    from: new Date(2026, 6, 20).toISOString(),
+    to: new Date(2026, 6, 21).toISOString(),
+  }));
+  await expect
+    .poll(
+      () =>
+        historyRequests.filter((requestUrl) => {
+          const request = new URL(requestUrl);
+          return (
+            request.searchParams.get("from") === selectedRange.from &&
+            request.searchParams.get("to") === selectedRange.to
+          );
+        }).length,
+    )
+    .toBeGreaterThanOrEqual(2);
+  expect(
+    historyRequests.some((requestUrl) => new URL(requestUrl).pathname.endsWith("/history/chart")),
+  ).toBe(true);
+  expect(
+    historyRequests.some((requestUrl) => new URL(requestUrl).pathname.endsWith("/history")),
+  ).toBe(true);
+});
 
 test("captures protected Admin and Company redesign pages at required widths", async ({
   page,
@@ -1158,6 +1414,15 @@ test("captures responsive alarm-rule and role editor surfaces", async ({ page },
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/admin/alarm-rules", { waitUntil: "domcontentloaded" });
+    await page.getByRole("row", { name: "Open: Tower A danger rule" }).click();
+    await expect(page.getByRole("dialog", { name: "Recipient policy details" })).toBeVisible();
+    await page.waitForTimeout(350);
+    await page.screenshot({
+      fullPage: false,
+      path: testInfo.outputPath(`alarm-policy-details-${viewport.label}.png`),
+    });
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Recipient policy details" })).toBeHidden();
     await page.getByRole("button", { name: "Create rule" }).click();
     const dialog = page.getByRole("dialog", { name: "Create rule" });
     await expect(dialog).toBeVisible();
@@ -1716,4 +1981,251 @@ test("captures dark shared surface evidence across navigation and tables", async
   ]);
   await captureSurfaceEvidence(page, outputPath, "dark");
   await captureSurfaceEvidence(page, outputPath, "light");
+});
+
+test("keeps Admin Alarm resolved-row selection free of browser errors", async ({
+  page,
+}, testInfo) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.stack ?? error.message));
+
+  await installFixture(page, "gss-admin", ["alarms.view", "alarms.manage"]);
+  await page.goto("/admin/alarms", { waitUntil: "domcontentloaded" });
+  const resolved = page.getByRole("checkbox", { name: "Select: 101" });
+  const unresolved = page.getByRole("checkbox", { name: "Select: 100" });
+  await expect(unresolved).toBeDisabled();
+  await resolved.click();
+  await page.getByRole("button", { name: "Delete selected (1)" }).click();
+  let confirmation = page.getByRole("dialog", { name: "Delete selected alarms?" });
+  await expect(confirmation).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("admin-alarm-bulk-confirm-desktop.png"),
+  });
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(resolved).toBeChecked();
+  await page.getByRole("button", { name: "Delete selected (1)" }).click();
+  confirmation = page.getByRole("dialog", { name: "Delete selected alarms?" });
+  await confirmation.getByRole("button", { name: "Delete selected (1)" }).click();
+  await expect(confirmation).toBeHidden();
+  await expect(
+    page.getByTestId("app-root").getByRole("button", { name: "Delete selected (0)" }),
+  ).toBeDisabled();
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("admin-alarm-bulk-mobile.png"),
+  });
+
+  expect(browserErrors).toEqual([]);
+});
+
+test("captures the private PLAN and REAL monitoring viewer interactions", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180000);
+  await installFixture(page, "company-user", [
+    "monitoring.view",
+    "monitoring.realtime",
+    "building-plans.view",
+    "alarm-levels.view",
+  ]);
+  await page.setViewportSize({ height: 900, width: 1440 });
+  await page.goto("/company/buildings/building-1/monitoring/door_node", {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByRole("tab", { name: "Building plan image" }).click();
+  const viewer = page.locator(".gss-building-image-viewer");
+  const image = viewer.locator("img");
+  await expect(image).toBeVisible();
+  await expect(image).toHaveCSS("object-fit", "contain");
+  await expect(image).toHaveCSS("transform", /matrix\(1, 0, 0, 1/);
+  const [viewerBox, imageBox] = await Promise.all([viewer.boundingBox(), image.boundingBox()]);
+  expect(viewerBox).not.toBeNull();
+  expect(imageBox).not.toBeNull();
+  expect(imageBox!.width).toBeLessThanOrEqual(viewerBox!.width + 1);
+  expect(imageBox!.height).toBeLessThanOrEqual(viewerBox!.height + 1);
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("company-plan-viewer-fitted-desktop-light.png"),
+  });
+
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await viewer.hover({ position: { x: Math.round(viewerBox!.width * 0.7), y: 200 } });
+  await page.mouse.wheel(0, -240);
+  await expect(page.getByText(/%/).last()).not.toHaveText("100%");
+  const beforePan = await image.getAttribute("style");
+  await page.mouse.move(viewerBox!.x + viewerBox!.width / 2, viewerBox!.y + viewerBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    viewerBox!.x + viewerBox!.width / 2 + 80,
+    viewerBox!.y + viewerBox!.height / 2 + 40,
+  );
+  await page.mouse.up();
+  expect(await image.getAttribute("style")).not.toBe(beforePan);
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("company-plan-viewer-zoomed-desktop-light.png"),
+  });
+  await page.getByRole("button", { name: "Reset image view" }).click();
+  await expect(page.getByText("100%")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Real image" }).click();
+  await expect(viewer.locator("img")).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("company-real-viewer-fitted-desktop-light.png"),
+  });
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("company-real-viewer-zoomed-desktop-light.png"),
+  });
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.evaluate(({ key }) => window.localStorage.setItem(key, "dark"), {
+    key: colorSchemeKey,
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("tab", { name: "Building plan image" }).click();
+  await expect(page.locator(".gss-building-image-viewer img")).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+  ).toBe(true);
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("company-plan-viewer-fitted-mobile-dark.png"),
+  });
+
+  await page.route(`${apiOrigin}/company/buildings/building-1/images`, (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("tab", { name: "Building plan image" }).click();
+  await expect(page.getByText("No building plan image is available.")).toBeVisible();
+  await page.getByRole("tab", { name: "Real image" }).click();
+  await expect(page.getByText("No real building image is available.")).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("company-real-viewer-empty-mobile-dark.png"),
+  });
+});
+
+test("captures corrected Admin policy, Company cards and Administrator management", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180000);
+  await installFixture(page, "gss-admin", [
+    "companies.view",
+    "companies.update",
+    "companies.delete",
+    "alarm-rules.view",
+    "alarm-rules.manage",
+    "admin-users.view",
+    "admin-users.create",
+    "admin-users.update",
+    "admin-users.delete",
+    "admin-roles.view",
+    "permissions.view",
+  ]);
+  await page.setViewportSize({ height: 900, width: 1440 });
+
+  await page.goto("/admin/alarm-rules", { waitUntil: "domcontentloaded" });
+  const policyRow = page.getByRole("row", { name: "Open: Tower A danger rule" });
+  await expect(policyRow).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Actions" })).toHaveCount(1);
+  await policyRow.click();
+  await expect(page.getByRole("dialog", { name: "Recipient policy details" })).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("admin-policy-table-drawer-desktop-light.png"),
+  });
+
+  await page.goto("/admin/companies", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".gss-company-identity-card")).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("admin-company-identity-cards-desktop-light.png"),
+  });
+  const cardMenu = page.getByRole("button", { name: "More actions: Acme Safety" });
+  await cardMenu.click();
+  await expect(page).toHaveURL(/\/admin\/companies$/);
+
+  await page.goto("/admin/settings/admin-users", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Administrators" })).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("admin-administrators-list-desktop-light.png"),
+  });
+  await page.getByRole("button", { name: "Create Administrator" }).click();
+  await expect(page.getByRole("dialog", { name: "Create Administrator" })).toBeVisible();
+  await page.screenshot({
+    animations: "disabled",
+    fullPage: true,
+    path: testInfo.outputPath("admin-administrators-create-desktop-light.png"),
+  });
+  await page
+    .getByRole("dialog", { name: "Create Administrator" })
+    .getByRole("button")
+    .first()
+    .click();
+  await page.getByRole("row", { name: "Administrator details: GSS Operator" }).click();
+  await page
+    .getByRole("dialog", { name: "Administrator details" })
+    .getByRole("button", { name: "Edit Administrator" })
+    .click();
+  await expect(page.getByRole("dialog", { name: "Edit Administrator" })).toBeVisible();
+  await page.screenshot({
+    animations: "disabled",
+    fullPage: true,
+    path: testInfo.outputPath("admin-administrators-edit-desktop-light.png"),
+  });
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.evaluate(({ key }) => window.localStorage.setItem(key, "dark"), {
+    key: colorSchemeKey,
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Administrators" })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+  ).toBe(true);
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("admin-administrators-list-mobile-dark.png"),
+  });
+});
+
+test("captures the Company users KPI and expanded logo plate", async ({ page }, testInfo) => {
+  await installFixture(page, "company-user", ["dashboard.view"]);
+  await page.setViewportSize({ height: 900, width: 1440 });
+  await page.goto("/company/dashboard", { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("Company users")).toBeVisible();
+  await expect(page.locator(".gss-company-sidebar-logo-plate img")).toBeVisible();
+  const kpiRowTops = await page
+    .getByTestId("dashboard-kpi-grid")
+    .evaluate((element) =>
+      [...element.children].map((child) => Math.round(child.getBoundingClientRect().top)),
+    );
+  expect(new Set(kpiRowTops).size).toBe(1);
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("company-dashboard-kpi-logo-desktop-light.png"),
+  });
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.evaluate(({ key }) => window.localStorage.setItem(key, "dark"), {
+    key: colorSchemeKey,
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await expect(page.locator(".gss-company-sidebar-logo-plate img")).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("company-dashboard-kpi-logo-mobile-dark.png"),
+  });
 });

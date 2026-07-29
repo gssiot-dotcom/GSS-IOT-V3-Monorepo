@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 
 process.env.MQTT_ENABLED = "false";
 process.env.MQTT_FAKE_ACK = "true";
+process.env.REPORT_WORKER_ENABLED = "false";
 
 const e2eSchema = process.env.GSS_E2E_SCHEMA ?? "gss_iot_v3_e2e";
 const baseDatabaseUrl = process.env.DATABASE_URL!;

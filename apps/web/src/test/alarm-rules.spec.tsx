@@ -85,9 +85,47 @@ async function chooseOption(label: string, optionName: string) {
   fireEvent.click(await screen.findByText(optionName));
 }
 
-function mockAlarmRulesFetch(options: { createStatus?: number; session?: AuthSession } = {}) {
+async function chooseMantineValue(control: HTMLElement, value: string) {
+  fireEvent.click(control);
+  let option: HTMLElement | null = null;
+  await waitFor(() => {
+    option = document.querySelector<HTMLElement>(`[data-combobox-option][value="${value}"]`);
+    expect(option).toBeTruthy();
+  });
+  fireEvent.click(option!);
+}
+
+function mockAlarmRulesFetch(
+  options: { createStatus?: number; existingPolicy?: boolean; session?: AuthSession } = {},
+) {
   const session = options.session ?? companySession;
-  let createdRule: unknown;
+  let createdRule: unknown = options.existingPolicy
+    ? {
+        building,
+        buildingId: building.id,
+        createdAt: "2026-07-21T00:00:00.000Z",
+        id: "rule-1",
+        isActive: true,
+        name: "Existing Rule",
+        nodeType: gangformNodeType,
+        nodeTypeId: gangformNodeType.id,
+        recipientPolicies: [
+          {
+            channel: "IN_APP",
+            countIntervalSeconds: 10,
+            id: "policy-1",
+            isActive: true,
+            positionId: "position-1",
+            requiredOccurrenceCount: 2,
+            ruleId: "rule-1",
+            specificUserId: null,
+            targetType: "POSITION",
+          },
+        ],
+        severity: "DANGER",
+        updatedAt: "2026-07-21T00:00:00.000Z",
+      }
+    : undefined;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(String(input));
     if (url.href === `${apiBaseUrl}/auth/company/me`) return jsonResponse(session);
@@ -96,8 +134,31 @@ function mockAlarmRulesFetch(options: { createStatus?: number; session?: AuthSes
       return jsonResponse({
         buildings: [building],
         nodeTypes: [gangformNodeType],
-        positions: [],
-        users: [],
+        positions: [
+          {
+            companyId: "company-1",
+            id: "position-1",
+            isActive: true,
+            key: "site_manager",
+            name: "Site Manager",
+          },
+          {
+            companyId: "company-1",
+            id: "position-archived",
+            isActive: false,
+            key: "archived",
+            name: "Archived Position",
+          },
+        ],
+        users: [
+          {
+            companyId: "company-1",
+            email: "manager@example.com",
+            id: "user-manager",
+            isActive: true,
+            name: "Manager",
+          },
+        ],
       });
     }
     if (url.pathname.endsWith("/notifications/providers/status")) {
@@ -131,6 +192,14 @@ function mockAlarmRulesFetch(options: { createStatus?: number; session?: AuthSes
         page: 1,
         pageSize: 50,
         total: createdRule ? 1 : 0,
+      });
+    }
+    if (url.pathname.endsWith("/alarm-policies/policy-1") && init.method === "PATCH") {
+      return jsonResponse({
+        ...(JSON.parse(String(init.body)) as object),
+        id: "policy-1",
+        isActive: true,
+        ruleId: "rule-1",
       });
     }
     return jsonResponse({});
@@ -260,5 +329,98 @@ describe("Phase 12 alarm rule form", () => {
         }),
       ).toBe(true),
     );
+  });
+
+  it("edits a policy target and occurrence settings through the existing PATCH endpoint", async () => {
+    storeSession(companySession);
+    const fetchMock = mockAlarmRulesFetch({ existingPolicy: true });
+    renderApp("/company/alarm-rules");
+
+    fireEvent.click(await screen.findByRole("row", { name: "Open: Existing Rule" }));
+    const details = await screen.findByRole("dialog", { name: "Recipient policy details" });
+    fireEvent.click(within(details).getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit recipient policy" });
+    expect(within(dialog).queryByText("Archived Position")).toBeNull();
+
+    await chooseMantineValue(
+      within(dialog).getByRole("combobox", { name: "Recipient target" }),
+      "SPECIFIC_USER",
+    );
+    await chooseMantineValue(
+      within(dialog).getByRole("combobox", { name: "Specific user" }),
+      "user-manager",
+    );
+    await chooseMantineValue(within(dialog).getByRole("combobox", { name: "Channel" }), "EMAIL");
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Required occurrences" }), {
+      target: { value: "3" },
+    });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Count interval seconds" }), {
+      target: { value: "30" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([input, init]) => {
+          if (
+            String(input) !== `${apiBaseUrl}/company/alarm-policies/policy-1` ||
+            init?.method !== "PATCH"
+          ) {
+            return false;
+          }
+          const body = JSON.parse(String(init.body));
+          return (
+            body.targetType === "SPECIFIC_USER" &&
+            body.specificUserId === "user-manager" &&
+            body.channel === "EMAIL" &&
+            body.requiredOccurrenceCount === 3 &&
+            body.countIntervalSeconds === 30
+          );
+        }),
+      ).toBe(true),
+    );
+  }, 30_000);
+
+  it("shows occurrence columns and opens a complete policy detail workspace", async () => {
+    storeSession(companySession);
+    mockAlarmRulesFetch({ existingPolicy: true });
+    renderApp("/company/alarm-rules");
+
+    expect(await screen.findByRole("columnheader", { name: "Required occurrences" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Count interval seconds" })).toBeTruthy();
+    expect(screen.getByText("10 seconds")).toBeTruthy();
+
+    const policyTable = screen.getAllByRole("table").at(-1)!;
+    expect(within(policyTable).queryByRole("columnheader", { name: "Actions" })).toBeNull();
+    const row = screen.getByRole("row", { name: "Open: Existing Rule" });
+    row.focus();
+    fireEvent.keyDown(row, { key: "Enter" });
+
+    const detail = await screen.findByRole("dialog", { name: "Recipient policy details" });
+    expect(within(detail).getByText("Site Manager")).toBeTruthy();
+    expect(within(detail).getByText("Gangform Node")).toBeTruthy();
+    expect(within(detail).getByText("2")).toBeTruthy();
+    expect(within(detail).getByText("10 seconds")).toBeTruthy();
+    expect(within(detail).getByRole("button", { name: "Edit" })).toBeTruthy();
+    expect(within(detail).getByRole("button", { name: "Delete" })).toBeTruthy();
+  });
+
+  it("keeps the Policy Drawer readable but mutation-free with view-only permission", async () => {
+    const viewOnlySession: AuthSession = {
+      ...companySession,
+      user: { ...companySession.user, permissions: ["alarm-rules.view"] },
+    };
+    storeSession(viewOnlySession);
+    mockAlarmRulesFetch({ existingPolicy: true, session: viewOnlySession });
+    renderApp("/company/alarm-rules");
+
+    const row = await screen.findByRole("row", { name: "Open: Existing Rule" });
+    row.focus();
+    fireEvent.keyDown(row, { key: " " });
+    const detail = await screen.findByRole("dialog", { name: "Recipient policy details" });
+    expect(within(detail).getByText("Site Manager")).toBeTruthy();
+    expect(within(detail).queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(within(detail).queryByRole("button", { name: "Deactivate" })).toBeNull();
+    expect(within(detail).queryByRole("button", { name: "Delete" })).toBeNull();
   });
 });

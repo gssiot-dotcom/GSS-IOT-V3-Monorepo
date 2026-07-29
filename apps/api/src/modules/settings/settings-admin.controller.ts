@@ -17,6 +17,8 @@ import { CurrentPrincipal } from "../../common/decorators/current-principal.deco
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
 import { PaginationQueryDto, SearchPaginationQueryDto } from "../../common/dto/pagination.dto";
 import { CreateGssRoleDto, UpdateGssRoleDto } from "./dto/gss-role.dto";
+import { CreateGssAdminUserDto, UpdateGssAdminUserDto } from "./dto/gss-admin-user.dto";
+import { GssAdminUserService } from "./gss-admin-user.service";
 import { GssRoleService } from "./gss-role.service";
 import { SystemSettingsService } from "./system-settings.service";
 
@@ -25,8 +27,54 @@ import { SystemSettingsService } from "./system-settings.service";
 export class SettingsAdminController {
   constructor(
     @Inject(GssRoleService) private readonly roles: GssRoleService,
+    @Inject(GssAdminUserService) private readonly administrators: GssAdminUserService,
     @Inject(SystemSettingsService) private readonly system: SystemSettingsService,
   ) {}
+
+  @RequirePermissions("admin-users.view")
+  @Get("gss-users")
+  listAdministrators(
+    @Query(new ValidationPipe({ expectedType: SearchPaginationQueryDto, transform: true }))
+    query: SearchPaginationQueryDto,
+  ) {
+    return this.administrators.list(query);
+  }
+
+  @RequirePermissions("admin-users.view")
+  @Get("gss-users/options")
+  listAdministratorRoleOptions() {
+    return this.administrators.listRoleOptions();
+  }
+
+  @RequirePermissions("admin-users.create")
+  @Post("gss-users")
+  createAdministrator(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Body(new ValidationPipe({ expectedType: CreateGssAdminUserDto, transform: true }))
+    dto: CreateGssAdminUserDto,
+  ) {
+    return this.administrators.create(auth!.principal, dto);
+  }
+
+  @RequirePermissions("admin-users.update")
+  @Patch("gss-users/:userId")
+  updateAdministrator(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("userId") userId: string,
+    @Body(new ValidationPipe({ expectedType: UpdateGssAdminUserDto, transform: true }))
+    dto: UpdateGssAdminUserDto,
+  ) {
+    return this.administrators.update(auth!.principal, userId, dto);
+  }
+
+  @RequirePermissions("admin-users.delete")
+  @Delete("gss-users/:userId")
+  deleteAdministrator(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("userId") userId: string,
+  ) {
+    return this.administrators.delete(auth!.principal, userId);
+  }
 
   @RequirePermissions("admin-roles.view")
   @Get("roles")

@@ -58,6 +58,7 @@ export interface DashboardSummary {
   range: { from: string; to: string; key: DashboardRange };
   kpis: {
     activeCompanies?: number;
+    activeCompanyUsers?: number;
     activeSites?: number;
     activeBuildings?: number;
     gateways?: number;
@@ -91,6 +92,8 @@ export interface DeleteCapability {
   mode: "HARD_DELETE" | "SOFT_DELETE" | "NOT_ALLOWED";
   blocker: string | null;
   code: string | null;
+  counts?: Record<string, number>;
+  recommendedActions?: string[];
 }
 export type AccessLevel = "VIEW" | "MANAGE";
 export type PermissionEffect = "ALLOW" | "DENY";
@@ -233,6 +236,12 @@ export interface CompanyPositionRecord {
   key: string;
   name: string;
   isActive: boolean;
+  dependencies?: {
+    activeAssignments: number;
+    activePolicies: number;
+    historicalAssignments: number;
+    historicalPolicies: number;
+  };
   deletion?: DeleteCapability;
 }
 
@@ -253,6 +262,27 @@ export interface GssRoleRecord {
   name: string;
   _count?: { users: number };
   permissions: Array<{ permissionId: string; permission?: CompanyPermissionRecord }>;
+  deletion?: DeleteCapability;
+}
+
+export interface GssAdminRoleOption {
+  id: string;
+  isSuperAdmin: boolean;
+  isSystem: boolean;
+  key: string;
+  name: string;
+}
+
+export interface GssAdminUserRecord {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  isActive: boolean;
+  lastLoginAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  role: GssAdminRoleOption;
   deletion?: DeleteCapability;
 }
 
@@ -354,10 +384,7 @@ export interface BulkNodeCreateResponse {
   numbers: string[];
 }
 
-export interface DeviceDeletionCapability {
-  allowed: boolean;
-  blocker: string | null;
-}
+export type DeviceDeletionCapability = DeleteCapability;
 
 export interface CompanyDeviceSnapshot {
   gateways: GatewayRecord[];
@@ -553,6 +580,14 @@ export interface AlarmPolicyRecord {
   countIntervalSeconds: number;
   channel: AlarmChannel;
   isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  disabledAt?: string | null;
+  history?: {
+    counters: number;
+    notifications: number;
+    triggers: number;
+  };
   deletion?: DeleteCapability;
 }
 
@@ -563,7 +598,14 @@ export interface AlarmRuleRecord {
   severity: AlarmSeverity;
   name: string | null;
   isActive: boolean;
-  building?: { id: string; title: string };
+  building?: {
+    area?: { id: string; name: string };
+    areaId?: string;
+    company?: { id: string; name: string };
+    companyId?: string;
+    id: string;
+    title: string;
+  };
   nodeType?: NodeTypeRecord;
   recipientPolicies?: AlarmPolicyRecord[];
   createdAt: string;

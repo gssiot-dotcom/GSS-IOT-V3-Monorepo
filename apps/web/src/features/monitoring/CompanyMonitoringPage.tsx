@@ -62,6 +62,8 @@ import type { TranslationKey } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
+import { hasPermission } from "../../shared/rbac/has-permission";
+import { BuildingImageViewerPanel } from "./components/BuildingImageViewer";
 import { NodeDetailDrawer } from "./components/NodeDetailDrawer";
 import { NodeStateCard } from "./components/NodeStateCard";
 import { MonitoringViewToggle, type MonitoringView } from "./components/MonitoringViewToggle";
@@ -235,8 +237,18 @@ export function NodeTypeMonitoringPage() {
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("offline");
   const [error, setError] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<
-    "alarm-levels" | "fault-filters" | "history" | "states"
+    "alarm-levels" | "fault-filters" | "history" | "plan-image" | "real-image" | "states"
   >("states");
+  const canViewBuildingImages = hasPermission(session, "building-plans.view");
+
+  useEffect(() => {
+    if (
+      !canViewBuildingImages &&
+      (workspaceTab === "plan-image" || workspaceTab === "real-image")
+    ) {
+      setWorkspaceTab("states");
+    }
+  }, [canViewBuildingImages, workspaceTab]);
 
   useEffect(() => {
     setHistoryPage(1);
@@ -405,7 +417,7 @@ export function NodeTypeMonitoringPage() {
           />
         ))}
       </Box>
-      {rows.length ? (
+      {rows.length || canViewBuildingImages ? (
         <Stack gap="md">
           <Group justify="space-between" wrap="wrap">
             <WorkspaceTabs
@@ -415,22 +427,46 @@ export function NodeTypeMonitoringPage() {
                 { label: t("monitoring.history"), value: "history" },
                 { label: t("alarmLevels.title"), value: "alarm-levels" },
                 { label: t("alarmLevels.faultFilters"), value: "fault-filters" },
+                ...(canViewBuildingImages
+                  ? [
+                      { label: t("monitoring.buildingPlanImage"), value: "plan-image" },
+                      { label: t("monitoring.realImage"), value: "real-image" },
+                    ]
+                  : []),
               ]}
               onChange={(value) =>
-                setWorkspaceTab(value as "alarm-levels" | "fault-filters" | "history" | "states")
+                setWorkspaceTab(
+                  value as
+                    | "alarm-levels"
+                    | "fault-filters"
+                    | "history"
+                    | "plan-image"
+                    | "real-image"
+                    | "states",
+                )
               }
               value={workspaceTab}
             />
-            <MonitoringViewToggle
-              onChange={(next) => {
-                setView(next);
-                window.localStorage.setItem("gss.monitoring.view", next);
-              }}
-              value={view}
-            />
+            {workspaceTab === "states" ? (
+              <MonitoringViewToggle
+                onChange={(next) => {
+                  setView(next);
+                  window.localStorage.setItem("gss.monitoring.view", next);
+                }}
+                value={view}
+              />
+            ) : null}
           </Group>
-          {workspaceTab === "states" ? (
-            view === "CARD" ? (
+          {workspaceTab === "plan-image" || workspaceTab === "real-image" ? (
+            <BuildingImageViewerPanel
+              basePath="/company"
+              buildingId={buildingId!}
+              kind={workspaceTab === "plan-image" ? "PLAN" : "REAL"}
+            />
+          ) : workspaceTab === "states" ? (
+            !rows.length ? (
+              <EmptyState description={t("monitoring.emptyNodes")} title={t("common.emptyTitle")} />
+            ) : view === "CARD" ? (
               <SimpleGrid
                 cols={{ base: 1, xs: 2, sm: 3, lg: 5 }}
                 data-testid="monitoring-node-grid"

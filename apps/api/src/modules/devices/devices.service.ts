@@ -6,7 +6,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { AssignmentStatus } from "@prisma/client";
+import {
+  AlarmEventStatus,
+  AssignmentStatus,
+  DeviceLifecycleStatus,
+  GatewayCommandStatus,
+} from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
@@ -118,24 +123,27 @@ export class DevicesService {
 
   async listGateways(query: SearchPaginationQueryDto) {
     const search = query.search?.trim();
-    const where: Prisma.GatewayWhereInput = search
-      ? {
-          OR: [
-            { serialNumber: { contains: search, mode: "insensitive" } },
-            { installedLocation: { contains: search, mode: "insensitive" } },
-            {
-              companyAssignments: {
-                some: { company: { name: { contains: search, mode: "insensitive" } } },
+    const where: Prisma.GatewayWhereInput = {
+      status: { not: DeviceLifecycleStatus.RETIRED },
+      ...(search
+        ? {
+            OR: [
+              { serialNumber: { contains: search, mode: "insensitive" } },
+              { installedLocation: { contains: search, mode: "insensitive" } },
+              {
+                companyAssignments: {
+                  some: { company: { name: { contains: search, mode: "insensitive" } } },
+                },
               },
-            },
-            {
-              buildingAssignments: {
-                some: { building: { title: { contains: search, mode: "insensitive" } } },
+              {
+                buildingAssignments: {
+                  some: { building: { title: { contains: search, mode: "insensitive" } } },
+                },
               },
-            },
-          ],
-        }
-      : {};
+            ],
+          }
+        : {}),
+    };
     const [gateways, total] = await this.prisma.$transaction([
       this.prisma.gateway.findMany({
         orderBy: [{ serialNumber: "asc" }, { id: "asc" }],
@@ -173,7 +181,9 @@ export class DevicesService {
 
   updateGateway(actor: AuthTokenPayload, gatewayId: string, dto: UpdateGatewayDto) {
     return this.prisma.$transaction(async (tx) => {
+      await this.lockGateway(gatewayId, tx);
       const oldGateway = await this.getGatewayOrThrow(gatewayId, tx);
+      this.assertNormalLifecycleUpdate(oldGateway.status, dto.status, "gateway");
       const gateway = await tx.gateway.update({
         where: { id: gatewayId },
         data: dto,
@@ -194,22 +204,47 @@ export class DevicesService {
     });
   }
 
-  async deleteGateway(actor: AuthTokenPayload, gatewayId: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+  async deleteGateway(actor: AuthTokenPayload, gatewayId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockGateway(gatewayId, tx);
       const gateway = await tx.gateway.findUnique({
         where: { id: gatewayId },
-        select: { id: true, serialNumber: true },
+        select: { id: true, serialNumber: true, status: true },
       });
       if (!gateway) throw new NotFoundException("The gateway was not found.");
+      if (gateway.status === DeviceLifecycleStatus.RETIRED) {
+        throw new ConflictException("The gateway is already retired.");
+      }
 
       const deletion = await this.getGatewayDeletionCapability(gatewayId, tx);
       if (!deletion.allowed) {
         throw new ConflictException({
           blocker: deletion.blocker,
-          code: "DEVICE_HISTORY_EXISTS",
-          lifecycle: "INACTIVE_OR_RETIRED",
-          message: "This gateway has business history and cannot be hard-deleted.",
+          code: deletion.code,
+          counts: deletion.counts,
+          message: deletion.blocker,
+          recommendedActions: deletion.recommendedActions,
         });
+      }
+
+      if (deletion.mode === "SOFT_DELETE") {
+        const retired = await tx.gateway.update({
+          where: { id: gatewayId },
+          data: { status: DeviceLifecycleStatus.RETIRED },
+          select: gatewaySelect,
+        });
+        await this.auditLog.record(
+          actor,
+          {
+            action: "gateway.retire",
+            entityId: gateway.id,
+            entityType: "Gateway",
+            newValue: retired,
+            oldValue: gateway,
+          },
+          tx,
+        );
+        return { mode: deletion.mode, status: retired.status };
       }
 
       await tx.gateway.delete({ where: { id: gatewayId } });
@@ -223,32 +258,36 @@ export class DevicesService {
         },
         tx,
       );
+      return { mode: deletion.mode };
     });
   }
 
   async listNodes(query: SearchPaginationQueryDto) {
     const search = query.search?.trim();
-    const where: Prisma.NodeWhereInput = search
-      ? {
-          OR: [
-            { number: { contains: search, mode: "insensitive" } },
-            { installedLocation: { contains: search, mode: "insensitive" } },
-            { nodeType: { displayName: { contains: search, mode: "insensitive" } } },
-            {
-              companyAssignments: {
-                some: { company: { name: { contains: search, mode: "insensitive" } } },
-              },
-            },
-            {
-              gatewayAssignments: {
-                some: {
-                  gateway: { serialNumber: { contains: search, mode: "insensitive" } },
+    const where: Prisma.NodeWhereInput = {
+      status: { not: DeviceLifecycleStatus.RETIRED },
+      ...(search
+        ? {
+            OR: [
+              { number: { contains: search, mode: "insensitive" } },
+              { installedLocation: { contains: search, mode: "insensitive" } },
+              { nodeType: { displayName: { contains: search, mode: "insensitive" } } },
+              {
+                companyAssignments: {
+                  some: { company: { name: { contains: search, mode: "insensitive" } } },
                 },
               },
-            },
-          ],
-        }
-      : {};
+              {
+                gatewayAssignments: {
+                  some: {
+                    gateway: { serialNumber: { contains: search, mode: "insensitive" } },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
     const [nodes, total] = await this.prisma.$transaction([
       this.prisma.node.findMany({
         orderBy: [{ number: "asc" }, { id: "asc" }],
@@ -357,7 +396,9 @@ export class DevicesService {
 
   updateNode(actor: AuthTokenPayload, nodeId: string, dto: UpdateNodeDto) {
     return this.prisma.$transaction(async (tx) => {
+      await this.lockNode(nodeId, tx);
       const oldNode = await this.getNodeOrThrow(nodeId, tx);
+      this.assertNormalLifecycleUpdate(oldNode.status, dto.status, "node");
       if (dto.nodeTypeId) {
         await this.getNodeTypeOrThrow(dto.nodeTypeId, tx);
       }
@@ -377,22 +418,47 @@ export class DevicesService {
     });
   }
 
-  async deleteNode(actor: AuthTokenPayload, nodeId: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+  async deleteNode(actor: AuthTokenPayload, nodeId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockNode(nodeId, tx);
       const node = await tx.node.findUnique({
         where: { id: nodeId },
-        select: { id: true, number: true },
+        select: { id: true, number: true, status: true },
       });
       if (!node) throw new NotFoundException("The node was not found.");
+      if (node.status === DeviceLifecycleStatus.RETIRED) {
+        throw new ConflictException("The node is already retired.");
+      }
 
       const deletion = await this.getNodeDeletionCapability(nodeId, tx);
       if (!deletion.allowed) {
         throw new ConflictException({
           blocker: deletion.blocker,
-          code: "DEVICE_HISTORY_EXISTS",
-          lifecycle: "INACTIVE_OR_RETIRED",
-          message: "This node has business history and cannot be hard-deleted.",
+          code: deletion.code,
+          counts: deletion.counts,
+          message: deletion.blocker,
+          recommendedActions: deletion.recommendedActions,
         });
+      }
+
+      if (deletion.mode === "SOFT_DELETE") {
+        const retired = await tx.node.update({
+          where: { id: nodeId },
+          data: { status: DeviceLifecycleStatus.RETIRED },
+          select: nodeSelect,
+        });
+        await this.auditLog.record(
+          actor,
+          {
+            action: "node.retire",
+            entityId: node.id,
+            entityType: "Node",
+            newValue: retired,
+            oldValue: node,
+          },
+          tx,
+        );
+        return { mode: deletion.mode, status: retired.status };
       }
 
       await tx.node.delete({ where: { id: nodeId } });
@@ -406,13 +472,15 @@ export class DevicesService {
         },
         tx,
       );
+      return { mode: deletion.mode };
     });
   }
 
   assignGatewayToCompany(actor: AuthTokenPayload, gatewayId: string, companyId: string) {
     return this.prisma.$transaction(async (tx) => {
+      await this.lockGateway(gatewayId, tx);
       await Promise.all([
-        this.getGatewayOrThrow(gatewayId, tx),
+        this.getAssignableGateway(gatewayId, tx),
         this.getCompanyOrThrow(companyId, tx),
       ]);
       await this.endActiveGatewayCompanyAssignment(gatewayId, tx);
@@ -477,6 +545,8 @@ export class DevicesService {
 
   assignGatewayToBuilding(actor: AuthTokenPayload, gatewayId: string, buildingId: string) {
     return this.prisma.$transaction(async (tx) => {
+      await this.lockGateway(gatewayId, tx);
+      await this.getAssignableGateway(gatewayId, tx);
       const [gatewayCompany, building] = await Promise.all([
         this.getActiveGatewayCompanyAssignment(gatewayId, tx),
         this.getBuildingOrThrow(buildingId, tx),
@@ -529,7 +599,11 @@ export class DevicesService {
 
   assignNodeToCompany(actor: AuthTokenPayload, nodeId: string, companyId: string) {
     return this.prisma.$transaction(async (tx) => {
-      await Promise.all([this.getNodeOrThrow(nodeId, tx), this.getCompanyOrThrow(companyId, tx)]);
+      await this.lockNode(nodeId, tx);
+      await Promise.all([
+        this.getAssignableNode(nodeId, tx),
+        this.getCompanyOrThrow(companyId, tx),
+      ]);
       await this.endActiveNodeCompanyAssignment(nodeId, tx);
       const assignment = await tx.companyDeviceAssignment.create({ data: { companyId, nodeId } });
       await this.auditLog.record(
@@ -612,9 +686,11 @@ export class DevicesService {
     const { companyId } = await this.getCompanyUserContext(companyUserId);
     const gatewayWhere = {
       companyAssignments: { some: { companyId, status: AssignmentStatus.ACTIVE } },
+      status: { not: DeviceLifecycleStatus.RETIRED },
     } satisfies Prisma.GatewayWhereInput;
     const nodeWhere = {
       companyAssignments: { some: { companyId, status: AssignmentStatus.ACTIVE } },
+      status: { not: DeviceLifecycleStatus.RETIRED },
     } satisfies Prisma.NodeWhereInput;
     const [gatewayItems, gatewayTotal, nodeItems, nodeTotal] = await this.prisma.$transaction([
       this.prisma.gateway.findMany({
@@ -665,6 +741,7 @@ export class DevicesService {
   }) {
     const gateways = await this.prisma.gateway.findMany({
       where: {
+        status: { not: DeviceLifecycleStatus.RETIRED },
         companyAssignments: {
           some: { companyId: filter.companyId, status: AssignmentStatus.ACTIVE },
         },
@@ -685,6 +762,7 @@ export class DevicesService {
     const gatewayIds = gateways.map(({ id }) => id);
     const nodes = await this.prisma.node.findMany({
       where: {
+        status: { not: DeviceLifecycleStatus.RETIRED },
         companyAssignments: {
           some: { companyId: filter.companyId, status: AssignmentStatus.ACTIVE },
         },
@@ -724,6 +802,43 @@ export class DevicesService {
       throw new NotFoundException("The node was not found.");
     }
     return node;
+  }
+
+  private async getAssignableGateway(gatewayId: string, executor: PrismaExecutor) {
+    const gateway = await this.getGatewayOrThrow(gatewayId, executor);
+    if (gateway.status === DeviceLifecycleStatus.RETIRED) {
+      throw new ConflictException("Retired gateways cannot receive new assignments.");
+    }
+    return gateway;
+  }
+
+  private async getAssignableNode(nodeId: string, executor: PrismaExecutor) {
+    const node = await this.getNodeOrThrow(nodeId, executor);
+    if (node.status === DeviceLifecycleStatus.RETIRED) {
+      throw new ConflictException("Retired nodes cannot receive new assignments.");
+    }
+    return node;
+  }
+
+  private assertNormalLifecycleUpdate(
+    current: DeviceLifecycleStatus,
+    requested: DeviceLifecycleStatus | undefined,
+    device: "gateway" | "node",
+  ) {
+    if (current === DeviceLifecycleStatus.RETIRED) {
+      throw new ConflictException(`Retired ${device}s cannot be updated or reactivated.`);
+    }
+    if (requested === DeviceLifecycleStatus.RETIRED) {
+      throw new BadRequestException(`Use the ${device} retirement action to retire this device.`);
+    }
+  }
+
+  private async lockGateway(gatewayId: string, tx: Prisma.TransactionClient) {
+    await tx.$queryRaw`SELECT "id" FROM "Gateway" WHERE "id" = ${gatewayId}::uuid FOR UPDATE`;
+  }
+
+  private async lockNode(nodeId: string, tx: Prisma.TransactionClient) {
+    await tx.$queryRaw`SELECT "id" FROM "Node" WHERE "id" = ${nodeId}::uuid FOR UPDATE`;
   }
 
   private async getNodeTypeOrThrow(nodeTypeId: string, executor: PrismaExecutor) {
@@ -864,6 +979,12 @@ export class DevicesService {
     executor: PrismaExecutor = this.prisma,
   ) {
     const [
+      activeCompanyAssignments,
+      activeBuildingAssignments,
+      activeNodeAssignments,
+      unfinishedCommands,
+      unfinishedProvisioningRequests,
+      activeAlarmEvents,
       companyAssignments,
       buildingAssignments,
       nodeAssignments,
@@ -876,6 +997,45 @@ export class DevicesService {
       latestNodeStates,
       sensorReadings,
     ] = await Promise.all([
+      executor.companyDeviceAssignment.count({
+        where: { gatewayId, status: AssignmentStatus.ACTIVE },
+      }),
+      executor.gatewayBuildingAssignment.count({
+        where: { gatewayId, status: AssignmentStatus.ACTIVE },
+      }),
+      executor.nodeGatewayAssignment.count({
+        where: { gatewayId, status: AssignmentStatus.ACTIVE },
+      }),
+      executor.gatewayCommand.count({
+        where: {
+          gatewayId,
+          status: {
+            in: [
+              GatewayCommandStatus.PENDING,
+              GatewayCommandStatus.SENT,
+              GatewayCommandStatus.FAILED,
+            ],
+          },
+        },
+      }),
+      executor.nodeGatewayProvisioningRequest.count({
+        where: {
+          gatewayId,
+          status: {
+            in: [
+              GatewayCommandStatus.PENDING,
+              GatewayCommandStatus.SENT,
+              GatewayCommandStatus.FAILED,
+            ],
+          },
+        },
+      }),
+      executor.alarmEvent.count({
+        where: {
+          gatewayId,
+          status: { in: [AlarmEventStatus.OPEN, AlarmEventStatus.ACKNOWLEDGED] },
+        },
+      }),
       executor.companyDeviceAssignment.count({ where: { gatewayId } }),
       executor.gatewayBuildingAssignment.count({ where: { gatewayId } }),
       executor.nodeGatewayAssignment.count({ where: { gatewayId } }),
@@ -889,23 +1049,66 @@ export class DevicesService {
       executor.sensorReading.count({ where: { gatewayId } }),
     ]);
 
-    return deletionCapability([
-      [companyAssignments, "companyAssignmentHistory"],
-      [buildingAssignments, "buildingAssignmentHistory"],
-      [nodeAssignments, "nodeAssignmentHistory"],
-      [commands, "commandHistory"],
-      [provisioningRequests, "provisioningHistory"],
-      [alarmEvents, "alarmHistory"],
-      [alarmLevelApplications, "alarmConfigurationHistory"],
-      [faultFilterDesiredStates, "faultFilterHistory"],
-      [faultFilterAppliedStates, "faultFilterHistory"],
-      [latestNodeStates, "monitoringHistory"],
-      [sensorReadings, "sensorHistory"],
-    ]);
+    return deviceDeletionCapability(
+      [
+        [
+          activeCompanyAssignments,
+          "activeCompanyAssignments",
+          "GATEWAY_ACTIVE_COMPANY_ASSIGNMENT",
+          "Unassign the company first.",
+        ],
+        [
+          activeBuildingAssignments,
+          "activeBuildingAssignments",
+          "GATEWAY_ACTIVE_BUILDING_ASSIGNMENT",
+          "Unassign the building first.",
+        ],
+        [
+          activeNodeAssignments,
+          "activeNodeAssignments",
+          "GATEWAY_ACTIVE_NODE_ASSIGNMENTS",
+          `Unassign ${activeNodeAssignments} node(s) from this gateway first.`,
+        ],
+        [
+          unfinishedCommands,
+          "unfinishedCommands",
+          "GATEWAY_UNFINISHED_COMMANDS",
+          `Finish or cancel ${unfinishedCommands} unfinished gateway command(s) first.`,
+        ],
+        [
+          unfinishedProvisioningRequests,
+          "unfinishedProvisioningRequests",
+          "GATEWAY_UNFINISHED_PROVISIONING",
+          `Finish or cancel ${unfinishedProvisioningRequests} unfinished provisioning request(s) first.`,
+        ],
+        [
+          activeAlarmEvents,
+          "activeAlarmEvents",
+          "GATEWAY_ACTIVE_ALARMS",
+          `Resolve ${activeAlarmEvents} active alarm(s) first.`,
+        ],
+      ],
+      {
+        alarmConfigurationHistory: alarmLevelApplications,
+        alarmHistory: alarmEvents,
+        buildingAssignmentHistory: buildingAssignments,
+        commandHistory: commands,
+        companyAssignmentHistory: companyAssignments,
+        faultFilterHistory: faultFilterDesiredStates + faultFilterAppliedStates,
+        monitoringHistory: latestNodeStates,
+        nodeAssignmentHistory: nodeAssignments,
+        provisioningHistory: provisioningRequests,
+        sensorHistory: sensorReadings,
+      },
+    );
   }
 
   private async getNodeDeletionCapability(nodeId: string, executor: PrismaExecutor = this.prisma) {
     const [
+      activeCompanyAssignments,
+      activeGatewayAssignments,
+      unfinishedProvisioningItems,
+      activeAlarmEvents,
       companyAssignments,
       gatewayAssignments,
       provisioningItems,
@@ -918,6 +1121,32 @@ export class DevicesService {
       policyTriggers,
       notifications,
     ] = await Promise.all([
+      executor.companyDeviceAssignment.count({
+        where: { nodeId, status: AssignmentStatus.ACTIVE },
+      }),
+      executor.nodeGatewayAssignment.count({
+        where: { nodeId, status: AssignmentStatus.ACTIVE },
+      }),
+      executor.nodeGatewayProvisioningItem.count({
+        where: {
+          nodeId,
+          request: {
+            status: {
+              in: [
+                GatewayCommandStatus.PENDING,
+                GatewayCommandStatus.SENT,
+                GatewayCommandStatus.FAILED,
+              ],
+            },
+          },
+        },
+      }),
+      executor.alarmEvent.count({
+        where: {
+          nodeId,
+          status: { in: [AlarmEventStatus.OPEN, AlarmEventStatus.ACKNOWLEDGED] },
+        },
+      }),
       executor.companyDeviceAssignment.count({ where: { nodeId } }),
       executor.nodeGatewayAssignment.count({ where: { nodeId } }),
       executor.nodeGatewayProvisioningItem.count({ where: { nodeId } }),
@@ -931,26 +1160,85 @@ export class DevicesService {
       executor.alarmNotification.count({ where: { alarmEvent: { nodeId } } }),
     ]);
 
-    return deletionCapability([
-      [companyAssignments, "companyAssignmentHistory"],
-      [gatewayAssignments, "nodeAssignmentHistory"],
-      [provisioningItems, "provisioningHistory"],
-      [faultFilterDesiredStates, "faultFilterHistory"],
-      [faultFilterAppliedStates, "faultFilterHistory"],
-      [latestStates, "monitoringHistory"],
-      [sensorReadings, "sensorHistory"],
-      [counterStates, "alarmHistory"],
-      [alarmEvents, "alarmHistory"],
-      [policyTriggers, "alarmHistory"],
-      [notifications, "alarmNotificationHistory"],
-    ]);
+    return deviceDeletionCapability(
+      [
+        [
+          activeCompanyAssignments,
+          "activeCompanyAssignments",
+          "NODE_ACTIVE_COMPANY_ASSIGNMENT",
+          "Unassign the company first.",
+        ],
+        [
+          activeGatewayAssignments,
+          "activeGatewayAssignments",
+          "NODE_ACTIVE_GATEWAY_ASSIGNMENT",
+          "Unassign the gateway first.",
+        ],
+        [
+          unfinishedProvisioningItems,
+          "unfinishedProvisioningItems",
+          "NODE_UNFINISHED_PROVISIONING",
+          `Finish or cancel ${unfinishedProvisioningItems} unfinished provisioning request(s) first.`,
+        ],
+        [
+          activeAlarmEvents,
+          "activeAlarmEvents",
+          "NODE_ACTIVE_ALARMS",
+          `Resolve ${activeAlarmEvents} active alarm(s) first.`,
+        ],
+      ],
+      {
+        alarmHistory: counterStates + alarmEvents + policyTriggers,
+        alarmNotificationHistory: notifications,
+        companyAssignmentHistory: companyAssignments,
+        faultFilterHistory: faultFilterDesiredStates + faultFilterAppliedStates,
+        monitoringHistory: latestStates,
+        nodeAssignmentHistory: gatewayAssignments,
+        provisioningHistory: provisioningItems,
+        sensorHistory: sensorReadings,
+      },
+    );
   }
 }
 
-function deletionCapability(blockers: Array<[number, string]>): {
+type ActiveDeviceBlocker = [number, string, string, string];
+
+function deviceDeletionCapability(
+  activeBlockers: ActiveDeviceBlocker[],
+  historyCounts: Record<string, number>,
+): {
   allowed: boolean;
+  mode: "HARD_DELETE" | "SOFT_DELETE" | "NOT_ALLOWED";
   blocker: string | null;
+  code: string | null;
+  counts: Record<string, number>;
+  recommendedActions: string[];
 } {
-  const blocker = blockers.find(([count]) => count > 0)?.[1] ?? null;
-  return { allowed: blocker === null, blocker };
+  const counts = {
+    ...historyCounts,
+    ...Object.fromEntries(activeBlockers.map(([count, key]) => [key, count])),
+  };
+  const blocking = activeBlockers.find(([count]) => count > 0);
+  if (blocking) {
+    const [, , code, blocker] = blocking;
+    return {
+      allowed: false,
+      blocker,
+      code,
+      counts,
+      mode: "NOT_ALLOWED",
+      recommendedActions: activeBlockers
+        .filter(([count]) => count > 0)
+        .map(([, , , action]) => action),
+    };
+  }
+  const hasHistory = Object.values(historyCounts).some((count) => count > 0);
+  return {
+    allowed: true,
+    blocker: null,
+    code: null,
+    counts,
+    mode: hasHistory ? "SOFT_DELETE" : "HARD_DELETE",
+    recommendedActions: [],
+  };
 }

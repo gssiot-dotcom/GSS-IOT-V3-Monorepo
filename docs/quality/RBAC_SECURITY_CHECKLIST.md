@@ -68,3 +68,48 @@ The checklist remains partially open because report/export scope enforcement, al
 - [x] Gateway/Node unassignment uses assignment permissions, preserves history and audits endings.
 - [x] Direct collection inputs reject page sizes outside 50/100.
 - [x] Permission checkbox catalogs remain distinct from paginated permission list endpoints.
+
+## 2026-07-27 retirement and Position dependency checks
+
+- [x] Gateway/Node delete permission never substitutes for assignment or command permission; active
+      dependency checks run inside the delete transaction under the same inventory-row lock used by
+      new assignments/provisioning/commands.
+- [x] Retired Gateway/Node records are excluded from active inventory/options and rejected by normal
+      update, assignment, provisioning and command paths.
+- [x] Company Position capability counts active assignments and active policies separately from
+      ended/audited history; delete repeats dependency checks in the transaction.
+- [x] Company Position archive records actor/time, does not cascade changes, and archived Positions
+      are rejected by assignment and policy target validation.
+- [x] Company user assignment removal remains available through Company scope and the corresponding
+      GSS Admin company-scoped operation; direct-deny and cross-company guards are unchanged.
+- [x] Recipient-policy PATCH remains separated by `/admin` and `/company` authorization contexts,
+      validates target ownership/scope and audits old/new values.
+- [x] Recipient resolution requires an active non-archived Position, active assignment, active
+      Company user and matching Company/Area/Building scope. Inactive/archived Position regression
+      coverage proves that an old active assignment cannot receive a new notification.
+- [x] Frontend dependency summaries, hidden actions and capability modes are UX hints only; direct
+      endpoint permission, scope and transaction checks remain authoritative.
+
+## 2026-07-28 alarm archive and bulk selection checks
+
+- [x] Rule and Policy archive stays separated by Admin/Company auth context and requires
+      `alarm-rules.manage`; each target is company/scope validated server-side.
+- [x] Bulk Alarm Event archive requires `alarms.manage`, rejects cross-scope/missing IDs atomically
+      and permits only resolved events.
+- [x] Bulk Notification archive permits the recipient or the existing scoped manager path; selected
+      IDs cannot widen company or resource scope.
+- [x] Selection checkboxes and hidden/disabled actions are UX only; direct endpoint calls repeat
+      permission, actor ownership and scope checks and create aggregate audit evidence.
+
+## 2026-07-28 GSS Administrator and private monitoring image checks
+
+- [x] `/admin/gss-users` uses only the existing `admin-users.view/create/update/delete` permission
+      family; Company tokens and no-permission GSS tokens receive 403 on direct calls.
+- [x] Administrator DTOs/responses/audits exclude password hashes, token versions and secrets;
+      passwords use the existing bcrypt flow and critical lifecycle mutations are audited.
+- [x] Deactivate, Super Admin demotion and delete serialize and recheck the last-active-Super-Admin
+      invariant inside the backend transaction.
+- [x] Administrator collection search and 50/100 pagination are backend bounded; sidebar/controls
+      remain UX hints and route/backend guards are authoritative.
+- [x] Realtime PLAN/REAL tabs do not request private metadata or content without
+      `building-plans.view`; Company content continues to require company/building scope.

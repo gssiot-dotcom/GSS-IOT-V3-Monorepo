@@ -19,6 +19,7 @@ import { PaginationQueryDto } from "../../common/dto/pagination.dto";
 import { AlarmsService } from "./alarms.service";
 import {
   AlarmActionNoteDto,
+  BulkArchiveDto,
   CreateAlarmRecipientPolicyDto,
   CreateAlarmRuleDto,
   ListAlarmsQueryDto,
@@ -82,7 +83,7 @@ export class AlarmsCompanyController {
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("ruleId") ruleId: string,
   ) {
-    return this.alarms.disableRule(auth!.principal, ruleId);
+    return this.alarms.archiveRule(auth!.principal, ruleId);
   }
 
   @RequirePermissions("alarm-rules.manage")
@@ -144,7 +145,7 @@ export class AlarmsCompanyController {
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("policyId") policyId: string,
   ) {
-    return this.alarms.disablePolicy(auth!.principal, policyId);
+    return this.alarms.archivePolicy(auth!.principal, policyId);
   }
 
   @RequirePermissions("alarm-rules.manage")
@@ -205,6 +206,16 @@ export class AlarmsCompanyController {
     query: ListAlarmsQueryDto,
   ) {
     return this.alarms.listAlarms(auth!.principal, query);
+  }
+
+  @RequirePermissions("alarms.manage")
+  @Post("alarms/bulk-archive")
+  bulkArchiveAlarms(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Body(new ValidationPipe({ expectedType: BulkArchiveDto, transform: true }))
+    dto: BulkArchiveDto,
+  ) {
+    return this.alarms.bulkArchiveAlarmEvents(auth!.principal, dto.ids);
   }
 
   @RequirePermissions("alarms.view")
@@ -276,6 +287,16 @@ export class AlarmsCompanyController {
   @Patch("notifications/read-all")
   markAllNotificationsRead(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
     return this.alarms.markAllNotificationsRead(auth!.principal);
+  }
+
+  @RequirePermissions("notifications.view")
+  @Post("notifications/bulk-archive")
+  bulkArchiveNotifications(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Body(new ValidationPipe({ expectedType: BulkArchiveDto, transform: true }))
+    dto: BulkArchiveDto,
+  ) {
+    return this.alarms.bulkArchiveNotifications(auth!.principal, dto.ids);
   }
 
   @RequirePermissions("notifications.view")

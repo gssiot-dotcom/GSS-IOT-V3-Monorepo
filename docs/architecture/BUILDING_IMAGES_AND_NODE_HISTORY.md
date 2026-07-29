@@ -28,6 +28,14 @@ Admin endpoints require `building-plans.view` or `building-plans.manage`. Compan
 the same permission plus backend company/building scope. Content responses use private cache
 headers, ETag and `X-Content-Type-Options: nosniff`.
 
+The Admin and Company realtime node workspaces expose ordered `PLAN` and `REAL` tabs only when the
+authenticated session has `building-plans.view`; a denied session does not start metadata or content
+requests. Each kind has an independent loading/empty/error/forbidden/session state. Existing API
+`orderIndex,id` order drives the image selector, so no implicit primary-image rule is added. The
+small shared viewer fits the complete undistorted image initially, supports keyboard-accessible
+zoom/reset/fit controls, pointer-centered wheel zoom and pointer-capture pan, and clamps zoom/pan so
+the image remains recoverable. Viewer overscroll containment applies only at the interaction surface.
+
 Deletion is durable:
 
 1. set `PENDING_DELETE` and audit the request;

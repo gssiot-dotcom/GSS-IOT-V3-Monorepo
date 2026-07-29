@@ -257,6 +257,118 @@ describe("RBAC e2e", () => {
     return response.body.accessToken as string;
   }
 
+  it("manages GSS Administrators with separate permissions, safe responses and audited lifecycle", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const superToken = await login("/auth/gss/login", "super@example.com");
+    const noPermissionToken = await login("/auth/gss/login", "gss-none@example.com");
+    const companyToken = await login("/auth/company/login", "scoped@example.com");
+    const roleA = await prisma.gssRole.create({
+      data: { key: "administrator-e2e-a", name: "Administrator E2E A" },
+    });
+    const roleB = await prisma.gssRole.create({
+      data: { key: "administrator-e2e-b", name: "Administrator E2E B" },
+    });
+
+    await request(server)
+      .get("/admin/gss-users")
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .expect(403);
+    await request(server)
+      .get("/admin/gss-users")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(403);
+
+    const created = await request(server)
+      .post("/admin/gss-users")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({
+        email: "administrator-e2e@example.com",
+        name: "Administrator Search Needle",
+        password: "safe-password-123",
+        phone: "010-0000-0000",
+        roleId: roleA.id,
+      })
+      .expect(201);
+    expect(created.body).toMatchObject({
+      email: "administrator-e2e@example.com",
+      isActive: true,
+      role: { id: roleA.id },
+    });
+    expect(created.body).not.toHaveProperty("passwordHash");
+    expect(created.body).not.toHaveProperty("tokenVersion");
+
+    const searched = await request(server)
+      .get("/admin/gss-users?page=1&pageSize=50&search=Search%20Needle")
+      .set("Authorization", `Bearer ${superToken}`)
+      .expect(200);
+    expect(searched.body).toMatchObject({ page: 1, pageSize: 50, total: 1 });
+    expect(searched.body.items[0].id).toBe(created.body.id);
+
+    const updated = await request(server)
+      .patch(`/admin/gss-users/${created.body.id}`)
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({
+        isActive: false,
+        name: "Administrator Updated",
+        password: "replacement-password-123",
+        roleId: roleB.id,
+      })
+      .expect(200);
+    expect(updated.body).toMatchObject({
+      isActive: false,
+      name: "Administrator Updated",
+      role: { id: roleB.id },
+    });
+    expect(updated.body).not.toHaveProperty("passwordHash");
+
+    await request(server)
+      .delete(`/admin/gss-users/${created.body.id}`)
+      .set("Authorization", `Bearer ${superToken}`)
+      .expect(200);
+    expect(await prisma.gssAdminUser.findUnique({ where: { id: created.body.id } })).toBeNull();
+    const auditActions = await prisma.auditLog.findMany({
+      select: { action: true, newValue: true, oldValue: true },
+      where: { entityId: created.body.id, entityType: "GssAdminUser" },
+    });
+    expect(auditActions.map(({ action }) => action).sort()).toEqual([
+      "gss-admin-user.create",
+      "gss-admin-user.delete",
+      "gss-admin-user.update",
+    ]);
+    expect(JSON.stringify(auditActions)).not.toContain("password");
+    expect(JSON.stringify(auditActions)).not.toContain("tokenVersion");
+  });
+
+  it("prevents the last active GSS Super Admin from deactivation, demotion and deletion", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const superToken = await login("/auth/gss/login", "super@example.com");
+    const superUser = await prisma.gssAdminUser.findUniqueOrThrow({
+      where: { email: "super@example.com" },
+    });
+    const ordinaryRole = await prisma.gssRole.findUniqueOrThrow({ where: { key: "none" } });
+
+    await request(server)
+      .patch(`/admin/gss-users/${superUser.id}`)
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({ isActive: false })
+      .expect(403);
+    await request(server)
+      .patch(`/admin/gss-users/${superUser.id}`)
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({ roleId: ordinaryRole.id })
+      .expect(403);
+    await request(server)
+      .delete(`/admin/gss-users/${superUser.id}`)
+      .set("Authorization", `Bearer ${superToken}`)
+      .expect(403);
+    expect(
+      await prisma.gssAdminUser.findUnique({
+        where: { id: superUser.id },
+        include: { role: true },
+      }),
+    ).toMatchObject({ isActive: true, role: { isSuperAdmin: true } });
+  });
+
   it("allows local Vite origins during auth preflight", async () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
 
@@ -363,6 +475,7 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${companyToken}`)
       .expect(200);
     expect(companySummary.body.kpis.activeBuildings).toBe(1);
+    expect(companySummary.body.kpis.activeCompanyUsers).toBe(3);
 
     const noPermissionToken = await login("/auth/company/login", "company-none@example.com");
     await request(server)
@@ -1104,6 +1217,75 @@ describe("RBAC e2e", () => {
       .set("Authorization", `Bearer ${managerToken}`)
       .send({ assignments: [{ positionId: position.body.id }] })
       .expect(403);
+
+    const archivePosition = await request(server)
+      .post("/company/positions")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ key: "historical_position", name: "Historical Position" })
+      .expect(201);
+    await request(server)
+      .patch(`/company/users/${user.body.id}/positions`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ assignments: [{ positionId: archivePosition.body.id }] })
+      .expect(200);
+    await request(server)
+      .delete(`/company/positions/${archivePosition.body.id}/permanent`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("COMPANY_POSITION_HAS_ACTIVE_DEPENDENCIES");
+        expect(body.counts.activeAssignments).toBe(1);
+      });
+    await request(server)
+      .patch(`/company/users/${user.body.id}/positions`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ assignments: [] })
+      .expect(200)
+      .expect(({ body }) => expect(body).toHaveLength(0));
+    expect(
+      await prisma.companyUserPositionAssignment.findFirst({
+        where: { companyUserId: user.body.id, positionId: archivePosition.body.id },
+      }),
+    ).toMatchObject({ status: "ENDED" });
+    const positionsAfterRemoval = await request(server)
+      .get("/company/positions?pageSize=100")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    expect(
+      positionsAfterRemoval.body.items.find(
+        (item: { id: string }) => item.id === archivePosition.body.id,
+      ).deletion.mode,
+    ).toBe("SOFT_DELETE");
+    await request(server)
+      .delete(`/company/positions/${archivePosition.body.id}/permanent`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.mode).toBe("SOFT_DELETE"));
+    expect(
+      await prisma.companyPosition.findUnique({ where: { id: archivePosition.body.id } }),
+    ).toMatchObject({ isActive: false });
+    const archivedPositions = await request(server)
+      .get("/company/positions?pageSize=100")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    expect(
+      archivedPositions.body.items.some(
+        (item: { id: string }) => item.id === archivePosition.body.id,
+      ),
+    ).toBe(false);
+
+    const pristinePosition = await request(server)
+      .post("/company/positions")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ key: "pristine_position", name: "Pristine Position" })
+      .expect(201);
+    await request(server)
+      .delete(
+        `/admin/companies/${companyResponse.body.company.id}/positions/${pristinePosition.body.id}/permanent`,
+      )
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.mode).toBe("HARD_DELETE"));
 
     const companyRoles = await request(server)
       .get("/company/roles")

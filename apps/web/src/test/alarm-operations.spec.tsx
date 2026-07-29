@@ -1,7 +1,7 @@
 import type { AuthSession } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
@@ -19,7 +19,7 @@ const companySession: AuthSession = {
     isActive: true,
     isSuperAdmin: false,
     name: "Manager",
-    permissions: ["alarms.view", "alarms.resolve"],
+    permissions: ["alarms.view", "alarms.manage", "alarms.resolve", "notifications.view"],
   },
 };
 
@@ -158,5 +158,157 @@ describe("alarm operations", () => {
 
     await waitFor(() => expect(screen.getByText("Resolved")).toBeTruthy());
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("selects resolved alarms from the pagination toolbar and bulk archives them", async () => {
+    storeSession(companySession);
+    const resolvedAlarm = {
+      ...openAlarm,
+      resolvedAt: "2026-07-21T00:01:00.000Z",
+      status: "RESOLVED",
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = new URL(String(input));
+      if (url.href === `${apiBaseUrl}/auth/company/me`) return jsonResponse(companySession);
+      if (url.pathname === "/company/alarms" && init.method !== "POST") {
+        return jsonResponse({ items: [resolvedAlarm], page: 1, pageSize: 50, total: 1 });
+      }
+      if (url.pathname === "/company/alarms/bulk-archive" && init.method === "POST") {
+        return jsonResponse({ archivedCount: 1, ids: [openAlarm.id] }, 201);
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderApp("/company/alarms");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select: 101" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected (1)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete selected alarms?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete selected (1)" }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([input, init]) => {
+          return (
+            String(input).endsWith("/company/alarms/bulk-archive") &&
+            init?.method === "POST" &&
+            String(init.body).includes(openAlarm.id)
+          );
+        }),
+      ).toBe(true),
+    );
+  });
+
+  it("keeps Admin current-page selection stable, resolved-only and pruned after refresh", async () => {
+    const selectableAdmin: AuthSession = {
+      ...adminSession,
+      user: { ...adminSession.user, permissions: ["alarms.view", "alarms.manage"] },
+    };
+    storeSession(selectableAdmin);
+    const resolvedA = {
+      ...openAlarm,
+      id: "alarm-resolved-a",
+      node: { id: "node-a", number: "201" },
+      resolvedAt: "2026-07-21T00:01:00.000Z",
+      status: "RESOLVED",
+    };
+    const resolvedB = {
+      ...resolvedA,
+      id: "alarm-resolved-b",
+      node: { id: "node-b", number: "202" },
+    };
+    let items = [resolvedA, resolvedB, openAlarm];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = new URL(String(input));
+      if (url.href === `${apiBaseUrl}/auth/gss/me`) return jsonResponse(selectableAdmin);
+      if (url.pathname === "/admin/alarms" && init.method !== "POST") {
+        return jsonResponse({ items, page: 1, pageSize: 50, total: items.length });
+      }
+      if (url.pathname === "/admin/alarms/bulk-archive" && init.method === "POST") {
+        items = [openAlarm];
+        return jsonResponse({ archivedCount: 2, ids: [resolvedA.id, resolvedB.id] }, 201);
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderApp("/admin/alarms");
+
+    expect(await screen.findByRole("checkbox", { name: "Select: 101" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    expect(screen.getByRole("checkbox", { name: "Select: 201" })).toHaveProperty("checked", true);
+    expect(screen.getByRole("checkbox", { name: "Select: 202" })).toHaveProperty("checked", true);
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected (2)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete selected alarms?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete selected (2)" }));
+
+    await waitFor(() => expect(screen.queryByRole("checkbox", { name: "Select: 201" })).toBeNull());
+    expect(
+      screen
+        .getAllByRole("button", { name: "Delete selected (0)" })
+        .some((button) => button.hasAttribute("disabled")),
+    ).toBe(true);
+    const request = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).endsWith("/admin/alarms/bulk-archive") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(request?.[1]?.body))).toEqual({ ids: [resolvedA.id, resolvedB.id] });
+  });
+
+  it("selects inbox notifications and bulk removes them from normal views", async () => {
+    storeSession(companySession);
+    const notification = {
+      alarmEventId: openAlarm.id,
+      attemptCount: 1,
+      body: "Danger detected",
+      channel: "IN_APP",
+      createdAt: "2026-07-21T00:00:00.000Z",
+      failureCode: null,
+      failureMessage: null,
+      id: "notification-1",
+      maxAttempts: 3,
+      policyId: "policy-1",
+      policyTriggerId: "trigger-1",
+      readAt: null,
+      recipientUserId: companySession.user.id,
+      sentAt: "2026-07-21T00:00:00.000Z",
+      status: "SENT",
+      title: "Danger alarm",
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = new URL(String(input));
+      if (url.href === `${apiBaseUrl}/auth/company/me`) return jsonResponse(companySession);
+      if (url.pathname === "/company/notifications/unread-count") {
+        return jsonResponse({ unreadCount: 1 });
+      }
+      if (url.pathname === "/company/notifications" && init.method !== "POST") {
+        return jsonResponse({ items: [notification], page: 1, pageSize: 50, total: 1 });
+      }
+      if (url.pathname === "/company/notifications/bulk-archive" && init.method === "POST") {
+        return jsonResponse({ archivedCount: 1, ids: [notification.id] }, 201);
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderApp("/company/notifications");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select: Danger alarm" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected (1)" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Delete selected notifications?",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete selected (1)" }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            String(input).endsWith("/company/notifications/bulk-archive") &&
+            init?.method === "POST",
+        ),
+      ).toBe(true),
+    );
   });
 });

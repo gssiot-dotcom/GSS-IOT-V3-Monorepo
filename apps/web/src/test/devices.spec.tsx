@@ -98,7 +98,10 @@ describe("Phase 8 Admin devices provisioning UI", () => {
             status: "ACTIVE",
             deletion: {
               allowed: deletionAllowed,
-              blocker: deletionAllowed ? null : "companyAssignmentHistory",
+              blocker: deletionAllowed ? null : "Unassign the company first.",
+              code: deletionAllowed ? null : "GATEWAY_ACTIVE_COMPANY_ASSIGNMENT",
+              counts: { activeCompanyAssignments: deletionAllowed ? 0 : 1 },
+              mode: deletionAllowed ? "HARD_DELETE" : "NOT_ALLOWED",
             },
           },
         ];
@@ -132,7 +135,10 @@ describe("Phase 8 Admin devices provisioning UI", () => {
             status: "ACTIVE",
             deletion: {
               allowed: deletionAllowed,
-              blocker: deletionAllowed ? null : "companyAssignmentHistory",
+              blocker: deletionAllowed ? null : "Unassign the company first.",
+              code: deletionAllowed ? null : "NODE_ACTIVE_COMPANY_ASSIGNMENT",
+              counts: { activeCompanyAssignments: deletionAllowed ? 0 : 1 },
+              mode: deletionAllowed ? "HARD_DELETE" : "NOT_ALLOWED",
             },
           },
         ];
@@ -287,7 +293,7 @@ describe("Phase 8 Admin devices provisioning UI", () => {
       within(gatewayMenu)
         .getByRole("menuitem", { name: "Delete gateway", hidden: true })
         .getAttribute("title"),
-    ).toBe("Deletion blocked: company assignment history exists");
+    ).toBe("Unassign the company first.");
     fireEvent.click(
       within(gatewayMenu).getByRole("menuitem", { name: "Edit gateway", hidden: true }),
     );
@@ -300,7 +306,7 @@ describe("Phase 8 Admin devices provisioning UI", () => {
       within(nodeMenu)
         .getByRole("menuitem", { name: "Delete node", hidden: true })
         .getAttribute("title"),
-    ).toBe("Deletion blocked: company assignment history exists");
+    ).toBe("Unassign the company first.");
     fireEvent.click(within(nodeMenu).getByRole("menuitem", { name: "Edit node", hidden: true }));
 
     fireEvent.click(screen.getByRole("tab", { name: "Gateways" }));

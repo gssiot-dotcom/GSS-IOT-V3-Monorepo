@@ -89,6 +89,22 @@ export class AlarmNotificationDispatchService implements OnModuleInit {
       if (!trigger) {
         throw new Error("Alarm policy trigger was not found during dispatch.");
       }
+      if (
+        !trigger.policy.isActive ||
+        trigger.policy.deletedAt ||
+        !trigger.rule.isActive ||
+        trigger.rule.deletedAt
+      ) {
+        await this.prisma.alarmPolicyTrigger.updateMany({
+          data: {
+            dispatchCompletedAt: new Date(),
+            dispatchFailureReason: "POLICY_ARCHIVED",
+            dispatchStatus: AlarmTriggerDispatchStatus.DISPATCHED,
+          },
+          where: { id: triggerId },
+        });
+        return;
+      }
       const recipients = await this.resolveRecipients(trigger);
       if (!recipients.length) {
         await this.prisma.alarmPolicyTrigger.updateMany({
@@ -238,6 +254,7 @@ export class AlarmNotificationDispatchService implements OnModuleInit {
       include: { companyUser: true },
       where: {
         endedAt: null,
+        position: { deletedAt: null, isActive: true },
         positionId: policy.positionId,
         status: PositionAssignmentStatus.ACTIVE,
       },

@@ -25,6 +25,7 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
   let gatewayId: string;
   let nodeId: string;
   let positionId: string;
+  let companyUserId: string;
   let gssToken: string;
   let companyToken: string;
   const base = process.env.MQTT_TOPIC_BASE ?? "GSSIOT/test";
@@ -248,6 +249,195 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     ).toBeTruthy();
   });
 
+  it("excludes inactive positions from recipient resolution", async () => {
+    await resetAlarmData();
+    await createRuleAndPolicy(1, 0);
+    await prisma.companyPosition.update({ where: { id: positionId }, data: { isActive: false } });
+    try {
+      await sendDanger("inactive-position-1", "2026-07-19T15:30:00.000Z", 4.5);
+      await waitFor(() => prisma.alarmPolicyTrigger.count(), 1);
+      await notificationDispatch.processPendingTriggers();
+      await waitForTriggerDispatch("NO_RECIPIENT");
+      expect(await prisma.alarmNotification.count()).toBe(0);
+      const trigger = await prisma.alarmPolicyTrigger.findFirstOrThrow();
+      expect(trigger.dispatchFailureReason).toBe("NO_RECIPIENT");
+    } finally {
+      await prisma.companyPosition.update({ where: { id: positionId }, data: { isActive: true } });
+    }
+  });
+
+  it("edits a recipient policy target and resets its evaluation cycle with audit evidence", async () => {
+    await resetAlarmData();
+    const { policyId } = await createRuleAndPolicy(2, 0);
+    await sendDanger("policy-edit-1", "2026-07-19T15:45:00.000Z", 4.5);
+    await waitFor(() => prisma.alarmCounterState.count(), 1);
+
+    await request(app.getHttpServer() as Parameters<typeof request>[0])
+      .patch(`/company/alarm-policies/${policyId}`)
+      .set("Authorization", `Bearer ${companyToken}`)
+      .send({
+        channel: "EMAIL",
+        countIntervalSeconds: 30,
+        requiredOccurrenceCount: 3,
+        specificUserId: companyUserId,
+        targetType: "SPECIFIC_USER",
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.channel).toBe("EMAIL");
+        expect(body.specificUserId).toBe(companyUserId);
+        expect(body.targetType).toBe("SPECIFIC_USER");
+      });
+    const policy = await prisma.alarmRecipientPolicy.findUniqueOrThrow({ where: { id: policyId } });
+    expect(policy.evaluationVersion).toBe(2);
+    expect(policy.positionId).toBeNull();
+    expect(
+      await prisma.auditLog.count({
+        where: { action: "alarm-recipient-policy.update", entityId: policyId },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.alarmCounterState.findUniqueOrThrow({
+        where: { policyId_nodeId: { nodeId, policyId } },
+      }),
+    ).toMatchObject({ currentCount: 0, status: "RESET" });
+  });
+
+  it("blocks position deletion for an active policy and archives policy-history positions after moving the target", async () => {
+    await resetAlarmData();
+    const historicalPosition = await prisma.companyPosition.create({
+      data: { companyId, key: "policy_history", name: "Policy History" },
+    });
+    const rule = await prisma.alarmRule.create({
+      data: {
+        areaId,
+        buildingId,
+        companyId,
+        createdByType: "SYSTEM",
+        nodeTypeId,
+        severity: AlarmSeverity.DANGER,
+        updatedByType: "SYSTEM",
+      },
+    });
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const createdPolicy = await request(server)
+      .post(`/company/alarm-rules/${rule.id}/policies`)
+      .set("Authorization", `Bearer ${companyToken}`)
+      .send({
+        channel: "IN_APP",
+        countIntervalSeconds: 0,
+        positionId: historicalPosition.id,
+        requiredOccurrenceCount: 1,
+        targetType: "POSITION",
+      })
+      .expect(201);
+
+    await request(server)
+      .delete(`/company/positions/${historicalPosition.id}/permanent`)
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("COMPANY_POSITION_HAS_ACTIVE_DEPENDENCIES");
+        expect(body.counts.activePolicies).toBe(1);
+      });
+
+    await request(server)
+      .patch(`/company/alarm-policies/${createdPolicy.body.id}`)
+      .set("Authorization", `Bearer ${companyToken}`)
+      .send({ specificUserId: companyUserId, targetType: "SPECIFIC_USER" })
+      .expect(200);
+    await request(server)
+      .delete(`/company/positions/${historicalPosition.id}/permanent`)
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.mode).toBe("SOFT_DELETE"));
+    expect(
+      await prisma.companyPosition.findUniqueOrThrow({ where: { id: historicalPosition.id } }),
+    ).toMatchObject({ isActive: false });
+  });
+
+  it("archives rule and policy configuration without deleting operational evidence and bulk archives resolved inbox records", async () => {
+    await resetAlarmData();
+    const { policyId, ruleId } = await createRuleAndPolicy(1, 0);
+    await sendDanger("archive-flow-danger", "2026-07-19T15:50:00.000Z", 4.5);
+    await waitFor(() => prisma.alarmNotification.count(), 1);
+    await waitForNotificationStatus("SENT");
+    const event = await prisma.alarmEvent.findFirstOrThrow();
+    const notification = await prisma.alarmNotification.findFirstOrThrow();
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+
+    await request(server)
+      .post("/company/alarms/bulk-archive")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .send({ ids: [event.id] })
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe("ALARM_BULK_ARCHIVE_HAS_UNRESOLVED"));
+
+    monitoring.simulateSensorMessage(
+      `${base}/GATE_ANG/GW-P11-0001`,
+      { angle_x: 0.1, angle_y: 0, doorNum: "A-P11-001", msgId: "archive-flow-safe" },
+      { receivedAt: new Date("2026-07-19T15:51:00.000Z") },
+    );
+    await waitFor(() => prisma.sensorReading.count(), 2);
+    await waitForResolved(event.id);
+
+    await request(server)
+      .post("/company/notifications/bulk-archive")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .send({ ids: [notification.id] })
+      .expect(201)
+      .expect(({ body }) => expect(body.archivedCount).toBe(1));
+    await request(server)
+      .post("/company/alarms/bulk-archive")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .send({ ids: [event.id] })
+      .expect(201)
+      .expect(({ body }) => expect(body.archivedCount).toBe(1));
+
+    await request(server)
+      .delete(`/company/alarm-policies/${policyId}`)
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.archived).toBe(true));
+    await request(server)
+      .delete(`/company/alarm-rules/${ruleId}`)
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.archived).toBe(true));
+
+    expect(await prisma.alarmPolicyTrigger.count({ where: { policyId } })).toBe(1);
+    expect(await prisma.alarmNotification.count({ where: { policyId } })).toBe(1);
+    expect(await prisma.alarmEvent.count({ where: { ruleId } })).toBe(1);
+    expect(
+      await prisma.alarmRecipientPolicy.findUniqueOrThrow({ where: { id: policyId } }),
+    ).toMatchObject({ isActive: false });
+    expect(await prisma.alarmRule.findUniqueOrThrow({ where: { id: ruleId } })).toMatchObject({
+      isActive: false,
+    });
+    expect(
+      (await prisma.alarmRecipientPolicy.findUniqueOrThrow({ where: { id: policyId } })).deletedAt,
+    ).toBeTruthy();
+    expect(
+      (await prisma.alarmRule.findUniqueOrThrow({ where: { id: ruleId } })).deletedAt,
+    ).toBeTruthy();
+
+    await request(server)
+      .get("/company/alarm-rules?page=1&pageSize=50")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.items).toHaveLength(0));
+    await request(server)
+      .get("/company/alarms?page=1&pageSize=50")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.items).toHaveLength(0));
+    await request(server)
+      .get("/company/notifications?page=1&pageSize=50")
+      .set("Authorization", `Bearer ${companyToken}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.items).toHaveLength(0));
+  });
+
   it("acknowledges alarms, rejects unsafe manual resolve and auto-resolves on safe state", async () => {
     await resetAlarmData();
     await createRuleAndPolicy(1, 0);
@@ -311,7 +501,9 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     const permissionKeys = [
       "alarm-rules.view",
       "alarm-rules.manage",
+      "company-users.manage",
       "alarms.view",
+      "alarms.manage",
       "alarms.acknowledge",
       "alarms.resolve",
       "monitoring.view",
@@ -402,6 +594,7 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
         roleId: companyRole.id,
       },
     });
+    companyUserId = companyUser.id;
     await prisma.companyUserBuildingAccess.create({
       data: { buildingId, companyUserId: companyUser.id },
     });
@@ -476,6 +669,7 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
   }
 
   async function resetAlarmData() {
+    await drainAlarmDispatch();
     await prisma.alarmDeliveryLog.deleteMany();
     await prisma.alarmNotification.deleteMany();
     await prisma.alarmPolicyTrigger.deleteMany();
@@ -487,6 +681,18 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     await prisma.sensorReading.deleteMany();
     await prisma.gatewayFaultFilterAppliedState.deleteMany();
     await prisma.gatewayAlarmLevelApplication.deleteMany();
+  }
+
+  async function drainAlarmDispatch() {
+    for (let index = 0; index < 100; index += 1) {
+      await notificationDispatch.processPendingTriggers().catch(() => undefined);
+      const activeDispatches = await prisma.alarmPolicyTrigger.count({
+        where: { dispatchStatus: { in: ["PENDING", "PROCESSING"] } },
+      });
+      if (activeDispatches === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error("Alarm dispatch did not become idle before fixture reset.");
   }
 
   async function configurationId() {
@@ -521,6 +727,20 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     throw new Error("Alarm event did not resolve.");
+  }
+
+  async function waitForTriggerDispatch(failureReason: string) {
+    for (let index = 0; index < 100; index += 1) {
+      const trigger = await prisma.alarmPolicyTrigger.findFirst();
+      if (
+        trigger?.dispatchStatus === "DISPATCHED" &&
+        trigger.dispatchFailureReason === failureReason
+      ) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`Alarm trigger did not finish with ${failureReason}.`);
   }
 
   async function waitForNotificationStatus(status: string, minimumAttempts = 0) {

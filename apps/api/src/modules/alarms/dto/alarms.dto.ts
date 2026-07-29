@@ -1,10 +1,14 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
 } from "class-validator";
@@ -34,6 +38,14 @@ export class ListAlarmsQueryDto extends PaginationQueryDto {
 export class UpdateAlarmLifecycleStatusDto {
   @IsBoolean()
   isActive!: boolean;
+}
+
+export class BulkArchiveDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID(undefined, { each: true })
+  ids!: string[];
 }
 
 export class AlarmActionNoteDto {

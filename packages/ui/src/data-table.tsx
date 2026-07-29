@@ -38,6 +38,7 @@ export function DataTable<Row extends { id: string }>({
   columns,
   density = "comfortable",
   loading = false,
+  isRowSelected,
   onRowClick,
   rowAriaLabel,
   rows,
@@ -49,6 +50,7 @@ export function DataTable<Row extends { id: string }>({
   columns: DataTableColumn<Row>[];
   density?: "compact" | "comfortable";
   loading?: boolean;
+  isRowSelected?: (row: Row) => boolean;
   onRowClick?: (row: Row) => void;
   rowAriaLabel?: (row: Row) => string;
   rows: Row[];
@@ -101,7 +103,9 @@ export function DataTable<Row extends { id: string }>({
               : rows.map((row) => (
                   <Table.Tr
                     aria-label={rowAriaLabel?.(row)}
+                    aria-selected={isRowSelected?.(row) || undefined}
                     className={onRowClick ? "gss-data-table-row-navigable" : undefined}
+                    data-selected={isRowSelected?.(row) || undefined}
                     key={row.id}
                     onClick={(event) => {
                       if (onRowClick && !isInteractiveTarget(event.target, event.currentTarget)) {
@@ -135,6 +139,7 @@ export function DataTable<Row extends { id: string }>({
 }
 
 export function CollectionPagination({
+  actions,
   page = 1,
   pageSize,
   pageSizeLabel,
@@ -144,6 +149,7 @@ export function CollectionPagination({
   onPageSizeChange,
   pageSizeOptions = [50, 100],
 }: {
+  actions?: ReactNode;
   page?: number;
   pageSize: 50 | 100;
   pageSizeLabel: string;
@@ -155,9 +161,12 @@ export function CollectionPagination({
 }) {
   return (
     <Group className="gss-collection-pagination" justify="space-between" mb="sm" wrap="wrap">
-      <Text c="dimmed" size="sm">
-        {rangeLabel}
-      </Text>
+      <Group gap="sm" wrap="wrap">
+        {actions}
+        <Text c="dimmed" size="sm">
+          {rangeLabel}
+        </Text>
+      </Group>
       <Group gap="sm">
         <Select
           aria-label={pageSizeLabel}

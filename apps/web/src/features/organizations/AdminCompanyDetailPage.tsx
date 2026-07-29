@@ -14,11 +14,8 @@ import {
   ConfirmActionModal,
   EmptyState,
   EntityActionMenu,
-  EntityCard,
   EntityCardGrid,
-  EntityMetric,
   EntityStatusBadge,
-  EntityStatusRow,
   ErrorState,
   ForbiddenState,
   LoadingState,
@@ -63,6 +60,7 @@ import { ApiError, apiMultipartRequest, apiRequest } from "../../shared/api/api-
 import { useAuth } from "../../shared/auth/auth-context";
 import { CompanyLogoEditor } from "../../shared/branding/CompanyLogoEditor";
 import { useAuthenticatedLogo } from "../../shared/branding/use-authenticated-logo";
+import { OrganizationResourceCard } from "./OrganizationResourceCard";
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
 import { deviceLifecycleBadge, gatewayTypeLabel } from "../devices/device-labels";
@@ -745,6 +743,7 @@ export function AdminCompanyBuildingsSection() {
   const { canLoadBuildings, detail, onCreateBuilding } = useAdminCompanyWorkspaceContext();
   return (
     <BuildingsSection
+      areas={detail.areas}
       buildings={detail.buildings}
       canCreate={detail.areas.length > 0}
       canView={canLoadBuildings}
@@ -855,25 +854,18 @@ function SitesSection({
       {areas.length ? (
         <EntityCardGrid>
           {areas.map((area) => (
-            <EntityCard
+            <OrganizationResourceCard
               description={area.address ?? area.description ?? undefined}
-              eyebrow={t("organizations.areasTitle")}
+              identifier={area.id.slice(0, 8)}
               key={area.id}
+              kind="site"
+              kindLabel={t("organizations.area")}
+              status={area.status}
+              statusLabel={
+                area.status === "ACTIVE" ? t("management.active") : t("management.inactive")
+              }
               title={area.name}
-            >
-              <EntityStatusRow
-                label={t("organizations.status")}
-                value={
-                  <EntityStatusBadge
-                    label={
-                      area.status === "ACTIVE" ? t("management.active") : t("management.inactive")
-                    }
-                    status={area.status === "ACTIVE" ? "active" : "inactive"}
-                  />
-                }
-              />
-              <EntityMetric label={t("organizations.code")} value={area.id.slice(0, 8)} />
-            </EntityCard>
+            />
           ))}
         </EntityCardGrid>
       ) : (
@@ -887,11 +879,13 @@ function SitesSection({
 }
 
 function BuildingsSection({
+  areas,
   buildings,
   canCreate,
   canView,
   onCreate,
 }: {
+  areas: AreaRecord[];
   buildings: BuildingRecord[];
   canCreate: boolean;
   canView: boolean;
@@ -914,7 +908,7 @@ function BuildingsSection({
       {buildings.length ? (
         <EntityCardGrid>
           {buildings.map((building) => (
-            <EntityCard
+            <OrganizationResourceCard
               action={
                 <Can permission="building-plans.view">
                   <EntityActionMenu
@@ -931,25 +925,17 @@ function BuildingsSection({
                 </Can>
               }
               description={building.address ?? building.buildingType ?? undefined}
-              eyebrow={t("organizations.buildingsTitle")}
+              identifier={building.number ?? "-"}
               key={building.id}
+              kind="building"
+              kindLabel={t("organizations.building")}
+              parent={areas.find((area) => area.id === building.areaId)?.name}
+              status={building.status}
+              statusLabel={
+                building.status === "ACTIVE" ? t("management.active") : t("management.inactive")
+              }
               title={building.title}
-            >
-              <EntityStatusRow
-                label={t("organizations.status")}
-                value={
-                  <EntityStatusBadge
-                    label={
-                      building.status === "ACTIVE"
-                        ? t("management.active")
-                        : t("management.inactive")
-                    }
-                    status={building.status === "ACTIVE" ? "active" : "inactive"}
-                  />
-                }
-              />
-              <EntityMetric label={t("organizations.code")} value={building.number ?? "-"} />
-            </EntityCard>
+            />
           ))}
         </EntityCardGrid>
       ) : (

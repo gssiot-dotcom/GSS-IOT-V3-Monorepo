@@ -7,10 +7,15 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { hash } from "bcrypt";
-import { PermissionScopeType, PositionAssignmentStatus, ReportRequesterType } from "@prisma/client";
+import {
+  AuditActorType,
+  PermissionScopeType,
+  PositionAssignmentStatus,
+  ReportRequesterType,
+} from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
-import type { AuthTokenPayload } from "../../common/auth.types";
+import { AUTH_CONTEXT, type AuthTokenPayload } from "../../common/auth.types";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { SafeAdminPolicyService } from "../rbac/safe-admin-policy.service";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -108,6 +113,9 @@ const positionSelect = {
   key: true,
   name: true,
   isActive: true,
+  deletedAt: true,
+  deletedById: true,
+  deletedByType: true,
   createdAt: true,
   updatedAt: true,
   _count: { select: { assignments: true, alarmRecipientPolicies: true } },
@@ -518,7 +526,7 @@ export class CompanyManagementService {
   }
 
   async listCompanyPositions(companyId: string, query: PaginationQueryDto) {
-    const where = { companyId } satisfies Prisma.CompanyPositionWhereInput;
+    const where = { companyId, deletedAt: null } satisfies Prisma.CompanyPositionWhereInput;
     const [items, total] = await this.prisma.$transaction([
       this.prisma.companyPosition.findMany({
         where,
@@ -528,14 +536,13 @@ export class CompanyManagementService {
       }),
       this.prisma.companyPosition.count({ where }),
     ]);
-    return paginated(
-      items.map((position) => ({
+    const enriched = await Promise.all(
+      items.map(async (position) => ({
         ...position,
-        deletion: this.companyPositionDeletionCapability(position),
+        ...(await this.companyPositionDeletionCapability(position.id)),
       })),
-      total,
-      query,
     );
+    return paginated(enriched, total, query);
   }
 
   async createCompanyPosition(
@@ -571,6 +578,7 @@ export class CompanyManagementService {
     dto: UpdateCompanyPositionDto,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      await this.lockPosition(positionId, tx);
       const oldPosition = await this.assertPosition(companyId, positionId, tx);
       const position = await tx.companyPosition.update({
         where: { id: positionId },
@@ -615,9 +623,42 @@ export class CompanyManagementService {
     positionId: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      await this.lockPosition(positionId, tx);
       const position = await this.assertPosition(companyId, positionId, tx);
-      const capability = this.companyPositionDeletionCapability(position);
-      this.assertDeletionAllowed(capability, "deactivate the position");
+      await this.lockPositionDependencies(positionId, tx);
+      const result = await this.companyPositionDeletionCapability(positionId, tx);
+      const capability = result.deletion;
+      this.assertDeletionAllowed(
+        capability,
+        "remove assignments or move/deactivate alarm policies",
+      );
+      if (capability.mode === "SOFT_DELETE") {
+        const archived = await tx.companyPosition.update({
+          where: { id: positionId },
+          data: {
+            deletedAt: new Date(),
+            deletedById: actor.sub,
+            deletedByType:
+              actor.context === AUTH_CONTEXT.gssAdmin
+                ? AuditActorType.GSS_ADMIN
+                : AuditActorType.COMPANY_USER,
+            isActive: false,
+          },
+          select: positionSelect,
+        });
+        await this.auditLog.record(
+          actor,
+          {
+            action: "company-position.archive",
+            entityId: positionId,
+            entityType: "CompanyPosition",
+            newValue: archived,
+            oldValue: position,
+          },
+          tx,
+        );
+        return { mode: capability.mode };
+      }
       await tx.companyPosition.delete({ where: { id: positionId } });
       await this.auditLog.record(
         actor,
@@ -629,6 +670,7 @@ export class CompanyManagementService {
         },
         tx,
       );
+      return { mode: capability.mode };
     });
   }
 
@@ -640,6 +682,7 @@ export class CompanyManagementService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       await this.assertCompanyUser(companyId, userId, tx);
+      await tx.$queryRaw`SELECT "id" FROM "CompanyUserPositionAssignment" WHERE "companyUserId" = ${userId}::uuid AND "status" = 'ACTIVE'::"PositionAssignmentStatus" FOR UPDATE`;
       await this.assertPositionAssignments(companyId, dto, tx);
       const oldAssignments = await tx.companyUserPositionAssignment.findMany({
         where: { companyUserId: userId, status: PositionAssignmentStatus.ACTIVE },
@@ -778,7 +821,7 @@ export class CompanyManagementService {
 
   private async assertPosition(companyId: string, positionId: string, executor: PrismaExecutor) {
     const position = await executor.companyPosition.findFirst({
-      where: { id: positionId, companyId },
+      where: { id: positionId, companyId, deletedAt: null },
       select: positionSelect,
     });
     if (!position) {
@@ -862,7 +905,7 @@ export class CompanyManagementService {
   private async assertPositionAssignments(
     companyId: string,
     dto: ReplaceUserPositionAssignmentsDto,
-    executor: PrismaExecutor,
+    executor: Prisma.TransactionClient,
   ) {
     const seen = new Set<string>();
     for (const assignment of dto.assignments) {
@@ -872,6 +915,7 @@ export class CompanyManagementService {
       }
       seen.add(key);
 
+      await this.lockPosition(assignment.positionId, executor);
       const position = await this.assertPosition(companyId, assignment.positionId, executor);
       if (!position.isActive) {
         throw new ForbiddenException("Inactive positions cannot receive active assignments.");
@@ -949,30 +993,103 @@ export class CompanyManagementService {
     return { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const };
   }
 
-  private companyPositionDeletionCapability(position: {
-    _count: { alarmRecipientPolicies: number; assignments: number };
-  }) {
-    if (position._count.assignments > 0 || position._count.alarmRecipientPolicies > 0) {
+  private async companyPositionDeletionCapability(
+    positionId: string,
+    executor: PrismaExecutor = this.prisma,
+  ) {
+    const [
+      activeAssignments,
+      historicalAssignments,
+      activePolicies,
+      inactivePolicies,
+      policyAuditReferences,
+    ] = await Promise.all([
+      executor.companyUserPositionAssignment.count({
+        where: { positionId, status: PositionAssignmentStatus.ACTIVE },
+      }),
+      executor.companyUserPositionAssignment.count({
+        where: { positionId, status: PositionAssignmentStatus.ENDED },
+      }),
+      executor.alarmRecipientPolicy.count({ where: { positionId, isActive: true } }),
+      executor.alarmRecipientPolicy.count({ where: { positionId, isActive: false } }),
+      executor.auditLog.count({
+        where: {
+          entityType: "AlarmRecipientPolicy",
+          OR: [
+            { oldValue: { path: ["positionId"], equals: positionId } },
+            { newValue: { path: ["positionId"], equals: positionId } },
+          ],
+        },
+      }),
+    ]);
+    // A policy can be moved to another target. Its audit snapshots are therefore
+    // the durable evidence that the position has recipient-policy history.
+    const historicalPolicies = Math.max(inactivePolicies, policyAuditReferences);
+    const dependencies = {
+      activeAssignments,
+      activePolicies,
+      historicalAssignments,
+      historicalPolicies,
+    };
+    const counts = { ...dependencies };
+    if (activeAssignments > 0 || activePolicies > 0) {
+      const recommendedActions = [
+        ...(activeAssignments > 0 ? ["Remove the active user position assignments."] : []),
+        ...(activePolicies > 0 ? ["Move or deactivate the active alarm recipient policies."] : []),
+      ];
       return {
-        allowed: false,
-        blocker: "The position has assignment or alarm-policy history.",
-        code: "COMPANY_POSITION_HAS_PROTECTED_HISTORY",
-        mode: "NOT_ALLOWED" as const,
+        dependencies,
+        deletion: {
+          allowed: false,
+          blocker: `Remove ${activeAssignments} active assignment(s) and move or deactivate ${activePolicies} active alarm policy/policies first.`,
+          code: "COMPANY_POSITION_HAS_ACTIVE_DEPENDENCIES",
+          counts,
+          mode: "NOT_ALLOWED" as const,
+          recommendedActions,
+        },
       };
     }
-    return { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const };
+    const hasHistory = historicalAssignments > 0 || historicalPolicies > 0;
+    return {
+      dependencies,
+      deletion: {
+        allowed: true,
+        blocker: null,
+        code: null,
+        counts,
+        mode: hasHistory ? ("SOFT_DELETE" as const) : ("HARD_DELETE" as const),
+        recommendedActions: [],
+      },
+    };
+  }
+
+  private async lockPosition(positionId: string, tx: Prisma.TransactionClient) {
+    await tx.$queryRaw`SELECT "id" FROM "CompanyPosition" WHERE "id" = ${positionId}::uuid FOR UPDATE`;
+  }
+
+  private async lockPositionDependencies(positionId: string, tx: Prisma.TransactionClient) {
+    await tx.$queryRaw`SELECT "id" FROM "CompanyUserPositionAssignment" WHERE "positionId" = ${positionId}::uuid FOR UPDATE`;
+    await tx.$queryRaw`SELECT "id" FROM "AlarmRecipientPolicy" WHERE "positionId" = ${positionId}::uuid FOR UPDATE`;
   }
 
   private assertDeletionAllowed(
-    capability: { allowed: boolean; blocker: string | null; code: string | null },
+    capability: {
+      allowed: boolean;
+      blocker: string | null;
+      code: string | null;
+      counts?: Record<string, number>;
+      recommendedActions?: string[];
+    },
     recommendedAlternative: string,
   ) {
     if (!capability.allowed) {
       throw new ConflictException({
         blocker: capability.blocker,
         code: capability.code,
+        counts: capability.counts,
         message: capability.blocker,
         recommendedAlternative,
+        recommendedActions: capability.recommendedActions,
       });
     }
   }
