@@ -37,7 +37,7 @@ import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 
 import { readWebEnv } from "../../app/env";
-import { t, tf } from "../../app/i18n";
+import { t, tf, tx } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
@@ -249,7 +249,7 @@ export function AdminMonitoringPage() {
   );
   const selectedNode = states.find((state) => state.nodeId === selectedNodeId);
   const canViewBuildingImages = hasPermission(session, "building-plans.view");
-  const realtimeLabel = t(`monitoring.realtime.${realtimeStatus}` as never);
+  const realtimeLabel = tx(`monitoring.realtime.${realtimeStatus}`, realtimeStatus);
 
   useEffect(() => {
     setWorkspaceTab("states");
@@ -484,7 +484,7 @@ export function AdminMonitoringPage() {
                             label: t("monitoring.latestStatus"),
                             render: (row) => (
                               <StatusBadge
-                                label={t(`status.${row.status}` as never)}
+                                label={tx(`status.${row.status}`, row.status)}
                                 status={row.status}
                               />
                             ),
@@ -567,7 +567,7 @@ function SeveritySummary({
       {Object.entries(distribution).map(([status, count]) => (
         <StatusBadge
           key={status}
-          label={`${t(`status.${status}` as never)}: ${count}`}
+          label={`${tx(`status.${status}`, status)}: ${count}`}
           status={status as never}
         />
       ))}
@@ -597,7 +597,7 @@ function RecentNodes({
             key: "status",
             label: t("monitoring.latestStatus"),
             render: (row) => (
-              <StatusBadge label={t(`status.${row.status}` as never)} status={row.status} />
+              <StatusBadge label={tx(`status.${row.status}`, row.status)} status={row.status} />
             ),
           },
           {

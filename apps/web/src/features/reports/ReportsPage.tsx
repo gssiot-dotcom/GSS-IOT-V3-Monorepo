@@ -34,7 +34,7 @@ import {
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
-import { t, tf } from "../../app/i18n";
+import { formatDateTime, nodeTypeLabel, t, tf, tx } from "../../app/i18n";
 import { ApiError, apiDownload, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { hasPermission } from "../../shared/rbac/has-permission";
@@ -101,19 +101,19 @@ const emptyFilters = (): ReportFilters => ({
 });
 
 function reportLabel(reportType: ReportType): string {
-  return t(`reports.type.${reportType}` as never);
+  return tx(`reports.type.${reportType}`, reportType);
 }
 
 function statusLabel(status: ReportJobStatus): string {
-  return t(`reports.status.${status}` as never);
+  return tx(`reports.status.${status}`, status);
 }
 
 function formatLabel(format: ReportFileFormat): string {
-  return t(`reports.format.${format}` as never);
+  return tx(`reports.format.${format}`, format);
 }
 
 function dateText(value: string | null | undefined): string {
-  return value ? new Date(value).toLocaleString() : t("reports.notAvailable");
+  return value ? formatDateTime(value) : t("reports.notAvailable");
 }
 
 function displayFailure(message: string | null): string | undefined {
@@ -438,7 +438,10 @@ function ReportFiltersForm({
                 clearable
                 data={Array.from(
                   new Map(options.nodes.map((node) => [node.nodeTypeId, node.nodeType])).values(),
-                ).map((nodeType) => ({ label: nodeType.displayName, value: nodeType.id }))}
+                ).map((nodeType) => ({
+                  label: nodeTypeLabel(nodeType.key, nodeType.displayName),
+                  value: nodeType.id,
+                }))}
                 label={t("reports.nodeType")}
                 onChange={(value) =>
                   onFiltersChange({ ...filters, nodeTypeId: value, nodeId: null })

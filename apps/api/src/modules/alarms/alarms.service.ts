@@ -74,9 +74,15 @@ export class AlarmsService {
 
   async listRules(auth: AuthTokenPayload, query: ListAlarmsQueryDto) {
     await this.assertPermission(auth, "alarm-rules.view");
-    const where: Prisma.AlarmRuleWhereInput = query.buildingId
-      ? { buildingId: query.buildingId, deletedAt: null }
-      : { deletedAt: null };
+    const where: Prisma.AlarmRuleWhereInput = {
+      building: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+      },
+      ...(query.buildingId ? { buildingId: query.buildingId } : {}),
+      deletedAt: null,
+    };
     if (auth.context === AUTH_CONTEXT.companyUser) {
       const scope = await this.companyScope(auth.sub);
       where.companyId = scope.companyId;
@@ -118,14 +124,27 @@ export class AlarmsService {
         this.prisma.constructionBuilding.findMany({
           include: { area: true, company: true },
           orderBy: [{ companyId: "asc" }, { title: "asc" }],
+          where: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+          },
         }),
         this.prisma.companyPosition.findMany({
           orderBy: [{ companyId: "asc" }, { name: "asc" }],
-          where: { deletedAt: null, isActive: true },
+          where: {
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+            isActive: true,
+          },
         }),
         this.prisma.companyUser.findMany({
           orderBy: [{ companyId: "asc" }, { name: "asc" }],
-          where: { isActive: true },
+          where: {
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+            isActive: true,
+          },
         }),
       ]);
       return { buildings, nodeTypes, positions, users };
@@ -136,7 +155,13 @@ export class AlarmsService {
       this.prisma.constructionBuilding.findMany({
         include: { area: true, company: true },
         orderBy: { title: "asc" },
-        where: { companyId: scope.companyId, id: { in: buildingIds } },
+        where: {
+          area: { deletedAt: null },
+          company: { deletedAt: null, status: "ACTIVE" },
+          companyId: scope.companyId,
+          deletedAt: null,
+          id: { in: buildingIds },
+        },
       }),
       this.prisma.companyPosition.findMany({
         orderBy: { name: "asc" },
@@ -144,7 +169,7 @@ export class AlarmsService {
       }),
       this.prisma.companyUser.findMany({
         orderBy: { name: "asc" },
-        where: { companyId: scope.companyId, isActive: true },
+        where: { companyId: scope.companyId, deletedAt: null, isActive: true },
       }),
     ]);
     return { buildings, nodeTypes, positions, users };
@@ -828,7 +853,7 @@ export class AlarmsService {
 
   async getAlarm(auth: AuthTokenPayload, alarmEventId: string) {
     await this.assertPermission(auth, "alarms.view");
-    const event = await this.prisma.alarmEvent.findUnique({
+    const event = await this.prisma.alarmEvent.findFirst({
       include: {
         ...this.eventListInclude(),
         notifications: {
@@ -838,9 +863,17 @@ export class AlarmsService {
         },
         policyTriggers: { include: { policy: true }, orderBy: { triggeredAt: "asc" } },
       },
-      where: { id: alarmEventId },
+      where: {
+        building: {
+          area: { deletedAt: null },
+          company: { deletedAt: null, status: "ACTIVE" },
+          deletedAt: null,
+        },
+        deletedAt: null,
+        id: alarmEventId,
+      },
     });
-    if (!event || event.deletedAt) throw new NotFoundException("The alarm event was not found.");
+    if (!event) throw new NotFoundException("The alarm event was not found.");
     await this.assertEventScope(auth, event);
     return this.mapEvent(event);
   }
@@ -858,7 +891,13 @@ export class AlarmsService {
   async listAlarmNotifications(auth: AuthTokenPayload, alarmEventId: string) {
     const event = await this.getEventForAction(auth, alarmEventId, "alarms.view");
     const items = await this.prisma.alarmNotification.findMany({
-      include: { deliveryLogs: { orderBy: { attemptNumber: "asc" } }, recipientUser: true },
+      include: {
+        alarmEvent: { include: { building: true, node: true } },
+        deliveryLogs: { orderBy: { attemptNumber: "asc" } },
+        policy: { select: { requiredOccurrenceCount: true } },
+        policyTrigger: { select: { triggerOccurrenceCount: true } },
+        recipientUser: true,
+      },
       orderBy: { createdAt: "asc" },
       where: { alarmEventId: event.id, deletedAt: null },
     });
@@ -907,9 +946,10 @@ export class AlarmsService {
       return this.getAlarm(auth, event.id);
     }
     if (await this.isLatestStateStillUnsafe(event)) {
-      throw new ConflictException(
-        "The alarm cannot be manually resolved while the latest state is unsafe.",
-      );
+      throw new ConflictException({
+        code: "ALARM_EVENT_LATEST_STATE_UNSAFE",
+        message: "The alarm cannot be manually resolved while the latest state is unsafe.",
+      });
     }
     const updated = await this.prisma.$transaction(async (tx) => {
       const saved = await tx.alarmEvent.update({
@@ -947,12 +987,24 @@ export class AlarmsService {
       return paginated([], 0, query);
     }
     const where = {
+      alarmEvent: {
+        building: {
+          area: { deletedAt: null },
+          company: { deletedAt: null, status: "ACTIVE" },
+          deletedAt: null,
+        },
+        deletedAt: null,
+      },
       deletedAt: null,
       recipientUserId: auth.sub,
     } satisfies Prisma.AlarmNotificationWhereInput;
     const [items, total] = await this.prisma.$transaction([
       this.prisma.alarmNotification.findMany({
-        include: { alarmEvent: { include: { building: true, node: true, nodeType: true } } },
+        include: {
+          alarmEvent: { include: { building: true, node: true, nodeType: true } },
+          policy: { select: { requiredOccurrenceCount: true } },
+          policyTrigger: { select: { triggerOccurrenceCount: true } },
+        },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         where,
         ...pageWindow(query),
@@ -973,6 +1025,14 @@ export class AlarmsService {
     }
     const unreadCount = await this.prisma.alarmNotification.count({
       where: {
+        alarmEvent: {
+          building: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+          },
+          deletedAt: null,
+        },
         readAt: null,
         recipientUserId: auth.sub,
         status: AlarmNotificationStatus.SENT,
@@ -988,7 +1048,19 @@ export class AlarmsService {
       throw new NotFoundException("The notification was not found.");
     }
     const notification = await this.prisma.alarmNotification.findFirst({
-      where: { id: notificationId, recipientUserId: auth.sub, deletedAt: null },
+      where: {
+        alarmEvent: {
+          building: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+          },
+          deletedAt: null,
+        },
+        id: notificationId,
+        recipientUserId: auth.sub,
+        deletedAt: null,
+      },
     });
     if (!notification) throw new NotFoundException("The notification was not found.");
     const updated = await this.prisma.alarmNotification.update({
@@ -1009,6 +1081,14 @@ export class AlarmsService {
       await this.prisma.alarmNotification.updateMany({
         data: { readAt: new Date() },
         where: {
+          alarmEvent: {
+            building: {
+              area: { deletedAt: null },
+              company: { deletedAt: null, status: "ACTIVE" },
+              deletedAt: null,
+            },
+            deletedAt: null,
+          },
           readAt: null,
           recipientUserId: auth.sub,
           status: AlarmNotificationStatus.SENT,
@@ -1024,6 +1104,14 @@ export class AlarmsService {
     await this.assertPermission(auth, "notifications.view");
     const ids = [...new Set(notificationIds)];
     const where: Prisma.AlarmNotificationWhereInput = {
+      alarmEvent: {
+        building: {
+          area: { deletedAt: null },
+          company: { deletedAt: null, status: "ACTIVE" },
+          deletedAt: null,
+        },
+        deletedAt: null,
+      },
       deletedAt: null,
       id: { in: ids },
     };
@@ -1109,9 +1197,20 @@ export class AlarmsService {
 
   async archiveNotification(auth: AuthTokenPayload, notificationId: string) {
     await this.assertPermission(auth, "notifications.view");
-    const notification = await this.prisma.alarmNotification.findUnique({
+    const notification = await this.prisma.alarmNotification.findFirst({
       include: { alarmEvent: true },
-      where: { id: notificationId },
+      where: {
+        alarmEvent: {
+          building: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+          },
+          deletedAt: null,
+        },
+        deletedAt: null,
+        id: notificationId,
+      },
     });
     if (!notification || notification.deletedAt) {
       throw new NotFoundException("The notification was not found.");
@@ -1161,8 +1260,18 @@ export class AlarmsService {
     permission: string,
   ) {
     await this.assertPermission(auth, permission);
-    const event = await this.prisma.alarmEvent.findUnique({ where: { id: alarmEventId } });
-    if (!event || event.deletedAt) throw new NotFoundException("The alarm event was not found.");
+    const event = await this.prisma.alarmEvent.findFirst({
+      where: {
+        building: {
+          area: { deletedAt: null },
+          company: { deletedAt: null, status: "ACTIVE" },
+          deletedAt: null,
+        },
+        deletedAt: null,
+        id: alarmEventId,
+      },
+    });
+    if (!event) throw new NotFoundException("The alarm event was not found.");
     await this.assertEventScope(auth, event);
     return event;
   }
@@ -1258,11 +1367,19 @@ export class AlarmsService {
   }
 
   private mapNotification(notification: {
+    alarmEvent?: {
+      building: { title: string };
+      node: { number: string };
+      severity: string;
+    };
     createdAt: Date;
     lastAttemptAt?: Date | null;
     nextAttemptAt?: Date | null;
+    policy?: { requiredOccurrenceCount: number };
+    policyTrigger?: { triggerOccurrenceCount: number };
     readAt?: Date | null;
     sentAt?: Date | null;
+    templateSnapshot?: Prisma.JsonValue;
     updatedAt: Date;
     [key: string]: unknown;
   }) {
@@ -1273,12 +1390,53 @@ export class AlarmsService {
       nextAttemptAt: notification.nextAttemptAt?.toISOString() ?? null,
       readAt: notification.readAt?.toISOString() ?? null,
       sentAt: notification.sentAt?.toISOString() ?? null,
+      templateSnapshot: this.notificationTemplateSnapshot(notification),
       updatedAt: notification.updatedAt.toISOString(),
     };
   }
 
+  private notificationTemplateSnapshot(notification: {
+    alarmEvent?: {
+      building: { title: string };
+      node: { number: string };
+      severity: string;
+    };
+    policy?: { requiredOccurrenceCount: number };
+    policyTrigger?: { triggerOccurrenceCount: number };
+    templateSnapshot?: Prisma.JsonValue;
+  }): Prisma.JsonValue | undefined {
+    const snapshot =
+      notification.templateSnapshot &&
+      typeof notification.templateSnapshot === "object" &&
+      !Array.isArray(notification.templateSnapshot)
+        ? (notification.templateSnapshot as Prisma.JsonObject)
+        : undefined;
+    if (snapshot?.key !== "alarm.policy.triggered.v1" || snapshot.params) return snapshot;
+    if (!notification.alarmEvent || !notification.policy || !notification.policyTrigger) {
+      return snapshot;
+    }
+    return {
+      ...snapshot,
+      params: {
+        building: notification.alarmEvent.building.title,
+        current: notification.policyTrigger.triggerOccurrenceCount,
+        node: notification.alarmEvent.node.number,
+        required: notification.policy.requiredOccurrenceCount,
+        severity: notification.alarmEvent.severity.toLowerCase(),
+      },
+    };
+  }
+
   private async alarmReadRuleWhere(auth: AuthTokenPayload, buildingId?: string) {
-    const where: Prisma.AlarmRuleWhereInput = buildingId ? { buildingId } : {};
+    const where: Prisma.AlarmRuleWhereInput = {
+      building: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+      },
+      ...(buildingId ? { buildingId } : {}),
+      deletedAt: null,
+    };
     if (auth.context === AUTH_CONTEXT.companyUser) {
       const scope = await this.companyScope(auth.sub);
       where.companyId = scope.companyId;
@@ -1291,9 +1449,15 @@ export class AlarmsService {
   }
 
   private async alarmReadEventWhere(auth: AuthTokenPayload, buildingId?: string) {
-    const where: Prisma.AlarmEventWhereInput = buildingId
-      ? { buildingId, deletedAt: null }
-      : { deletedAt: null };
+    const where: Prisma.AlarmEventWhereInput = {
+      building: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+      },
+      ...(buildingId ? { buildingId } : {}),
+      deletedAt: null,
+    };
     if (auth.context === AUTH_CONTEXT.companyUser) {
       const scope = await this.companyScope(auth.sub);
       where.companyId = scope.companyId;
@@ -1314,9 +1478,19 @@ export class AlarmsService {
 
   private async getBuildingForMutation(auth: AuthTokenPayload, buildingId: string) {
     const building = await this.prisma.constructionBuilding.findUnique({
+      include: {
+        area: { select: { deletedAt: true } },
+        company: { select: { deletedAt: true, status: true } },
+      },
       where: { id: buildingId },
     });
-    if (!building) {
+    if (
+      !building ||
+      building.deletedAt ||
+      building.area.deletedAt ||
+      building.company.deletedAt ||
+      building.company.status !== "ACTIVE"
+    ) {
       throw new NotFoundException("The construction building was not found.");
     }
     if (auth.context === AUTH_CONTEXT.gssAdmin) {
@@ -1348,10 +1522,19 @@ export class AlarmsService {
 
   private async companyScope(userId: string) {
     const user = await this.prisma.companyUser.findUnique({
-      include: { role: true },
+      include: { company: true, role: true },
       where: { id: userId },
     });
-    if (!user) throw new ForbiddenException("The company user was not found.");
+    if (
+      !user ||
+      !user.isActive ||
+      user.deletedAt ||
+      user.company.deletedAt ||
+      user.company.status !== "ACTIVE" ||
+      user.role.deletedAt
+    ) {
+      throw new ForbiddenException("The company user was not found.");
+    }
     return {
       companyId: user.companyId,
       isOwner: user.role.isCompanyOwnerRole,
@@ -1367,7 +1550,12 @@ export class AlarmsService {
     if (scope.isOwner) {
       const buildings = await this.prisma.constructionBuilding.findMany({
         select: { id: true },
-        where: { companyId: scope.companyId },
+        where: {
+          area: { deletedAt: null },
+          company: { deletedAt: null, status: "ACTIVE" },
+          companyId: scope.companyId,
+          deletedAt: null,
+        },
       });
       return buildings.map((building) => building.id);
     }
@@ -1384,7 +1572,13 @@ export class AlarmsService {
     const inherited = areas.length
       ? await this.prisma.constructionBuilding.findMany({
           select: { id: true },
-          where: { areaId: { in: areas.map((area) => area.areaId) }, companyId: scope.companyId },
+          where: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            areaId: { in: areas.map((area) => area.areaId) },
+            companyId: scope.companyId,
+            deletedAt: null,
+          },
         })
       : [];
     return [
@@ -1397,9 +1591,22 @@ export class AlarmsService {
     buildingId: string,
   ): Promise<boolean> {
     const building = await this.prisma.constructionBuilding.findUnique({
+      include: {
+        area: { select: { deletedAt: true } },
+        company: { select: { deletedAt: true, status: true } },
+      },
       where: { id: buildingId },
     });
-    if (!building || building.companyId !== scope.companyId) return false;
+    if (
+      !building ||
+      building.companyId !== scope.companyId ||
+      building.deletedAt ||
+      building.area.deletedAt ||
+      building.company.deletedAt ||
+      building.company.status !== "ACTIVE"
+    ) {
+      return false;
+    }
     if (scope.isOwner) return true;
     const [direct, area] = await Promise.all([
       this.prisma.companyUserBuildingAccess.findUnique({
@@ -1451,7 +1658,7 @@ export class AlarmsService {
       throw new BadRequestException("A specific-user alarm policy requires exactly one user.");
     }
     const user = await executor.companyUser.findUnique({ where: { id: dto.specificUserId } });
-    if (!user || user.companyId !== companyId || !user.isActive) {
+    if (!user || user.companyId !== companyId || !user.isActive || user.deletedAt) {
       throw new BadRequestException("The alarm recipient user does not belong to this company.");
     }
     return { positionId: null, specificUserId: user.id, targetKey: `user:${user.id}` };
@@ -1459,7 +1666,18 @@ export class AlarmsService {
 
   private getRuleOrThrow(ruleId: string) {
     return this.prisma.alarmRule
-      .findFirst({ include: ruleInclude, where: { deletedAt: null, id: ruleId } })
+      .findFirst({
+        include: ruleInclude,
+        where: {
+          building: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+          },
+          deletedAt: null,
+          id: ruleId,
+        },
+      })
       .then((rule) => {
         if (!rule) throw new NotFoundException("The alarm rule was not found.");
         return rule;
@@ -1468,7 +1686,20 @@ export class AlarmsService {
 
   private getPolicyOrThrow(policyId: string) {
     return this.prisma.alarmRecipientPolicy
-      .findFirst({ where: { deletedAt: null, id: policyId } })
+      .findFirst({
+        where: {
+          deletedAt: null,
+          id: policyId,
+          rule: {
+            building: {
+              area: { deletedAt: null },
+              company: { deletedAt: null, status: "ACTIVE" },
+              deletedAt: null,
+            },
+            deletedAt: null,
+          },
+        },
+      })
       .then((policy) => {
         if (!policy) throw new NotFoundException("The alarm recipient policy was not found.");
         return policy;

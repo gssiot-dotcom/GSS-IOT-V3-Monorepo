@@ -2,6 +2,8 @@ import "./setup-env";
 
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
+import { PrismaClient } from "@prisma/client";
+import { beforeAll } from "vitest";
 
 process.env.MQTT_ENABLED = "false";
 process.env.MQTT_FAKE_ACK = "true";
@@ -22,3 +24,30 @@ if (process.env.GSS_E2E_SKIP_MIGRATE !== "true" && process.env.GSS_E2E_MIGRATED 
   });
   process.env.GSS_E2E_MIGRATED = "true";
 }
+
+beforeAll(async () => {
+  if (process.env.GSS_E2E_SKIP_RESET === "true") return;
+  const prisma = new PrismaClient();
+  try {
+    const rows = await prisma.$queryRaw<
+      Array<{ schema: string }>
+    >`SELECT current_schema() AS schema`;
+    const schema = rows[0]?.schema;
+    if (schema !== e2eSchema || schema === "public") {
+      throw new Error(`Refusing E2E reset for unexpected schema: ${schema ?? "unknown"}`);
+    }
+    const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
+      SELECT tablename FROM pg_tables
+      WHERE schemaname = current_schema() AND tablename <> '_prisma_migrations'
+      ORDER BY tablename
+    `;
+    if (tables.length) {
+      const identifiers = tables
+        .map(({ tablename }) => `"${tablename.replaceAll('"', '""')}"`)
+        .join(", ");
+      await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${identifiers} RESTART IDENTITY CASCADE`);
+    }
+  } finally {
+    await prisma.$disconnect();
+  }
+});

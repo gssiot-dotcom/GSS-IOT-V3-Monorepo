@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsOptional, IsString, ValidateNested } from "class-validator";
+import { IsEmail, IsEnum, IsOptional, IsString, MaxLength, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 import { BuildingImageKind, CompanyStatus } from "@prisma/client";
 
@@ -71,6 +71,13 @@ export class UpdateCompanyDto {
 export class UpdateOrganizationStatusDto {
   @IsEnum(CompanyStatus)
   status!: CompanyStatus;
+}
+
+export class ArchiveReasonDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
 }
 
 export class CreateAreaDto {

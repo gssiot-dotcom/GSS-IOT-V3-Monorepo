@@ -18,7 +18,18 @@ import { AlarmRealtimeService } from "./alarm-realtime.service";
 
 type TriggerWithContext = Prisma.AlarmPolicyTriggerGetPayload<{
   include: {
-    alarmEvent: { include: { building: true; node: true; nodeType: true } };
+    alarmEvent: {
+      include: {
+        building: {
+          include: {
+            area: { select: { deletedAt: true } };
+            company: { select: { deletedAt: true; status: true } };
+          };
+        };
+        node: true;
+        nodeType: true;
+      };
+    };
     policy: { include: { position: true; specificUser: true } };
     rule: true;
   };
@@ -90,6 +101,11 @@ export class AlarmNotificationDispatchService implements OnModuleInit {
         throw new Error("Alarm policy trigger was not found during dispatch.");
       }
       if (
+        trigger.alarmEvent.deletedAt ||
+        trigger.alarmEvent.building.deletedAt ||
+        trigger.alarmEvent.building.area.deletedAt ||
+        trigger.alarmEvent.building.company.deletedAt ||
+        trigger.alarmEvent.building.company.status !== "ACTIVE" ||
         !trigger.policy.isActive ||
         trigger.policy.deletedAt ||
         !trigger.rule.isActive ||
@@ -201,10 +217,12 @@ export class AlarmNotificationDispatchService implements OnModuleInit {
       });
     });
 
-    this.realtime.emitToCompanyUser(notification.recipientUserId, "notifications:update", {
-      notificationId,
-      unreadCount: await this.unreadCount(notification.recipientUserId),
-    });
+    if (notification.recipientUserId) {
+      this.realtime.emitToCompanyUser(notification.recipientUserId, "notifications:update", {
+        notificationId,
+        unreadCount: await this.unreadCount(notification.recipientUserId),
+      });
+    }
   }
 
   providerStatuses() {
@@ -222,7 +240,18 @@ export class AlarmNotificationDispatchService implements OnModuleInit {
   private async getTrigger(triggerId: string) {
     return this.prisma.alarmPolicyTrigger.findUnique({
       include: {
-        alarmEvent: { include: { building: true, node: true, nodeType: true } },
+        alarmEvent: {
+          include: {
+            building: {
+              include: {
+                area: { select: { deletedAt: true } },
+                company: { select: { deletedAt: true, status: true } },
+              },
+            },
+            node: true,
+            nodeType: true,
+          },
+        },
         policy: { include: { position: true, specificUser: true } },
         rule: true,
       },
@@ -306,15 +335,37 @@ export class AlarmNotificationDispatchService implements OnModuleInit {
 
   private async userHasBuildingScope(userId: string, buildingId: string): Promise<boolean> {
     const user = await this.prisma.companyUser.findUnique({
-      include: { role: true },
+      include: { company: true, role: true },
       where: { id: userId },
     });
-    if (!user || !user.isActive) return false;
+    if (
+      !user ||
+      !user.isActive ||
+      user.deletedAt ||
+      user.company.deletedAt ||
+      user.company.status !== "ACTIVE" ||
+      user.role.deletedAt
+    ) {
+      return false;
+    }
     if (user.role.isCompanyOwnerRole) return true;
     const building = await this.prisma.constructionBuilding.findUnique({
+      include: {
+        area: { select: { deletedAt: true } },
+        company: { select: { deletedAt: true, status: true } },
+      },
       where: { id: buildingId },
     });
-    if (!building || building.companyId !== user.companyId) return false;
+    if (
+      !building ||
+      building.companyId !== user.companyId ||
+      building.deletedAt ||
+      building.area.deletedAt ||
+      building.company.deletedAt ||
+      building.company.status !== "ACTIVE"
+    ) {
+      return false;
+    }
     const [direct, area] = await Promise.all([
       this.prisma.companyUserBuildingAccess.findUnique({
         where: { companyUserId_buildingId: { buildingId, companyUserId: userId } },
@@ -354,7 +405,16 @@ export class AlarmNotificationDispatchService implements OnModuleInit {
           status: trigger.alarmEvent.status,
         },
         status,
-        templateSnapshot: { key: "alarm.policy.triggered.v1" },
+        templateSnapshot: {
+          key: "alarm.policy.triggered.v1",
+          params: {
+            building: trigger.alarmEvent.building.title,
+            current: trigger.triggerOccurrenceCount,
+            node: trigger.alarmEvent.node.number,
+            required: trigger.policy.requiredOccurrenceCount,
+            severity: trigger.alarmEvent.severity.toLowerCase(),
+          },
+        },
         title,
         triggerSnapshot: {
           countIntervalSeconds: trigger.countIntervalSeconds,

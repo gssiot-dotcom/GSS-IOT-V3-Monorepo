@@ -13,10 +13,14 @@ export const REPORT_TYPES: ReportType[] = [
   "MQTT_COMMAND_HISTORY",
   "USER_ACTIVITY",
   "AUDIT_LOG",
+  "ARCHIVE_EVIDENCE",
 ];
 
 export const COMPANY_REPORT_TYPES: ReportType[] = REPORT_TYPES.filter(
-  (reportType) => reportType !== "USER_ACTIVITY" && reportType !== "AUDIT_LOG",
+  (reportType) =>
+    reportType !== "USER_ACTIVITY" &&
+    reportType !== "AUDIT_LOG" &&
+    reportType !== "ARCHIVE_EVIDENCE",
 );
 
 export const GSS_REPORT_TYPE_PERMISSIONS: Partial<Record<ReportType, string>> = {
@@ -32,6 +36,7 @@ export const GSS_REPORT_TYPE_PERMISSIONS: Partial<Record<ReportType, string>> = 
   MQTT_COMMAND_HISTORY: "reports.devices",
   USER_ACTIVITY: "reports.audit",
   AUDIT_LOG: "reports.audit",
+  ARCHIVE_EVIDENCE: "archive.view",
 };
 
 export const REPORT_DATE_FILTER_TYPES = new Set<ReportType>([
@@ -43,6 +48,7 @@ export const REPORT_DATE_FILTER_TYPES = new Set<ReportType>([
   "MQTT_COMMAND_HISTORY",
   "USER_ACTIVITY",
   "AUDIT_LOG",
+  "ARCHIVE_EVIDENCE",
 ]);
 
 export const REPORT_DEVICE_FILTER_TYPES = new Set<ReportType>([

@@ -2,7 +2,7 @@ import type { DeviceLifecycleStatus, GatewayCommandStatus, GatewayType } from "@
 import { StatusBadge, type GssStatus } from "@gss-iot/ui";
 import type { ReactNode } from "react";
 
-import { t } from "../../app/i18n";
+import { formatDateTime, t } from "../../app/i18n";
 
 export function deviceStatusLabel(status: DeviceLifecycleStatus): string {
   if (status === "ACTIVE") return t("devices.statusActive");
@@ -33,7 +33,7 @@ export function deviceConnectivityBadge(lastSeenAt: string | null): ReactNode {
 }
 
 export function formatDeviceDate(value: string | null): string {
-  return value ? new Date(value).toLocaleString() : t("common.notAvailable");
+  return value ? formatDateTime(value) : t("common.notAvailable");
 }
 
 export function gatewayCommandStatusBadge(status: GatewayCommandStatus): ReactNode {

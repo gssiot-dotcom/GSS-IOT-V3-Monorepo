@@ -12,6 +12,11 @@ import { ReportFormattersService } from "./report-formatters.service";
 import { ReportGenerationService } from "./report-generation.service";
 import { ReportGeneratorsService } from "./report-generators.service";
 import type { ReportJobForExecution } from "./report-types";
+import {
+  localizeReportDataset,
+  localizedReportFileName,
+  normalizeReportLocale,
+} from "./report-localization";
 
 const exportTtlMs = 24 * 60 * 60 * 1_000;
 
@@ -36,9 +41,13 @@ export class ReportJobProcessorService {
       return { status: current?.status ?? ReportJobStatus.FAILED };
     }
     try {
-      const dataset = await this.generators.generate(claimed as ReportJobForExecution);
+      const locale = normalizeReportLocale(readFilter(claimed.filters, "locale"));
+      const dataset = localizeReportDataset(
+        await this.generators.generate(claimed as ReportJobForExecution),
+        locale,
+      );
       const format = readFormat(claimed.filters);
-      const fileName = `gss-report-${claimed.reportType.toLowerCase()}-${claimed.id}.${format.toLowerCase()}`;
+      const fileName = localizedReportFileName(locale, claimed.reportType, claimed.id, format);
       const contentType =
         format === ReportFileFormat.XLSX
           ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -118,6 +127,12 @@ function readFormat(filters: Prisma.JsonValue): ReportFileFormat {
     if (format === ReportFileFormat.XLSX) return ReportFileFormat.XLSX;
   }
   return ReportFileFormat.CSV;
+}
+
+function readFilter(filters: Prisma.JsonValue, key: string): string | undefined {
+  if (!filters || typeof filters !== "object" || Array.isArray(filters)) return undefined;
+  const value = (filters as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 function requesterActor(type: ReportRequesterType): AuditActorType {

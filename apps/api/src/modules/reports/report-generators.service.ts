@@ -40,6 +40,8 @@ export class ReportGeneratorsService {
       case ReportType.USER_ACTIVITY:
       case ReportType.AUDIT_LOG:
         return this.queries.auditHistory(filters);
+      case ReportType.ARCHIVE_EVIDENCE:
+        return this.queries.archiveEvidence(filters);
     }
   }
 }

@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import type { OnModuleInit } from "@nestjs/common";
 import { AssignmentStatus, DeviceLifecycleStatus, Prisma } from "@prisma/client";
+import type { SensorReadingStatus } from "@prisma/client";
 import type { CanonicalNodeType } from "@gss-iot/contracts";
 import type {
   AdminMonitoringOptionsRecord,
@@ -77,6 +78,7 @@ const readingSelect = {
 } satisfies Prisma.SensorReadingSelect;
 
 const HISTORY_MAX_RANGE_MS = 24 * 60 * 60 * 1000;
+const SENSOR_HISTORY_MAX_RANGE_MS = 31 * HISTORY_MAX_RANGE_MS;
 const HISTORY_CHART_POINT_LIMIT = 500;
 
 type AssignmentContext = {
@@ -142,6 +144,7 @@ export class MonitoringService implements OnModuleInit {
     const [companies, areas, buildings] = await Promise.all([
       this.prisma.company.findMany({
         orderBy: { name: "asc" },
+        where: { deletedAt: null, status: "ACTIVE" },
         select: {
           address: true,
           code: true,
@@ -155,6 +158,7 @@ export class MonitoringService implements OnModuleInit {
       }),
       this.prisma.constructionArea.findMany({
         orderBy: { name: "asc" },
+        where: { company: { deletedAt: null, status: "ACTIVE" }, deletedAt: null },
         select: {
           address: true,
           companyId: true,
@@ -166,6 +170,11 @@ export class MonitoringService implements OnModuleInit {
       }),
       this.prisma.constructionBuilding.findMany({
         orderBy: { title: "asc" },
+        where: {
+          area: { deletedAt: null },
+          company: { deletedAt: null, status: "ACTIVE" },
+          deletedAt: null,
+        },
         select: {
           address: true,
           areaId: true,
@@ -194,11 +203,19 @@ export class MonitoringService implements OnModuleInit {
   ): Promise<AdminMonitoringSummaryRecord> {
     await this.assertAdminMonitoringAccess(auth);
     const stateWhere: Prisma.LatestNodeStateWhereInput = {
+      building: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+      },
       ...(filters.areaId ? { areaId: filters.areaId } : {}),
       ...(filters.buildingId ? { buildingId: filters.buildingId } : {}),
       ...(filters.companyId ? { companyId: filters.companyId } : {}),
     };
     const buildingWhere: Prisma.ConstructionBuildingWhereInput = {
+      area: { deletedAt: null },
+      company: { deletedAt: null, status: "ACTIVE" },
+      deletedAt: null,
       ...(filters.areaId ? { areaId: filters.areaId } : {}),
       ...(filters.buildingId ? { id: filters.buildingId } : {}),
       ...(filters.companyId ? { companyId: filters.companyId } : {}),
@@ -556,6 +573,231 @@ export class MonitoringService implements OnModuleInit {
     return { items: items.map(mapSensorReading), page, pageSize, total };
   }
 
+  async listSensorHistory(
+    auth: AuthTokenPayload,
+    query: {
+      areaId?: string;
+      buildingId?: string;
+      companyId?: string;
+      faultFiltered?: boolean;
+      from: string;
+      nodeId?: string;
+      nodeTypeId?: string;
+      page?: number;
+      pageSize?: number;
+      status?: SensorReadingStatus;
+      to: string;
+    },
+  ) {
+    const permitted = await this.permissions.hasPermission(
+      auth.context,
+      auth.sub,
+      "monitoring.view",
+    );
+    if (!permitted) throw new ForbiddenException("The monitoring permission is missing.");
+    const range = this.sensorHistoryRange(query.from, query.to);
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 50));
+    const where: Prisma.SensorReadingWhereInput = {
+      areaId: query.areaId,
+      building: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+      },
+      buildingId: query.buildingId,
+      companyId: query.companyId,
+      faultFiltered: query.faultFiltered,
+      nodeId: query.nodeId,
+      nodeTypeId: query.nodeTypeId,
+      receivedAt: { gte: range.from, lt: range.to },
+      status: query.status,
+    };
+    if (auth.context === AUTH_CONTEXT.companyUser) {
+      const user = await this.prisma.companyUser.findUnique({
+        include: {
+          areaAccess: { select: { areaId: true } },
+          buildingAccess: { select: { buildingId: true } },
+          company: true,
+          role: true,
+        },
+        where: { id: auth.sub },
+      });
+      if (
+        !user ||
+        !user.isActive ||
+        user.deletedAt ||
+        user.company.deletedAt ||
+        user.company.status !== "ACTIVE"
+      ) {
+        throw new ForbiddenException("The company monitoring scope is unavailable.");
+      }
+      where.companyId = user.companyId;
+      if (!user.role.isCompanyOwnerRole) {
+        const inherited = await this.prisma.constructionBuilding.findMany({
+          select: { id: true },
+          where: {
+            areaId: { in: user.areaAccess.map(({ areaId }) => areaId) },
+            companyId: user.companyId,
+            deletedAt: null,
+          },
+        });
+        const buildingIds = [
+          ...new Set([
+            ...user.buildingAccess.map(({ buildingId }) => buildingId),
+            ...inherited.map(({ id }) => id),
+          ]),
+        ];
+        if (query.buildingId && !buildingIds.includes(query.buildingId)) {
+          throw new NotFoundException("The monitoring history was not found.");
+        }
+        where.buildingId = query.buildingId ?? { in: buildingIds };
+      }
+    }
+    const [items, total] = await Promise.all([
+      this.prisma.sensorReading.findMany({
+        orderBy: [{ receivedAt: "desc" }, { id: "asc" }],
+        select: readingSelect,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        where,
+      }),
+      this.prisma.sensorReading.count({ where }),
+    ]);
+    return { items: items.map(mapSensorReading), page, pageSize, total };
+  }
+
+  async listSensorHistoryOptions(auth: AuthTokenPayload) {
+    const permitted = await this.permissions.hasPermission(
+      auth.context,
+      auth.sub,
+      "monitoring.view",
+    );
+    if (!permitted) throw new ForbiddenException("The monitoring permission is missing.");
+    let companyId: string | undefined;
+    let allowedBuildingIds: string[] | undefined;
+    if (auth.context === AUTH_CONTEXT.companyUser) {
+      const user = await this.prisma.companyUser.findUnique({
+        include: {
+          areaAccess: { select: { areaId: true } },
+          buildingAccess: { select: { buildingId: true } },
+          company: true,
+          role: true,
+        },
+        where: { id: auth.sub },
+      });
+      if (
+        !user ||
+        !user.isActive ||
+        user.deletedAt ||
+        user.company.deletedAt ||
+        user.company.status !== "ACTIVE"
+      ) {
+        throw new ForbiddenException("The company monitoring scope is unavailable.");
+      }
+      companyId = user.companyId;
+      if (!user.role.isCompanyOwnerRole) {
+        const inherited = await this.prisma.constructionBuilding.findMany({
+          select: { id: true },
+          where: {
+            areaId: { in: user.areaAccess.map(({ areaId }) => areaId) },
+            companyId,
+            deletedAt: null,
+          },
+        });
+        allowedBuildingIds = [
+          ...new Set([
+            ...user.buildingAccess.map(({ buildingId }) => buildingId),
+            ...inherited.map(({ id }) => id),
+          ]),
+        ];
+      }
+    }
+    const buildings = await this.prisma.constructionBuilding.findMany({
+      orderBy: [{ title: "asc" }, { id: "asc" }],
+      select: { areaId: true, companyId: true, id: true, title: true },
+      where: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        companyId,
+        deletedAt: null,
+        ...(allowedBuildingIds ? { id: { in: allowedBuildingIds } } : {}),
+      },
+    });
+    const buildingIds = buildings.map(({ id }) => id);
+    const areaIds = [...new Set(buildings.map(({ areaId }) => areaId))];
+    const companyIds = [...new Set(buildings.map(({ companyId: id }) => id))];
+    const [companies, areas, dimensions] = await Promise.all([
+      auth.context === AUTH_CONTEXT.gssAdmin
+        ? this.prisma.company.findMany({
+            orderBy: [{ name: "asc" }, { id: "asc" }],
+            select: { id: true, name: true },
+            where: { deletedAt: null, id: { in: companyIds }, status: "ACTIVE" },
+          })
+        : Promise.resolve([]),
+      this.prisma.constructionArea.findMany({
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        select: { companyId: true, id: true, name: true },
+        where: { deletedAt: null, id: { in: areaIds } },
+      }),
+      this.prisma.sensorReading.findMany({
+        distinct: ["buildingId", "nodeTypeId", "nodeId"],
+        orderBy: [{ buildingId: "asc" }, { nodeTypeId: "asc" }, { nodeId: "asc" }],
+        select: {
+          buildingId: true,
+          node: { select: { id: true, number: true } },
+          nodeId: true,
+          nodeType: { select: { displayName: true, id: true, key: true } },
+          nodeTypeId: true,
+        },
+        where: { buildingId: { in: buildingIds } },
+      }),
+    ]);
+    return {
+      areas,
+      buildings,
+      companies,
+      nodeTypes: dimensions.map(({ buildingId, nodeType }) => ({ buildingId, ...nodeType })),
+      nodes: dimensions.map(({ buildingId, node, nodeTypeId }) => ({
+        buildingId,
+        nodeTypeId,
+        ...node,
+      })),
+    };
+  }
+
+  async listSensorHistoryChart(
+    auth: AuthTokenPayload,
+    query: {
+      areaId?: string;
+      buildingId?: string;
+      companyId?: string;
+      faultFiltered?: boolean;
+      from: string;
+      nodeId?: string;
+      nodeTypeId?: string;
+      status?: SensorReadingStatus;
+      to: string;
+    },
+  ) {
+    const items: ReturnType<typeof mapSensorReading>[] = [];
+    let total = 0;
+    for (let page = 1; page <= 5; page += 1) {
+      const response = await this.listSensorHistory(auth, { ...query, page, pageSize: 100 });
+      total = response.total;
+      items.push(...response.items);
+      if (items.length >= total) break;
+    }
+    items.sort((left, right) => left.receivedAt.localeCompare(right.receivedAt));
+    return {
+      items,
+      returnedPointCount: items.length,
+      sampled: total > items.length,
+      sampleLimit: 500,
+      totalRawPointCount: total,
+    };
+  }
+
   async getNodeHistoryChart(
     auth: AuthTokenPayload,
     buildingId: string,
@@ -648,6 +890,20 @@ export class MonitoringService implements OnModuleInit {
     return { from, to };
   }
 
+  private sensorHistoryRange(fromValue: string, toValue: string) {
+    const from = new Date(fromValue);
+    const to = new Date(toValue);
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from >= to) {
+      throw new BadRequestException(
+        "Sensor history requires valid ISO datetimes with from before to.",
+      );
+    }
+    if (to.getTime() - from.getTime() > SENSOR_HISTORY_MAX_RANGE_MS) {
+      throw new BadRequestException("Sensor history range cannot exceed 31 days.");
+    }
+    return { from, to };
+  }
+
   private async resolveAssignmentContext(
     parsed: ParsedSensorMessage,
   ): Promise<AssignmentContext | null> {
@@ -666,15 +922,32 @@ export class MonitoringService implements OnModuleInit {
     const [gatewayCompany, gatewayBuilding, node] = await Promise.all([
       this.prisma.companyDeviceAssignment.findFirst({
         select: { companyId: true, id: true },
-        where: { gatewayId: gateway.id, status: AssignmentStatus.ACTIVE },
+        where: {
+          company: { deletedAt: null, status: "ACTIVE" },
+          gatewayId: gateway.id,
+          status: AssignmentStatus.ACTIVE,
+        },
       }),
       this.prisma.gatewayBuildingAssignment.findFirst({
         include: { building: true },
-        where: { gatewayId: gateway.id, status: AssignmentStatus.ACTIVE },
+        where: {
+          building: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+          },
+          gatewayId: gateway.id,
+          status: AssignmentStatus.ACTIVE,
+        },
       }),
       this.prisma.node.findFirst({
         include: {
-          companyAssignments: { where: { status: AssignmentStatus.ACTIVE } },
+          companyAssignments: {
+            where: {
+              company: { deletedAt: null, status: "ACTIVE" },
+              status: AssignmentStatus.ACTIVE,
+            },
+          },
           gatewayAssignments: { where: { gatewayId: gateway.id, status: AssignmentStatus.ACTIVE } },
           nodeType: true,
         },
@@ -954,13 +1227,24 @@ export class MonitoringService implements OnModuleInit {
     buildingId: string,
   ): Promise<boolean> {
     const building = await this.prisma.constructionBuilding.findUnique({
+      include: {
+        area: { select: { deletedAt: true } },
+        company: { select: { deletedAt: true, status: true } },
+      },
       where: { id: buildingId },
     });
-    if (!building || building.companyId !== companyId) {
+    if (
+      !building ||
+      building.companyId !== companyId ||
+      building.deletedAt ||
+      building.area.deletedAt ||
+      building.company.deletedAt ||
+      building.company.status !== "ACTIVE"
+    ) {
       return false;
     }
     const role = await this.prisma.companyRole.findUnique({ where: { id: roleId } });
-    if (role?.isCompanyOwnerRole) {
+    if (role?.isCompanyOwnerRole && !role.deletedAt) {
       return true;
     }
     const [buildingAccess, areaAccess] = await Promise.all([
@@ -976,9 +1260,19 @@ export class MonitoringService implements OnModuleInit {
 
   private async getBuildingOrThrow(buildingId: string) {
     const building = await this.prisma.constructionBuilding.findUnique({
+      include: {
+        area: { select: { deletedAt: true } },
+        company: { select: { deletedAt: true, status: true } },
+      },
       where: { id: buildingId },
     });
-    if (!building) {
+    if (
+      !building ||
+      building.deletedAt ||
+      building.area.deletedAt ||
+      building.company.deletedAt ||
+      building.company.status !== "ACTIVE"
+    ) {
       throw new NotFoundException("The construction building was not found.");
     }
     return building;

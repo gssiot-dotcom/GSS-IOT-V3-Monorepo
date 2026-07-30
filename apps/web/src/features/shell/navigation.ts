@@ -1,5 +1,6 @@
 import {
   IconAdjustments,
+  IconArchive,
   IconBell,
   IconBellRinging,
   IconBuilding,
@@ -11,6 +12,7 @@ import {
   IconDevices,
   IconExchange,
   IconHome,
+  IconHistory,
   IconKey,
   IconReportAnalytics,
   IconSettings,
@@ -73,6 +75,13 @@ export const adminNavItems: ShellNavItem[] = [
     titleKey: "nav.adminMonitoring",
   },
   {
+    icon: IconHistory,
+    path: "/admin/monitoring/history",
+    permission: "monitoring.view",
+    sectionKey: "shell.sectionOverview",
+    titleKey: "nav.adminMonitoringHistory",
+  },
+  {
     icon: IconBellRinging,
     path: "/admin/alarms",
     permission: "alarms.view",
@@ -99,6 +108,13 @@ export const adminNavItems: ShellNavItem[] = [
     permission: "reports.view",
     sectionKey: "shell.sectionOperations",
     titleKey: "nav.adminReports",
+  },
+  {
+    icon: IconArchive,
+    path: "/admin/archive",
+    permission: "archive.view",
+    sectionKey: "shell.sectionOperations",
+    titleKey: "nav.adminArchive",
   },
   {
     icon: IconUserShield,
@@ -179,6 +195,13 @@ export const companyNavItems: ShellNavItem[] = [
     permission: "monitoring.view",
     sectionKey: "shell.sectionOverview",
     titleKey: "nav.companyMonitoring",
+  },
+  {
+    icon: IconHistory,
+    path: "/company/monitoring/history",
+    permission: "monitoring.view",
+    sectionKey: "shell.sectionOverview",
+    titleKey: "nav.companyMonitoringHistory",
   },
   {
     icon: IconBellRinging,

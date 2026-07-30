@@ -113,3 +113,21 @@ The checklist remains partially open because report/export scope enforcement, al
       remain UX hints and route/backend guards are authoritative.
 - [x] Realtime PLAN/REAL tabs do not request private metadata or content without
       `building-plans.view`; Company content continues to require company/building scope.
+
+## Two-tier archive and purge
+
+- [x] Company tokens are denied from `/admin/archive`; no Company navigation item exists.
+- [x] Normal Company direct-ID access treats archived/ancestor-archived resources as not found.
+- [x] Login/session/Socket.IO reject archived Company/User principals.
+- [x] Alarm evaluation/dispatch, monitoring ingestion, reports, command/provisioning and uploads
+      require active ancestors.
+- [x] `archive.view`, `archive.purge` and `sensor-readings.purge` are GSS-only seed permissions.
+- [x] Purge rechecks both `archive.purge` and canonical domain permission on the backend.
+- [x] Active targets, stale preview hashes, confirmation mismatch and duplicate active jobs fail.
+- [x] Global Gateway/Node records are never organization-cascade targets.
+- [x] Archive export uses `archive.view + reports.export`, rejects Company users, rechecks job
+      ownership/type permission and streams without exposing storage keys.
+- [x] Conditional two-worker claim, lease renewal/loss, stale recovery, crash-after-root resume,
+      exactly-one receipt, 100k retention and reconciliation are repository-tested.
+- [ ] Approve and verify production S3 version/delete-marker cleanup, backup/legal hold, restore
+      authorization and purge SLA before destructive production enablement.

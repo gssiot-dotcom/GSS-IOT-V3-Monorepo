@@ -303,7 +303,7 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     ).toMatchObject({ currentCount: 0, status: "RESET" });
   });
 
-  it("blocks position deletion for an active policy and archives policy-history positions after moving the target", async () => {
+  it("archives a position and tears down its active policy target", async () => {
     await resetAlarmData();
     const historicalPosition = await prisma.companyPosition.create({
       data: { companyId, key: "policy_history", name: "Policy History" },
@@ -333,27 +333,17 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
       .expect(201);
 
     await request(server)
-      .delete(`/company/positions/${historicalPosition.id}/permanent`)
+      .delete(`/company/positions/${historicalPosition.id}`)
       .set("Authorization", `Bearer ${companyToken}`)
-      .expect(409)
-      .expect(({ body }) => {
-        expect(body.code).toBe("COMPANY_POSITION_HAS_ACTIVE_DEPENDENCIES");
-        expect(body.counts.activePolicies).toBe(1);
-      });
-
-    await request(server)
-      .patch(`/company/alarm-policies/${createdPolicy.body.id}`)
-      .set("Authorization", `Bearer ${companyToken}`)
-      .send({ specificUserId: companyUserId, targetType: "SPECIFIC_USER" })
       .expect(200);
-    await request(server)
-      .delete(`/company/positions/${historicalPosition.id}/permanent`)
-      .set("Authorization", `Bearer ${companyToken}`)
-      .expect(200)
-      .expect(({ body }) => expect(body.mode).toBe("SOFT_DELETE"));
     expect(
       await prisma.companyPosition.findUniqueOrThrow({ where: { id: historicalPosition.id } }),
-    ).toMatchObject({ isActive: false });
+    ).toMatchObject({ isActive: false, deletedAt: expect.any(Date) });
+    expect(
+      await prisma.alarmRecipientPolicy.findUniqueOrThrow({
+        where: { id: createdPolicy.body.id as string },
+      }),
+    ).toMatchObject({ isActive: false, deletedAt: null });
   });
 
   it("archives rule and policy configuration without deleting operational evidence and bulk archives resolved inbox records", async () => {

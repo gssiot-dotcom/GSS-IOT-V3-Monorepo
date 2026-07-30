@@ -19,6 +19,7 @@ import type {
   RequestReportExportDto,
 } from "./dto/reports.dto";
 import { ReportScopeService } from "./report-scope.service";
+import { normalizeReportLocale } from "./report-localization";
 import { REPORT_DATE_FILTER_TYPES, REPORT_LIMITS } from "./report-types";
 
 const gssReportPermissions: Partial<Record<ReportType, string>> = {
@@ -34,11 +35,13 @@ const gssReportPermissions: Partial<Record<ReportType, string>> = {
   MQTT_COMMAND_HISTORY: "reports.devices",
   USER_ACTIVITY: "reports.audit",
   AUDIT_LOG: "reports.audit",
+  ARCHIVE_EVIDENCE: "archive.view",
 };
 
 const companyUnsupportedReportTypes = new Set<ReportType>([
   ReportType.USER_ACTIVITY,
   ReportType.AUDIT_LOG,
+  ReportType.ARCHIVE_EVIDENCE,
 ]);
 
 @Injectable()
@@ -121,7 +124,6 @@ export class ReportsService {
   }
 
   async getJob(auth: AuthTokenPayload, jobId: string) {
-    await this.assertReportPermission(auth, "reports.view");
     const job = await this.prisma.reportJob.findUnique({
       include: { exports: { orderBy: { createdAt: "desc" } } },
       where: { id: jobId },
@@ -129,11 +131,19 @@ export class ReportsService {
     if (!job || !(await this.scope.canAccessJob(auth, job))) {
       throw this.nonDisclosingNotFound();
     }
+    await this.assertReportPermission(
+      auth,
+      job.reportType === ReportType.ARCHIVE_EVIDENCE ? "archive.view" : "reports.view",
+    );
     await this.assertReportTypePermission(auth, job.reportType);
     return this.mapJob(job);
   }
 
-  async requestExport(auth: AuthTokenPayload, dto: RequestReportExportDto) {
+  async requestExport(
+    auth: AuthTokenPayload,
+    dto: RequestReportExportDto,
+    acceptLanguage?: string,
+  ) {
     await this.assertReportPermission(auth, "reports.export");
     await this.assertReportTypePermission(auth, dto.reportType);
     if (auth.context === AUTH_CONTEXT.companyUser && dto.filters?.companyId) {
@@ -143,7 +153,11 @@ export class ReportsService {
     }
     this.validateFilters(dto.reportType, dto.filters);
     const scope = await this.scope.resolve(auth, dto.filters ?? {});
-    const filters = this.normalizeFilters(dto.filters, dto.format);
+    const filters = this.normalizeFilters(
+      dto.filters,
+      dto.format,
+      normalizeReportLocale(acceptLanguage),
+    );
     const requestedByType = auth.context === AUTH_CONTEXT.gssAdmin ? "GSS_ADMIN" : "COMPANY_USER";
 
     const job = await this.prisma.$transaction(async (tx) => {
@@ -199,6 +213,11 @@ export class ReportsService {
 
   private validateFilters(reportType: ReportType, filters?: ReportFiltersDto): void {
     const accepted = new Set<string>(["companyId", "areaId", "buildingId"]);
+    if (reportType === ReportType.ARCHIVE_EVIDENCE) {
+      ["archiveEntityType", "archivedFrom", "archivedTo", "archivedBy", "search"].forEach((key) =>
+        accepted.add(key),
+      );
+    }
     if (
       [
         ReportType.DEVICE_INVENTORY,
@@ -223,8 +242,10 @@ export class ReportsService {
       if (!accepted.has(key))
         throw new BadRequestException(`The ${key} filter is not supported for this report type.`);
     }
-    const from = filters?.from ? new Date(filters.from) : undefined;
-    const to = filters?.to ? new Date(filters.to) : undefined;
+    const fromValue = filters?.from ?? filters?.archivedFrom;
+    const toValue = filters?.to ?? filters?.archivedTo;
+    const from = fromValue ? new Date(fromValue) : undefined;
+    const to = toValue ? new Date(toValue) : undefined;
     if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
       throw new BadRequestException("The report date range is invalid.");
     }
@@ -245,9 +266,10 @@ export class ReportsService {
   private normalizeFilters(
     filters: ReportFiltersDto | undefined,
     format: RequestReportExportDto["format"],
+    locale: "en-US" | "ko-KR",
   ): Prisma.InputJsonObject {
     return Object.fromEntries(
-      [...Object.entries(filters ?? {}), ["format", format]].filter(
+      [...Object.entries(filters ?? {}), ["format", format], ["locale", locale]].filter(
         ([, value]) => value !== undefined,
       ),
     ) as Prisma.InputJsonObject;

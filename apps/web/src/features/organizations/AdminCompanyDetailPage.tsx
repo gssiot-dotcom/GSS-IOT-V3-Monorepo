@@ -55,7 +55,7 @@ import {
 } from "react";
 import { Outlet, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 
-import { t } from "../../app/i18n";
+import { nodeTypeLabel, t } from "../../app/i18n";
 import { ApiError, apiMultipartRequest, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { CompanyLogoEditor } from "../../shared/branding/CompanyLogoEditor";
@@ -320,12 +320,12 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     }
   };
 
-  const permanentlyDeleteCompany = async () => {
+  const archiveCompany = async () => {
     if (!session || !detail.company) return;
     setIsSaving(true);
     setLifecycleError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${detail.company.id}/permanent`, {
+      await apiRequest(session, `/admin/companies/${detail.company.id}`, {
         method: "DELETE",
       });
       void navigate("/admin/companies", { replace: true });
@@ -582,7 +582,7 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
         onClose={() => {
           if (!isSaving) setDeleteConfirmOpen(false);
         }}
-        onConfirm={() => void permanentlyDeleteCompany()}
+        onConfirm={() => void archiveCompany()}
         opened={deleteConfirmOpen}
         title={t("organizations.confirmDeleteCompanyTitle")}
       />
@@ -1068,7 +1068,7 @@ function DevicesSection({
             {
               key: "type",
               label: t("devices.nodeType"),
-              render: (node) => node.nodeType.displayName,
+              render: (node) => nodeTypeLabel(node.nodeType.key, node.nodeType.displayName),
             },
             {
               key: "status",

@@ -294,6 +294,10 @@ textarea {
   overflow: hidden;
 }
 
+.gss-shell-header-actions {
+  flex: 0 0 auto;
+}
+
 .gss-shell-header-context > .mantine-Divider-root {
   align-self: stretch;
   margin-block: 11px;
@@ -440,6 +444,10 @@ textarea {
 }
 
 @media (max-width: 40em) {
+  .gss-shell-header-realtime {
+    display: none;
+  }
+
   .gss-shell-header-context > .mantine-Divider-root,
   .gss-shell-header-context > .mantine-Stack-root {
     display: none;
@@ -448,7 +456,7 @@ textarea {
   .gss-platform-logo,
   .gss-platform-logo-compact {
     height: 36px;
-    max-width: 142px;
+    max-width: 108px;
   }
 
   .gss-collection-pagination {
@@ -1013,10 +1021,6 @@ textarea {
   .gss-dashboard-kpi-grid,
   .gss-monitoring-summary-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-
-  .gss-dashboard-kpi-grid--company {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
 

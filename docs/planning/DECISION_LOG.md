@@ -1189,3 +1189,84 @@ frontend controls are discoverability and UX only.
 
 **Files affected:** settings controller/service/DTO/module, safe-admin policy tests, shared contracts,
 Admin routing/navigation/page/i18n, focused API/Web/Playwright tests, RBAC and planning documents.
+
+## DEC-2026-07-29-01 — Two-tier Archive and GSS-controlled physical purge (ACCEPTED)
+
+**Decision:** Company-context Delete is not physical deletion. It records canonical `deletedAt` /
+actor/reason metadata, removes the entity and archived ancestors from Company operational surfaces,
+and retains GSS evidence. The authoritative evidence surface is GSS-only Archive Center. Physical
+purge is allowed only for an archived root to a GSS Admin holding both `archive.purge` and the
+canonical domain permission, after backend preview/fingerprint, exact-name confirmation and an
+idempotent durable job. Parent purge owns child cleanup; users do not manually purge descendants.
+Global Gateway/Node/NodeType and platform RBAC catalog/identities are preserved. Trigger readings
+remain until the last evidence/counter reference is removed.
+
+**Supersedes/clarifies:** DEC-2026-052 and the pristine-only portions of DEC-2026-0727 /
+DEC-2026-0727-03 are superseded only for GSS-controlled tenant Archive purge. Pristine-only global
+device hard-delete rules remain. DEC-2026-0728 alarm evidence archive remains valid and is extended
+with GSS purge. Company clients must not receive a hard-delete capability.
+
+**Consequences:** normal queries require explicit and ancestor archive filtering; Company direct ID
+returns 404; storage remains during Archive and is removed only in purge; Gateway/Node are unassigned
+without forced lifecycle changes; completed purge cannot be application-rolled back; a sanitized
+receipt remains without tenant PII/payload/storage keys.
+
+**OPEN_DECISION:** backup retention/legal hold/restore policy and permanent S3 version/delete-marker
+cleanup are not approved. Destructive production enablement is blocked until accepted.
+
+**Files affected:** Prisma schema/forward migration/seed, auth/scope/organization/company/alarm/
+monitoring/device/command/report/storage/audit services, Archive module, Admin/Company Web routes,
+design/architecture/quality/planning documentation.
+
+## DEC-2026-07-29-02 — Database-leased deletion workers and evidence-safe user purge (ACCEPTED)
+
+**Decision:** Add a forward-only `DeletionJob` lease owner, expiry, heartbeat and attempt counter.
+Workers claim pending or expired-running jobs conditionally in PostgreSQL, renew the lease during
+bounded phases and allow a new instance to resume a stale job idempotently. Permanent purge of an
+archived CompanyUser detaches specific-user policy and notification recipient foreign keys while
+retaining immutable snapshots; archived Position purge detaches historical position targets;
+custom Role purge rejects protected or assigned roles.
+
+**Consequences:** Process-local overlap protection is no longer the multi-instance security
+boundary. Active policies and protected dependencies remain fail-closed. `AlarmNotification`
+recipient provenance becomes nullable only for purged archived users; normal live dispatch still
+requires an actual active recipient. Migration
+`20260729140000_deletion_worker_lease_and_user_evidence` must deploy before the corresponding API.
+Forced-crash resume, two-worker conditional claim, lease-loss detection, crash-after-root-delete,
+exactly-one receipt and orphan reconciliation are now repository-tested. Production destructive
+enablement remains blocked only by the external storage, backup, legal-hold, restore and purge-SLA
+decisions in DEC-2026-07-29-01.
+
+## DEC-2026-07-29-03 — Existing report pipeline, typed reading filters and reconciliation (ACCEPTED)
+
+**Decision:** Archive CSV/XLSX uses `ReportJob`/`ReportExport` and private storage, with
+`archive.view + reports.export`; Company users cannot request this type. SensorReading physical
+purge persists a typed backend filter snapshot and globally serialized DeletionJob, never browser
+ID aggregation. Reconciliation is a read-only GSS Archive report that counts deterministic command
+provenance discrepancies, safe ambiguous legacy assignment rows, FK orphans and missing/failing
+storage metadata without returning object keys.
+
+**Consequences:** Archive export inherits report ownership, audit, expiry and authorized streaming.
+Referenced readings remain ineligible. Ambiguous provenance is reported but is not treated as an
+unexpected orphan or guessed into tenant ownership. Provider failures are counted separately from
+confirmed missing objects and no raw provider error is exposed.
+
+## DEC-2026-07-30-01 — Deterministic Korean default with persisted English selection (ACCEPTED)
+
+**Decision:** The Web application supports exactly `ko` and `en`; Korean is the deterministic
+default and browser language is ignored. A valid explicit choice is stored under
+`gss-iot.locale.v1`, updates `html lang` and re-renders the active application tree without resetting
+the route, authenticated session or theme. Both catalogs have compile-time key parity and runtime
+placeholder parity. Machine identifiers, MQTT payload fields and immutable evidence stay unchanged.
+
+**Decision:** Backend exceptions keep stable codes as the localization boundary. The Web client
+shows localized code/status copy and stores raw backend text only as technical detail. New alarm
+notifications retain a template key and parameter snapshot. Report jobs retain the normalized
+request locale in their existing internal filter snapshot; the worker localizes headers, semantic
+values and filename without changing the public DTO or report routes.
+
+**Consequences:** Permission/action/scope and canonical node-type presentation is key-driven;
+`requiredOccurrenceCount` remains 발생 횟수 and `countIntervalSeconds` remains 집계 간격. Archive
+Center remains 보관함 and physical purge remains 영구 삭제. No RBAC, company scope, MQTT, alarm
+counter, retention, archive or purge rule changes. `pnpm i18n:audit` blocks catalog drift, placeholder
+drift, implicit browser-locale formatting and new direct visible JSX literals.

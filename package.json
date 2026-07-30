@@ -7,6 +7,7 @@
     "build": "tsc -b tsconfig.json --pretty false && pnpm --filter web exec vite build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "i18n:audit": "node scripts/audit-i18n.mjs",
     "lint": "eslint . --max-warnings=0",
     "test": "pnpm -r --if-present test:unit",
     "test:e2e": "pnpm --filter api test:e2e && pnpm --filter web test:e2e",

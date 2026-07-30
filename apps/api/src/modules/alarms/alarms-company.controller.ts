@@ -97,15 +97,6 @@ export class AlarmsCompanyController {
     return this.alarms.updateRuleStatus(auth!.principal, ruleId, dto.isActive);
   }
 
-  @RequirePermissions("alarm-rules.manage")
-  @Delete("alarm-rules/:ruleId/permanent")
-  permanentlyDeleteRule(
-    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
-    @Param("ruleId") ruleId: string,
-  ) {
-    return this.alarms.permanentlyDeleteRule(auth!.principal, ruleId);
-  }
-
   @RequirePermissions("alarm-rules.view")
   @Get("alarm-rules/:ruleId/policies")
   listPolicies(
@@ -157,15 +148,6 @@ export class AlarmsCompanyController {
     dto: UpdateAlarmLifecycleStatusDto,
   ) {
     return this.alarms.updatePolicyStatus(auth!.principal, policyId, dto.isActive);
-  }
-
-  @RequirePermissions("alarm-rules.manage")
-  @Delete("alarm-policies/:policyId/permanent")
-  permanentlyDeletePolicy(
-    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
-    @Param("policyId") policyId: string,
-  ) {
-    return this.alarms.permanentlyDeletePolicy(auth!.principal, policyId);
   }
 
   @RequirePermissions("alarms.view")

@@ -3,6 +3,7 @@ import { AssignmentStatus, ReportType } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../prisma/prisma.service";
+import { ArchiveQueryService } from "../archive/archive-query.service";
 import {
   REPORT_LIMITS,
   type NormalizedReportDataset,
@@ -152,9 +153,27 @@ const auditColumns = [
   { key: "createdAt", header: "Timestamp" },
 ];
 
+const archiveColumns = [
+  { key: "entityType", header: "Entity type" },
+  { key: "id", header: "Entity ID" },
+  { key: "name", header: "Name" },
+  { key: "title", header: "Title" },
+  { key: "companyId", header: "Company ID" },
+  { key: "areaId", header: "Site ID" },
+  { key: "buildingId", header: "Building ID" },
+  { key: "deletedAt", header: "Archived at" },
+  { key: "deletedByType", header: "Archived by type" },
+  { key: "deletedById", header: "Archived by ID" },
+  { key: "deleteReason", header: "Archive reason" },
+  { key: "parentDerived", header: "Parent-derived" },
+];
+
 @Injectable()
 export class ReportDataQueryService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ArchiveQueryService) private readonly archive: ArchiveQueryService,
+  ) {}
 
   async generate(job: ReportJobForExecution): Promise<NormalizedReportDataset> {
     const scope = reportExecutionScope(job);
@@ -183,7 +202,19 @@ export class ReportDataQueryService {
       case ReportType.USER_ACTIVITY:
       case ReportType.AUDIT_LOG:
         return this.auditHistory(filters);
+      case ReportType.ARCHIVE_EVIDENCE:
+        return this.archiveEvidence(filters);
     }
+  }
+
+  async archiveEvidence(filters: Record<string, string>): Promise<NormalizedReportDataset> {
+    return {
+      columns: archiveColumns,
+      rows: (await this.archive.exportEvidence(filters, REPORT_LIMITS.maxRows)) as Record<
+        string,
+        ReportValue
+      >[],
+    };
   }
 
   async companySummary(scope: ReportExecutionScope): Promise<NormalizedReportDataset> {

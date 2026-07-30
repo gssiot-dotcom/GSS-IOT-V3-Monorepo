@@ -20,9 +20,25 @@ export class ActiveUserGuard implements CanActivate {
     const user =
       principal.context === AUTH_CONTEXT.gssAdmin
         ? await this.prisma.gssAdminUser.findUnique({ where: { id: principal.sub } })
-        : await this.prisma.companyUser.findUnique({ where: { id: principal.sub } });
+        : await this.prisma.companyUser.findUnique({
+            include: { company: { select: { deletedAt: true, status: true } } },
+            where: { id: principal.sub },
+          });
+    const companyUserState = user as {
+      company?: { deletedAt: Date | null; status: string };
+      deletedAt?: Date | null;
+    } | null;
 
-    if (!user || !user.isActive || user.tokenVersion !== principal.tokenVersion) {
+    if (
+      !user ||
+      !user.isActive ||
+      user.tokenVersion !== principal.tokenVersion ||
+      Boolean(companyUserState?.deletedAt) ||
+      Boolean(
+        companyUserState?.company &&
+        (companyUserState.company.status !== "ACTIVE" || companyUserState.company.deletedAt),
+      )
+    ) {
       throw new UnauthorizedException(
         "The authenticated user is inactive or the session is revoked.",
       );

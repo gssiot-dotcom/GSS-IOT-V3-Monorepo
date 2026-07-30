@@ -303,9 +303,14 @@ export class BuildingImagesService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async getBuilding(buildingId: string) {
-    const building = await this.prisma.constructionBuilding.findUnique({
+    const building = await this.prisma.constructionBuilding.findFirst({
       select: { areaId: true, companyId: true, id: true, title: true },
-      where: { id: buildingId },
+      where: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+        id: buildingId,
+      },
     });
     if (!building) throw new NotFoundException("The construction building was not found.");
     return building;

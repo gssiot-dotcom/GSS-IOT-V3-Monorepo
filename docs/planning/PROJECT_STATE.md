@@ -12,6 +12,11 @@ Phase 12 notifications and alarm operations UI is `PHASE_12_COMPLETE` as of 2026
 
 ## Current repository status
 
+- 2026-07-30 bilingual product pass: Korean is the deterministic default and English is a persisted
+  header selection in both portals. Typed 1,026-key catalogs, explicit locale formatters, localized
+  API-code fallbacks, template-snapshot notifications, locale-snapshotted CSV/XLSX output,
+  permission/node-type display mappings, audit automation and responsive Playwright evidence are
+  implemented without changing routes, DTOs, RBAC/scope, MQTT, alarm counting or archive behavior.
 - Targeted 2026-07-28 alarm/organization upgrade: ordinary Alarm Rule/Policy Delete is now an
   evidence-safe archive that stops evaluation/delivery without cascading alarm, trigger,
   notification, delivery or audit history. Alarm and Notification lists support atomic scoped bulk
@@ -419,3 +424,80 @@ passed on rerun), with the four targeted correction journeys also passing togeth
 dark, desktop and mobile evidence is preserved under
 `docs/quality/screenshots/2026-07-28-targeted-correction/`. Production deployment and commits remain
 intentionally unperformed.
+
+## 2026-07-29 two-tier archive/retention foundation
+
+Forward migration `20260729100000_two_tier_archive_purge_retention` is applied in the local
+development database. It adds canonical archive metadata where missing, GatewayCommand/AuditLog
+scope provenance, GSS-only permissions, durable `DeletionJob` and sanitized `PurgeReceipt`.
+
+Implemented code now makes Company-owned Delete an Archive action; removes Company permanent-delete
+controllers; excludes archived ancestors from authentication, scope, monitoring, alarms, reports,
+devices, dashboard, command and upload flows; adds `/admin/archive`; adds organization/alarm/terminal
+command purge adapters with bounded SensorReading deletion and external-storage cleanup; and adds
+180-day reference-safe retention plus Admin/Company Sensor History routes.
+
+Verification completed for the foundation on 2026-07-29:
+
+- `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`
+  pass. The unit gate passes 39 files and 158 tests; the production build retains the known
+  JavaScript chunk-size advisory.
+- Prisma generate/validate/deploy/status pass. Both the development database and isolated E2E
+  schema report all 21 forward migrations applied with no pending migration.
+- API E2E passes 8 files and 75 tests after updating the former permanent-delete and scoped-object
+  expectations to the Archive/404 isolation contract.
+- Web Playwright passes all 21 configured browser tests across the 8.5-minute responsive/theme
+  visual matrix.
+- All 14 newly created source/document files pass Prettier and `git diff --check` passes. The
+  repository-wide `pnpm format:check` remains red on a pre-existing 228-file formatting baseline;
+  unrelated files were intentionally not rewritten.
+- The foundation entry above is superseded by the completion entry below; its then-open repository
+  verification items are now closed.
+
+### 2026-07-29 continuation correction
+
+The canonical Archive contract is now used by every Admin/Company organization-management
+frontend Delete mutation; application and E2E source no longer sends `/permanent`. Company
+confirmation copy remains evidence-safe, and the Company dashboard restores a maximum six-column
+desktop grid so a seventh KPI wraps predictably.
+
+Forward migration `20260729140000_deletion_worker_lease_and_user_evidence` adds database lease,
+heartbeat and attempt metadata to `DeletionJob`, plus nullable evidence-safe notification recipient
+provenance. The worker conditionally claims pending or stale-running jobs and renews its lease.
+CompanyUser, CompanyPosition and custom CompanyRole purge adapters now exist and preserve immutable
+notification/policy snapshots while rejecting active/protected dependencies.
+
+The migration is applied to the local development schema. Prisma generate/validate, lint,
+typecheck, config unit (8), API unit and Web unit pass. The remaining repository items from this
+continuation are closed by the completion entry below.
+
+### 2026-07-29 Archive/Purge/Retention completion
+
+Forward migration `20260729170000_archive_export_and_filtered_purge` adds the Archive evidence
+ReportType. Archive capability contracts now use `ARCHIVE | PERMANENT_PURGE | NOT_ALLOWED`; child,
+historical assignment, image, reading, alarm, notification and report evidence no longer blocks
+Archive. Active teardown is transactional and parent-derived Site/Building evidence is visible.
+
+Archive Center now provides backend filters, subtree detail, CSV/XLSX jobs and authorized download,
+preview fingerprints, typed confirmation, progress/failure/retry and permission-conjoined purge.
+Sensor History now has server-scoped cascading Company/Site/Building/NodeType/Node options, 31-day
+filters, chart/table, report export and GSS-only typed filtered purge. Deletion workers have
+conditional leases, heartbeat ownership checks, stale recovery, persisted counts, crash-after-root
+resume and upserted exactly-one receipt. The reconciliation report covers command/assignment
+provenance, FK orphans and storage metadata without exposing keys.
+
+The final aggregate verification is green for install, Prisma generate/validate/status, lint,
+typecheck, 42 unit files / 171 tests, production build, 9 API E2E files / 86 tests and 23 aggregate
+Playwright tests in 6.6 minutes. The isolated performance schema processed 100,001 readings in
+1,000-row batches, deleted 100,000 while preserving the referenced row, completed purge in
+14.085 seconds at about 7,100 rows/second, and observed a 5 ms maximum concurrent query latency with
+no database lock wait. `git diff --check` and the task-changed-file Prettier gate pass. The
+repository-wide `pnpm format:check` still reports 164 unrelated pre-existing baseline files; they
+were not broadly rewritten under the repository change-discipline rule.
+
+The local development `localhost:5432/gss_iot_v3?schema=public` target reports all 23 migrations
+applied. The idempotent initial seed was executed twice with stable counts: 92 permissions, five GSS
+roles, one active Super Admin, three NodeTypes and five global Company role templates. All verified
+tenant and operational tables remain empty. Only production S3 version/delete-marker
+credentials/policy, backup/legal-hold/restore authorization and purge SLA remain external open
+decisions.

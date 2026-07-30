@@ -106,3 +106,13 @@ Document tested dataset/rate and bottlenecks.
 - Security and authorization review has no unresolved critical issue.
 - Backup/restore and smoke tests are documented and run.
 - Final `PROJECT_STATE.md` accurately distinguishes completed product, optional items and operational follow-up.
+
+## 2026-07-29 implementation note
+
+The additive archive metadata/job/receipt/provenance migration and bounded SensorReading retention
+implementation now exists. Deployment order is migration → API archive filtering → worker
+(dry-run first) → Web Archive/History routes. Archive ReportJob export, server-filtered reading
+purge, database leases, reconciliation and isolated 100k+ performance verification are complete in
+the repository. Phase 14 production rollout is still blocked by backup/legal-hold/restore policy,
+purge SLA, real S3 credentials and permanent version/delete-marker handling. A completed purge
+cannot be restored by application rollback.

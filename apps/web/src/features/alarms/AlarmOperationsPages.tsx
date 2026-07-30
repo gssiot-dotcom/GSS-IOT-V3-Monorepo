@@ -56,7 +56,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { t, tf } from "../../app/i18n";
+import { formatDateTime, nodeTypeLabel, t, tf, tx } from "../../app/i18n";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
@@ -120,7 +120,7 @@ function createEmptyPolicyDraft(): PolicyDraft {
 }
 
 function formatDate(value: string | null | undefined) {
-  return value ? new Date(value).toLocaleString() : "-";
+  return value ? formatDateTime(value) : "-";
 }
 
 function semanticStatus(status: string) {
@@ -164,10 +164,31 @@ function semanticStatus(status: string) {
 function StatusValue({ value }: { value: string }) {
   return (
     <StatusBadge
-      label={t(`status.${value.toLowerCase()}` as never)}
+      label={tx(`status.${value.toLowerCase()}`, value)}
       status={semanticStatus(value)}
     />
   );
+}
+
+function notificationCopy(notification: AlarmNotificationRecord) {
+  const params = notification.templateSnapshot?.params;
+  if (notification.templateSnapshot?.key !== "alarm.policy.triggered.v1" || !params) {
+    return { body: notification.body, title: notification.title };
+  }
+
+  const severity = String(params.severity ?? "warning").toLowerCase();
+  const localizedSeverity = tx(`status.${severity}`, severity);
+  return {
+    body: tf("alarms.notificationTemplate.policyTriggeredBody", {
+      building: params.building ?? "-",
+      current: params.current ?? "-",
+      node: params.node ?? "-",
+      required: params.required ?? "-",
+    }),
+    title: tf("alarms.notificationTemplate.policyTriggeredTitle", {
+      severity: localizedSeverity,
+    }),
+  };
 }
 
 function PolicyFact({ label, value }: { label: string; value: ReactNode }) {
@@ -627,7 +648,11 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
         <DataTable
           rows={alarm.notifications ?? []}
           columns={[
-            { key: "title", label: t("alarms.notification"), render: (row) => row.title },
+            {
+              key: "title",
+              label: t("alarms.notification"),
+              render: (row) => notificationCopy(row).title,
+            },
             {
               key: "status",
               label: t("gatewayCommands.status"),
@@ -889,7 +914,8 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
             {
               key: "nodeType",
               label: t("devices.nodeType"),
-              render: (row) => row.nodeType?.displayName ?? row.nodeTypeId,
+              render: (row) =>
+                nodeTypeLabel(row.nodeType?.key, row.nodeType?.displayName ?? row.nodeTypeId),
             },
             {
               key: "severity",
@@ -1058,7 +1084,10 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
               />
               <PolicyFact
                 label={t("devices.nodeType")}
-                value={viewingPolicy.rule.nodeType?.displayName ?? viewingPolicy.rule.nodeTypeId}
+                value={nodeTypeLabel(
+                  viewingPolicy.rule.nodeType?.key,
+                  viewingPolicy.rule.nodeType?.displayName ?? viewingPolicy.rule.nodeTypeId,
+                )}
               />
               <PolicyFact label={t("alarms.channel")} value={viewingPolicy.channel} />
               <PolicyFact
@@ -1172,7 +1201,7 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
               <Select
                 allowDeselect={false}
                 data={options.nodeTypes.map((item) => ({
-                  label: item.displayName,
+                  label: nodeTypeLabel(item.key, item.displayName),
                   value: item.id,
                 }))}
                 label={t("devices.nodeType")}
@@ -1525,7 +1554,7 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
               label: t("common.select"),
               render: (row) => (
                 <Checkbox
-                  aria-label={`${t("common.select")}: ${row.title}`}
+                  aria-label={`${t("common.select")}: ${notificationCopy(row).title}`}
                   checked={selectedIds.includes(row.id)}
                   onChange={(event) =>
                     setSelectedIds((current) =>
@@ -1538,8 +1567,16 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
               ),
               width: 72,
             },
-            { key: "title", label: t("alarms.notification"), render: (row) => row.title },
-            { key: "body", label: t("alarms.message"), render: (row) => row.body },
+            {
+              key: "title",
+              label: t("alarms.notification"),
+              render: (row) => notificationCopy(row).title,
+            },
+            {
+              key: "body",
+              label: t("alarms.message"),
+              render: (row) => notificationCopy(row).body,
+            },
             {
               key: "status",
               label: t("gatewayCommands.status"),
@@ -1555,7 +1592,7 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
               label: t("organizations.actions"),
               render: (row) => (
                 <EntityActionMenu
-                  ariaLabel={`${t("common.moreActions")}: ${row.title}`}
+                  ariaLabel={`${t("common.moreActions")}: ${notificationCopy(row).title}`}
                   items={[
                     {
                       disabled: Boolean(row.readAt),
@@ -1585,7 +1622,7 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
         cancelLabel={t("common.cancel")}
         confirmLabel={t("organizations.delete")}
         description={t("alarms.confirmNotificationArchiveImpact")}
-        entityName={deleteTarget?.title ?? ""}
+        entityName={deleteTarget ? notificationCopy(deleteTarget).title : ""}
         loading={deleting}
         onClose={() => {
           if (!deleting) setDeleteTarget(null);

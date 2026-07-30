@@ -22,6 +22,7 @@ import { AdminEndpoint } from "../../common/decorators/admin-endpoint.decorator"
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
 import {
+  ArchiveReasonDto,
   CreateAreaDto,
   CreateBuildingDto,
   CreateCompanyDto,
@@ -93,8 +94,10 @@ export class OrganizationsAdminController {
   deactivateCompany(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("companyId") companyId: string,
+    @Body(new ValidationPipe({ expectedType: ArchiveReasonDto, transform: true }))
+    dto: ArchiveReasonDto,
   ) {
-    return this.organizations.deactivateCompany(auth!.principal, companyId);
+    return this.organizations.archiveCompany(auth!.principal, companyId, dto.reason);
   }
 
   @RequirePermissions("companies.update")
@@ -106,15 +109,6 @@ export class OrganizationsAdminController {
     dto: UpdateOrganizationStatusDto,
   ) {
     return this.organizations.setCompanyStatus(auth!.principal, companyId, dto.status);
-  }
-
-  @RequirePermissions("companies.delete")
-  @Delete("companies/:companyId/permanent")
-  deleteCompanyPermanently(
-    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
-    @Param("companyId") companyId: string,
-  ) {
-    return this.organizations.deleteCompanyPermanently(auth!.principal, companyId);
   }
 
   @RequirePermissions("areas.view")
@@ -152,8 +146,10 @@ export class OrganizationsAdminController {
   deactivateArea(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("areaId") areaId: string,
+    @Body(new ValidationPipe({ expectedType: ArchiveReasonDto, transform: true }))
+    dto: ArchiveReasonDto,
   ) {
-    return this.organizations.deactivateArea(auth!.principal, areaId);
+    return this.organizations.archiveArea(auth!.principal, areaId, dto.reason);
   }
 
   @RequirePermissions("areas.update")
@@ -165,15 +161,6 @@ export class OrganizationsAdminController {
     dto: UpdateOrganizationStatusDto,
   ) {
     return this.organizations.setAreaStatus(auth!.principal, areaId, dto.status);
-  }
-
-  @RequirePermissions("areas.delete")
-  @Delete("areas/:areaId/permanent")
-  deleteAreaPermanently(
-    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
-    @Param("areaId") areaId: string,
-  ) {
-    return this.organizations.deleteAreaPermanently(auth!.principal, areaId);
   }
 
   @RequirePermissions("buildings.view")
@@ -213,8 +200,10 @@ export class OrganizationsAdminController {
   deactivateBuilding(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("buildingId") buildingId: string,
+    @Body(new ValidationPipe({ expectedType: ArchiveReasonDto, transform: true }))
+    dto: ArchiveReasonDto,
   ) {
-    return this.organizations.deactivateBuilding(auth!.principal, buildingId);
+    return this.organizations.archiveBuilding(auth!.principal, buildingId, dto.reason);
   }
 
   @RequirePermissions("buildings.update")
@@ -226,15 +215,6 @@ export class OrganizationsAdminController {
     dto: UpdateOrganizationStatusDto,
   ) {
     return this.organizations.setBuildingStatus(auth!.principal, buildingId, dto.status);
-  }
-
-  @RequirePermissions("buildings.delete")
-  @Delete("buildings/:buildingId/permanent")
-  deleteBuildingPermanently(
-    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
-    @Param("buildingId") buildingId: string,
-  ) {
-    return this.organizations.deleteBuildingPermanently(auth!.principal, buildingId);
   }
 
   @RequirePermissions("building-plans.view")

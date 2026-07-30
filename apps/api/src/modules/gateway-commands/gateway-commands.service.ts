@@ -44,6 +44,11 @@ export const gatewayCommandSelect = {
   responsePayload: true,
   requesterType: true,
   requesterId: true,
+  companyId: true,
+  areaId: true,
+  buildingId: true,
+  scopeSnapshot: true,
+  deletedAt: true,
   correlationKey: true,
   attemptCount: true,
   maxAttempts: true,
@@ -115,6 +120,7 @@ export class GatewayCommandsService {
 
   async listCommands(query: ListGatewayCommandsQueryDto) {
     const where = {
+      deletedAt: null,
       gatewayId: query.gatewayId,
       status: query.status,
     } satisfies Prisma.GatewayCommandWhereInput;
@@ -221,15 +227,23 @@ export class GatewayCommandsService {
           : AuditActorType.COMPANY_USER;
       const created = await tx.gatewayCommand.create({
         data: {
+          areaId: gateway.areaId,
+          buildingId: gateway.buildingId,
           commandNumber: built.commandNumber,
           commandType: built.commandType,
           correlationKey: `${gateway.serialNumber}:${built.commandNumber}`,
           expiresAt,
+          companyId: gateway.companyId,
           gatewayId: gateway.id,
           maxAttempts: this.env.MQTT_MAX_PUBLISH_ATTEMPTS,
           payload: built.payload as Prisma.InputJsonObject,
           requesterId: actor.sub,
           requesterType,
+          scopeSnapshot: {
+            areaId: gateway.areaId,
+            buildingId: gateway.buildingId,
+            companyId: gateway.companyId,
+          },
           topic: built.topic,
         },
         select: gatewayCommandSelect,
@@ -1157,7 +1171,13 @@ export class GatewayCommandsService {
     expiresInSeconds: number | undefined,
     build: (
       tx: Prisma.TransactionClient,
-      gateway: { companyId: string; id: string; serialNumber: string },
+      gateway: {
+        areaId: string | null;
+        buildingId: string | null;
+        companyId: string;
+        id: string;
+        serialNumber: string;
+      },
     ) => Promise<{
       commandNumber: number;
       commandType: GatewayCommandType;
@@ -1174,10 +1194,13 @@ export class GatewayCommandsService {
       );
       const created = await tx.gatewayCommand.create({
         data: {
+          areaId: gateway.areaId,
+          buildingId: gateway.buildingId,
           commandNumber: built.commandNumber,
           commandType: built.commandType,
           correlationKey: `${gateway.serialNumber}:${built.commandNumber}`,
           expiresAt,
+          companyId: gateway.companyId,
           gatewayId,
           maxAttempts: this.env.MQTT_MAX_PUBLISH_ATTEMPTS,
           payload: built.payload as Prisma.InputJsonObject,
@@ -1186,6 +1209,11 @@ export class GatewayCommandsService {
             actor.context === AUTH_CONTEXT.gssAdmin
               ? AuditActorType.GSS_ADMIN
               : AuditActorType.COMPANY_USER,
+          scopeSnapshot: {
+            areaId: gateway.areaId,
+            buildingId: gateway.buildingId,
+            companyId: gateway.companyId,
+          },
           topic: built.topic,
         },
         select: gatewayCommandSelect,
@@ -1213,8 +1241,23 @@ export class GatewayCommandsService {
         serialNumber: true,
         status: true,
         companyAssignments: {
-          where: { status: AssignmentStatus.ACTIVE },
+          where: {
+            company: { deletedAt: null, status: "ACTIVE" },
+            status: AssignmentStatus.ACTIVE,
+          },
           select: { companyId: true },
+          take: 1,
+        },
+        buildingAssignments: {
+          where: {
+            building: {
+              area: { deletedAt: null },
+              company: { deletedAt: null, status: "ACTIVE" },
+              deletedAt: null,
+            },
+            status: AssignmentStatus.ACTIVE,
+          },
+          select: { building: { select: { areaId: true } }, buildingId: true },
           take: 1,
         },
       },
@@ -1229,7 +1272,13 @@ export class GatewayCommandsService {
     if (!companyId) {
       throw new BadRequestException("Gateway must be assigned to a company before commands.");
     }
-    return { companyId, id: gateway.id, serialNumber: gateway.serialNumber };
+    return {
+      areaId: gateway.buildingAssignments[0]?.building.areaId ?? null,
+      buildingId: gateway.buildingAssignments[0]?.buildingId ?? null,
+      companyId,
+      id: gateway.id,
+      serialNumber: gateway.serialNumber,
+    };
   }
 
   private async getGatewayProvisioningContext(
@@ -1244,15 +1293,25 @@ export class GatewayCommandsService {
         serialNumber: true,
         status: true,
         companyAssignments: {
-          where: { status: AssignmentStatus.ACTIVE },
+          where: {
+            company: { deletedAt: null, status: "ACTIVE" },
+            status: AssignmentStatus.ACTIVE,
+          },
           select: { companyId: true },
           take: 1,
         },
         buildingAssignments: {
-          where: { status: AssignmentStatus.ACTIVE },
+          where: {
+            building: {
+              area: { deletedAt: null },
+              company: { deletedAt: null, status: "ACTIVE" },
+              deletedAt: null,
+            },
+            status: AssignmentStatus.ACTIVE,
+          },
           select: {
             buildingId: true,
-            building: { select: { companyId: true, id: true } },
+            building: { select: { areaId: true, companyId: true, id: true } },
           },
           take: 1,
         },
@@ -1278,7 +1337,13 @@ export class GatewayCommandsService {
     if (buildingAssignment.building.companyId !== companyId) {
       throw new ConflictException("Gateway company and building company do not match.");
     }
-    return { buildingId, companyId, id: gateway.id, serialNumber: gateway.serialNumber };
+    return {
+      areaId: buildingAssignment.building.areaId,
+      buildingId,
+      companyId,
+      id: gateway.id,
+      serialNumber: gateway.serialNumber,
+    };
   }
 
   private async getNodeTypeOrThrow(nodeTypeId: string, executor: PrismaExecutor) {

@@ -1,6 +1,7 @@
 import type { AuthContext, AuthSession } from "@gss-iot/contracts";
 
 import { readWebEnv } from "../../app/env";
+import { getActiveLocale, intlLocaleByLocale, t } from "../../app/i18n";
 
 export class AuthApiError extends Error {
   constructor(
@@ -16,13 +17,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...options,
     headers: {
       "content-type": "application/json",
+      "accept-language": intlLocaleByLocale[getActiveLocale()],
       ...options.headers,
     },
   });
 
   if (!response.ok) {
     throw new AuthApiError(
-      `Authentication request failed with status ${response.status}.`,
+      t(response.status === 401 ? "apiError.authenticationRequired" : "apiError.generic"),
       response.status,
     );
   }
@@ -41,7 +43,10 @@ export function login(context: AuthContext, email: string, password: string): Pr
 export function getCurrentSession(context: AuthContext, accessToken: string): Promise<AuthSession> {
   const endpoint = context === "gss-admin" ? "/auth/gss/me" : "/auth/company/me";
   return request<AuthSession>(endpoint, {
-    headers: { authorization: `Bearer ${accessToken}` },
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "accept-language": intlLocaleByLocale[getActiveLocale()],
+    },
   });
 }
 
@@ -52,6 +57,6 @@ export async function logout(accessToken: string): Promise<void> {
   });
 
   if (!response.ok && response.status !== 401) {
-    throw new Error(`Logout request failed with status ${response.status}.`);
+    throw new Error(t("apiError.generic"));
   }
 }

@@ -135,9 +135,9 @@ export class ReportScopeService {
 
   private async resolveGlobalScope(filters: ReportFiltersDto): Promise<ResolvedReportScope> {
     if (filters.companyId) {
-      const company = await this.prisma.company.findUnique({
+      const company = await this.prisma.company.findFirst({
         select: { id: true },
-        where: { id: filters.companyId },
+        where: { deletedAt: null, id: filters.companyId, status: "ACTIVE" },
       });
       if (!company) throw new BadRequestException("The report company was not found.");
     }
@@ -161,9 +161,14 @@ export class ReportScopeService {
 
   private async resolveSelectedResources(filters: ReportFiltersDto, expectedCompanyId?: string) {
     const building = filters.buildingId
-      ? await this.prisma.constructionBuilding.findUnique({
+      ? await this.prisma.constructionBuilding.findFirst({
           select: { areaId: true, companyId: true, id: true },
-          where: { id: filters.buildingId },
+          where: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+            id: filters.buildingId,
+          },
         })
       : null;
     if (filters.buildingId && !building) {
@@ -178,9 +183,13 @@ export class ReportScopeService {
 
     const areaId = filters.areaId ?? building?.areaId;
     const area = areaId
-      ? await this.prisma.constructionArea.findUnique({
+      ? await this.prisma.constructionArea.findFirst({
           select: { companyId: true, id: true },
-          where: { id: areaId },
+          where: {
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+            id: areaId,
+          },
         })
       : null;
     if (areaId && !area) {
@@ -199,12 +208,22 @@ export class ReportScopeService {
             companyAssignments: {
               orderBy: { assignedAt: "desc" },
               select: { companyId: true },
-              where: { status: "ACTIVE" },
+              where: {
+                company: { deletedAt: null, status: "ACTIVE" },
+                status: "ACTIVE",
+              },
             },
             buildingAssignments: {
               orderBy: { assignedAt: "desc" },
               select: { buildingId: true },
-              where: { status: "ACTIVE" },
+              where: {
+                building: {
+                  area: { deletedAt: null },
+                  company: { deletedAt: null, status: "ACTIVE" },
+                  deletedAt: null,
+                },
+                status: "ACTIVE",
+              },
             },
             id: true,
           },
@@ -230,7 +249,12 @@ export class ReportScopeService {
     const buildingRows = areaId
       ? await this.prisma.constructionBuilding.findMany({
           select: { areaId: true, id: true },
-          where: { areaId },
+          where: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            areaId,
+            deletedAt: null,
+          },
         })
       : building
         ? [{ areaId: building.areaId, id: building.id }]
@@ -250,10 +274,17 @@ export class ReportScopeService {
 
   private async getCompanyScope(userId: string): Promise<CompanyScope> {
     const user = await this.prisma.companyUser.findUnique({
-      include: { areaAccess: true, buildingAccess: true, role: true },
+      include: { areaAccess: true, buildingAccess: true, company: true, role: true },
       where: { id: userId },
     });
-    if (!user || !user.isActive) {
+    if (
+      !user ||
+      !user.isActive ||
+      user.deletedAt ||
+      user.company.deletedAt ||
+      user.company.status !== "ACTIVE" ||
+      user.role.deletedAt
+    ) {
       throw new ForbiddenException("The company user is not active.");
     }
 
@@ -262,19 +293,29 @@ export class ReportScopeService {
     const inheritedBuildings = directAreaIds.length
       ? await this.prisma.constructionBuilding.findMany({
           select: { areaId: true, id: true },
-          where: { areaId: { in: directAreaIds }, companyId: user.companyId },
+          where: {
+            area: { deletedAt: null },
+            areaId: { in: directAreaIds },
+            companyId: user.companyId,
+            deletedAt: null,
+          },
         })
       : [];
     const directBuildings = directBuildingIds.length
       ? await this.prisma.constructionBuilding.findMany({
           select: { areaId: true, id: true },
-          where: { companyId: user.companyId, id: { in: directBuildingIds } },
+          where: {
+            area: { deletedAt: null },
+            companyId: user.companyId,
+            deletedAt: null,
+            id: { in: directBuildingIds },
+          },
         })
       : [];
     const ownerBuildings = user.role.isCompanyOwnerRole
       ? await this.prisma.constructionBuilding.findMany({
           select: { areaId: true, id: true },
-          where: { companyId: user.companyId },
+          where: { area: { deletedAt: null }, companyId: user.companyId, deletedAt: null },
         })
       : [];
     const buildingIds = [

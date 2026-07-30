@@ -1,5 +1,17 @@
 # GSS IoT V3 — TODO
 
+## 2026-07-30 Korean/English localization
+
+- [x] Make Korean the deterministic default and persist an explicit Korean/English user choice.
+- [x] Add the globe selector before the theme control in Admin and Company shells.
+- [x] Replace the monolithic catalog with typed KO/EN catalogs and shared explicit-locale formatters.
+- [x] Localize stable API errors, permission catalog display, canonical node types and notification
+      template snapshots without exposing raw backend copy as the primary UI message.
+- [x] Snapshot export locale and localize CSV/XLSX headers, semantic values and filenames.
+- [x] Add catalog/placeholder/implicit-format/visible-JSX audit automation plus focused unit tests.
+- [x] Verify Admin and Company KO/EN persistence and overflow at 1440×900, 1280×800 and 390×844.
+- [ ] Product-owner copy review may refine Korean tone without changing glossary meanings or keys.
+
 ## Phase 0
 
 - [x] Initialize Git and pnpm workspace.
@@ -415,3 +427,30 @@ Phase 14 remains not started by this correction.
       the documented migrate → API → Web order during the separately authorized deployment.
 
 No new Prisma migration or seed is introduced by this correction. Phase 14 remains not started.
+
+## Two-tier archive and SensorReading retention (2026-07-29)
+
+- [x] Add forward archive/job/receipt/provenance schema migration and GSS-only permissions.
+- [x] Convert Company-owned Delete endpoints to Archive and remove Company permanent-delete APIs.
+- [x] Enforce archived-ancestor isolation across auth, Socket.IO, guards and primary operational paths.
+- [x] Add GSS Archive Center list/detail/preview/idempotent-job/status/retry APIs and UI route.
+- [x] Add ownership-ordered Company/Site/Building and alarm/notification/terminal-command purge adapters.
+- [x] Preserve global Gateway/Node records and CompanyDeviceAssignment for Site/Building purge.
+- [x] Add reference-safe 180-day bounded retention and Admin/Company Sensor History list/export UI.
+- [x] Run full unit/build/API E2E/Web Playwright regression gates for the implemented foundation.
+- [x] Add Archive evidence CSV/XLSX dataset to existing ReportJob/ReportExport pipeline.
+- [x] Add GSS `sensor-readings.purge` server-filter preview/job/UI action (never browser ID aggregation).
+- [x] Add fail-closed CompanyUser/CompanyPosition/custom CompanyRole physical purge adapters with
+      immutable notification/policy evidence detachment and focused unit coverage.
+- [x] Complete Archive Center hierarchy filters, detail drawer, export, polling progress, failure
+      details and retry controls.
+- [x] Complete Sensor History Company/Site/Building/Node Type/Node selectors, fault filter, chart and
+      GSS retention dry-run controls; current backend filtering/list/export foundation is present.
+- [x] Add database lease/heartbeat ownership, conditional stale-lease claims and persisted attempts
+      for multi-instance deletion workers.
+- [x] Add forced-crash/resume, stale-lease, lease-loss and exactly-one-receipt tests.
+- [x] Produce deterministic legacy GatewayCommand/AuditLog/NodeGatewayAssignment reconciliation report.
+- [ ] Implement/approve permanent S3 version and delete-marker cleanup.
+- [ ] Approve backup retention/legal hold/restore policy (`OPEN_DECISION`).
+- [x] Run storage failure/retry, orphan reconciliation, crash recovery and 100k+ SensorReading
+      performance/lock tests before production enablement.

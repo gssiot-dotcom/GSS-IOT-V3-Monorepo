@@ -18,11 +18,25 @@ import { Badge, Box, Group, Paper, SimpleGrid, Stack, Text, TextInput } from "@m
 import { IconKey, IconSearch } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { t, tf } from "../../app/i18n";
+import { hasTranslationKey, t, tf } from "../../app/i18n";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 
 type CatalogContext = Extract<AuthContext, "gss-admin" | "company-user">;
+
+function permissionPart(prefix: "action" | "module" | "scope", value: string | null | undefined) {
+  if (!value) return t("common.notAvailable");
+  const key = `permissions.${prefix}.${value}`;
+  return hasTranslationKey(key) ? t(key) : value;
+}
+
+function permissionDescription(permission: CompanyPermissionRecord) {
+  return tf("permissions.descriptionTemplate", {
+    action: permissionPart("action", permission.action),
+    module: permissionPart("module", permission.module),
+    scope: permissionPart("scope", permission.scopeType),
+  });
+}
 
 export function PermissionCatalogPage({ context }: { context: CatalogContext }) {
   const { session } = useAuth();
@@ -145,15 +159,21 @@ export function PermissionCatalogPage({ context }: { context: CatalogContext }) 
                         </Text>
                       </Group>
                       <Badge color="gray" style={{ flexShrink: 0 }} variant="light">
-                        {permission.scopeType ?? t("common.notAvailable")}
+                        {permissionPart("scope", permission.scopeType)}
                       </Badge>
                     </Group>
                     <Text c="dimmed" size="sm">
-                      {permission.description ?? t("permissions.noDescription")}
+                      {permissionDescription(permission)}
                     </Text>
                     <SimpleGrid cols={2} spacing="xs">
-                      <PermissionMeta label={t("permissions.module")} value={permission.module} />
-                      <PermissionMeta label={t("permissions.action")} value={permission.action} />
+                      <PermissionMeta
+                        label={t("permissions.module")}
+                        value={permissionPart("module", permission.module)}
+                      />
+                      <PermissionMeta
+                        label={t("permissions.action")}
+                        value={permissionPart("action", permission.action)}
+                      />
                     </SimpleGrid>
                   </Stack>
                 </Paper>
@@ -177,13 +197,13 @@ export function PermissionCatalogPage({ context }: { context: CatalogContext }) 
                 {
                   key: "description",
                   label: t("permissions.description"),
-                  render: (permission) => permission.description ?? t("permissions.noDescription"),
+                  render: permissionDescription,
                   width: "40%",
                 },
                 {
                   key: "module",
                   label: t("permissions.module"),
-                  render: (permission) => permission.module,
+                  render: (permission) => permissionPart("module", permission.module),
                 },
                 {
                   align: "right",
@@ -191,7 +211,7 @@ export function PermissionCatalogPage({ context }: { context: CatalogContext }) 
                   label: t("permissions.scope"),
                   render: (permission) => (
                     <Badge color="gray" style={{ flexShrink: 0 }} variant="light">
-                      {permission.scopeType ?? t("common.notAvailable")}
+                      {permissionPart("scope", permission.scopeType)}
                     </Badge>
                   ),
                   width: 104,
@@ -200,7 +220,7 @@ export function PermissionCatalogPage({ context }: { context: CatalogContext }) 
                   align: "right",
                   key: "action",
                   label: t("permissions.action"),
-                  render: (permission) => permission.action,
+                  render: (permission) => permissionPart("action", permission.action),
                 },
               ]}
               density="compact"

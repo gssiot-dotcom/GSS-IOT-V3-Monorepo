@@ -5,9 +5,9 @@ test("renders the web bootstrap shell", async ({ page }) => {
 
   await expect(page.getByTestId("app-root")).toBeVisible();
   await expect(page.getByText("GSS IoT V3")).toBeVisible();
-  await expect(page.getByLabel("Email")).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Password" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByLabel("이메일")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "비밀번호" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "로그인" })).toBeVisible();
 });
 
 test("renders Phase 2 demo with legacy node-type cards", async ({ page }) => {

@@ -21,7 +21,7 @@ import {
 import { DatePickerInput } from "@mantine/dates";
 import { IconCalendar } from "@tabler/icons-react";
 
-import { t, tf } from "../../../app/i18n";
+import { formatDateTime, t, tf, tx } from "../../../app/i18n";
 import {
   CollectionPagination,
   DataTable,
@@ -99,16 +99,16 @@ export function NodeDetailDrawer({
                 {node.node.installedLocation ?? t("monitoring.locationUnavailable")}
               </Text>
             </Stack>
-            <StatusBadge label={t(`status.${node.status}` as never)} status={node.status} />
+            <StatusBadge label={tx(`status.${node.status}`, node.status)} status={node.status} />
           </Group>
           <SimpleGrid cols={{ base: 1, sm: 3 }}>
             <Text size="sm">
               {doorValues
-                ? `${t(`monitoring.doorState.${doorValues.doorState}` as never)} · ${doorValues.batteryLevel ?? "-"}%`
+                ? `${tx(`monitoring.doorState.${doorValues.doorState}`, doorValues.doorState)} · ${doorValues.batteryLevel ?? "-"}%`
                 : `X ${angleValues?.angleX.toFixed(1)}° · Y ${angleValues?.angleY.toFixed(1)}°`}
             </Text>
             <Text c="dimmed" size="sm">
-              {tf("monitoring.valueAgeLabel", { age: new Date(node.lastSeenAt).toLocaleString() })}
+              {tf("monitoring.valueAgeLabel", { age: formatDateTime(node.lastSeenAt) })}
             </Text>
             {node.faultFiltered ? (
               <Badge color="yellow">{t("monitoring.faultFiltered")}</Badge>
@@ -213,7 +213,7 @@ export function NodeDetailDrawer({
                       {
                         key: "receivedAt",
                         label: t("monitoring.receivedAt"),
-                        render: (row) => new Date(row.receivedAt).toLocaleString(),
+                        render: (row) => formatDateTime(row.receivedAt),
                       },
                       {
                         key: "value",
@@ -225,7 +225,7 @@ export function NodeDetailDrawer({
                         label: t("monitoring.latestStatus"),
                         render: (row) => (
                           <StatusBadge
-                            label={t(`status.${row.status}` as never)}
+                            label={tx(`status.${row.status}`, row.status)}
                             status={row.status}
                           />
                         ),
@@ -382,6 +382,6 @@ function TiltDirectionGraphic({ angleX, angleY }: { angleX: number; angleY: numb
 
 function renderHistoryValue(values: PaginatedSensorHistory["items"][number]["values"]) {
   if ("doorState" in values)
-    return `${t(`monitoring.doorState.${values.doorState}` as never)} · ${values.batteryLevel ?? "-"}%`;
+    return `${tx(`monitoring.doorState.${values.doorState}`, values.doorState)} · ${values.batteryLevel ?? "-"}%`;
   return `X ${values.angleX.toFixed(1)}° · Y ${values.angleY.toFixed(1)}°`;
 }

@@ -58,6 +58,7 @@ export const REPORT_DATE_FILTER_TYPES = new Set<ReportType>([
   ReportType.MQTT_COMMAND_HISTORY,
   ReportType.USER_ACTIVITY,
   ReportType.AUDIT_LOG,
+  ReportType.ARCHIVE_EVIDENCE,
 ]);
 
 export function reportExecutionScope(job: ReportJobForExecution): ReportExecutionScope {

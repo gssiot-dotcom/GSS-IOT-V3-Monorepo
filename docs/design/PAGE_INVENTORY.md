@@ -92,11 +92,28 @@ sidebar permission key, Company scope rule or Phase 14 inventory item is added.
 Company Detail inner navigation is replaced by route-derived full-width tabs without changing its
 five URLs. All full collection pages use header pagination with 50/100 sizes and the shared response
 envelope. Overflow menus own lifecycle, assignment-ending and delete actions; clicking their SVG
-descendants cannot activate the containing row/card. Alarm Event and Notification Delete actions
-are archive operations, while pristine entity deletion is explicitly permanent.
+descendants cannot activate the containing row/card. Every Company-owned Delete action is an
+archive operation. Physical deletion exists only in GSS Archive Center.
 
 - Company Building Plan: shared private PLAN/REAL image manager with real file upload and secure
   previews.
 - Admin Company Detail / Buildings: building overflow action opens the same image manager in a large
   modal.
 - Admin and Company Node Detail: Hour/Day range controls, bounded chart and 50/100 readings table.
+- GSS Archive Center (`/admin/archive`): Organizations, Company Management, Alarm Configuration,
+  Alarm Operations and Device Operations groups; filters, evidence detail, preview and GSS-only
+  purge progress. No Company counterpart.
+- Admin Sensor Reading History (`/admin/monitoring/history`): Company → Site → Building → Node Type
+  → Node filters, report export, and GSS-only server-filter purge contract.
+- Company Sensor Reading History (`/company/monitoring/history`): Site → Building → Node Type → Node
+  filters and report export; no physical-purge action.
+
+## 2026-07-29 completed pages
+
+| Route                         | Context   | Permission                | Completed behavior                                                     |
+| ----------------------------- | --------- | ------------------------- | ---------------------------------------------------------------------- |
+| `/admin/archive`              | GSS Admin | `archive.view`            | grouped archive evidence, filters, detail, export, purge job lifecycle |
+| `/admin/monitoring/history`   | GSS Admin | `monitoring.view`         | cascading hierarchy, chart/table/export; optional GSS-only purge       |
+| `/company/monitoring/history` | Company   | `monitoring.view` + scope | scoped hierarchy, chart/table/export; no physical purge                |
+
+No Company Archive route or sidebar item exists.

@@ -159,3 +159,23 @@ Migration `20260728110000_alarm_rule_policy_archive` additively adds archive act
 active-list indexes to Alarm Rules and Recipient Policies. Production order is **migrate → API →
 Web**. Roll back application code while retaining these columns; do not rewrite the applied
 migration or delete evidence rows to emulate rollback.
+
+## Two-tier contract supersession
+
+As of 2026-07-29, Company Delete for Company-owned entities always means Archive. The older
+pristine-only physical-delete capability remains applicable to global inventory lifecycle where
+explicitly documented, but is superseded for GSS-controlled Archive Center tenant purge. Company
+clients must not receive or render a hard-delete capability. GSS purge is separately authorized by
+`archive.purge + domain permission`, uses preview/typed confirmation/background job, and may delete
+non-pristine owned descendants without manual child cleanup. Migration and rollback details are in
+the two-tier architecture document.
+
+## Two-tier lifecycle clarification — 2026-07-29
+
+Company, Site, Building, Company User, Position and eligible custom Role Delete is now Archive,
+even when immutable history or child records exist. Archive teardown ends active operational
+assignments/policies and preserves evidence. Physical deletion is a separately permissioned,
+previewed, typed-confirmation DeletionJob available only from `/admin/archive`. The old pristine
+hard-delete capability must not be reused to decide Archive visibility. Parent-derived children
+remain database rows and normal direct access returns `404`; 50/100 pagination applies to both
+Archive and Sensor History collections.

@@ -1,9 +1,10 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 
 import { PrismaModule } from "../../prisma/prisma.module";
 import { AuditLogsModule } from "../audit-logs/audit-logs.module";
 import { AuthModule } from "../auth/auth.module";
 import { RbacModule } from "../rbac/rbac.module";
+import { ArchiveModule } from "../archive/archive.module";
 import { ReportDownloadService } from "./report-download.service";
 import { ReportExportCleanupService } from "./report-export-cleanup.service";
 import { ReportDataQueryService } from "./report-data-query.service";
@@ -29,7 +30,7 @@ import { ReportWorkerService } from "./report-worker.service";
     ReportScopeService,
     ReportsService,
   ],
-  imports: [PrismaModule, AuditLogsModule, AuthModule, RbacModule],
+  imports: [PrismaModule, AuditLogsModule, AuthModule, RbacModule, forwardRef(() => ArchiveModule)],
   providers: [
     ReportDownloadService,
     ReportDataQueryService,

@@ -7,12 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { hash } from "bcrypt";
-import {
-  AuditActorType,
-  PermissionScopeType,
-  PositionAssignmentStatus,
-  ReportRequesterType,
-} from "@prisma/client";
+import { AuditActorType, PermissionScopeType, PositionAssignmentStatus } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
 import { AUTH_CONTEXT, type AuthTokenPayload } from "../../common/auth.types";
@@ -49,6 +44,7 @@ const userSelect = {
   isActive: true,
   createdAt: true,
   updatedAt: true,
+  deletedAt: true,
   role: { select: { id: true, key: true, name: true, isCompanyOwnerRole: true } },
   areaAccess: {
     select: { accessLevel: true, area: { select: { id: true, name: true } }, areaId: true },
@@ -98,6 +94,7 @@ const roleSelect = {
   isCompanyOwnerRole: true,
   createdAt: true,
   updatedAt: true,
+  deletedAt: true,
   _count: { select: { users: true } },
   permissions: {
     select: {
@@ -130,7 +127,11 @@ export class CompanyManagementService {
   ) {}
 
   async listCompanyUsers(companyId: string, query: PaginationQueryDto) {
-    const where = { companyId } satisfies Prisma.CompanyUserWhereInput;
+    const where = {
+      companyId,
+      deletedAt: null,
+      company: { deletedAt: null },
+    } satisfies Prisma.CompanyUserWhereInput;
     const [items, total] = await this.prisma.$transaction([
       this.prisma.companyUser.findMany({
         where,
@@ -281,7 +282,78 @@ export class CompanyManagementService {
   }
 
   async deactivateCompanyUser(actor: AuthTokenPayload, companyId: string, userId: string) {
-    return this.updateCompanyUser(actor, companyId, userId, { isActive: false });
+    return this.archiveCompanyUser(actor, companyId, userId);
+  }
+
+  async archiveCompanyUser(
+    actor: AuthTokenPayload,
+    companyId: string,
+    userId: string,
+    reason?: string,
+  ) {
+    const archivedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "CompanyUser" WHERE "id" = ${userId}::uuid FOR UPDATE`;
+      const user = await this.assertCompanyUser(companyId, userId, tx);
+      await this.safeAdmin.assertCompanyUserCanLoseOwnerRole(
+        actor.sub,
+        userId,
+        user.role.isCompanyOwnerRole,
+        tx,
+      );
+      await tx.companyUserPositionAssignment.updateMany({
+        data: { endedAt: archivedAt, status: PositionAssignmentStatus.ENDED },
+        where: { companyUserId: userId, status: PositionAssignmentStatus.ACTIVE },
+      });
+      const policies = await tx.alarmRecipientPolicy.findMany({
+        select: { id: true },
+        where: { deletedAt: null, isActive: true, specificUserId: userId },
+      });
+      await Promise.all(
+        policies.map(({ id }) =>
+          tx.alarmRecipientPolicy.update({
+            data: {
+              activeKey: id,
+              disabledAt: archivedAt,
+              isActive: false,
+              updatedById: actor.sub,
+              updatedByType: this.actorType(actor),
+            },
+            where: { id },
+          }),
+        ),
+      );
+      if (policies.length > 0) {
+        await tx.alarmCounterState.updateMany({
+          data: { currentCount: 0, status: "RESET", version: { increment: 1 } },
+          where: { policyId: { in: policies.map(({ id }) => id) } },
+        });
+      }
+      const archived = await tx.companyUser.update({
+        data: {
+          deletedAt: archivedAt,
+          deletedById: actor.sub,
+          deletedByType: this.actorType(actor),
+          deleteReason: reason,
+          isActive: false,
+          tokenVersion: { increment: 1 },
+        },
+        where: { id: userId },
+      });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "company-user.archive",
+          entityId: userId,
+          entityType: "CompanyUser",
+          newValue: { deletedAt: archivedAt.toISOString(), reason },
+          oldValue: user,
+          scope: { companyId },
+        },
+        tx,
+      );
+      return { archived: true, id: archived.id };
+    });
   }
 
   async updateCompanyUserStatus(
@@ -294,28 +366,7 @@ export class CompanyManagementService {
   }
 
   async permanentlyDeleteCompanyUser(actor: AuthTokenPayload, companyId: string, userId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const user = await this.assertCompanyUser(companyId, userId, tx);
-      await this.safeAdmin.assertCompanyUserCanLoseOwnerRole(
-        actor.sub,
-        userId,
-        user.role.isCompanyOwnerRole,
-        tx,
-      );
-      const capability = await this.companyUserDeletionCapability(user, tx);
-      this.assertDeletionAllowed(capability, "deactivate the user");
-      await tx.companyUser.delete({ where: { id: userId } });
-      await this.auditLog.record(
-        actor,
-        {
-          action: "company-user.delete",
-          entityId: userId,
-          entityType: "CompanyUser",
-          oldValue: user,
-        },
-        tx,
-      );
-    });
+    return this.archiveCompanyUser(actor, companyId, userId);
   }
 
   async listCompanyRoles(companyId: string, query: PaginationQueryDto) {
@@ -327,10 +378,10 @@ export class CompanyManagementService {
           `Default company role templates are unavailable: ${defaultRoles.missingTemplateKeys.join(", ")}.`,
         );
       }
-      const where = { companyId } satisfies Prisma.CompanyRoleWhereInput;
+      const where = { companyId, deletedAt: null } satisfies Prisma.CompanyRoleWhereInput;
       const [items, total] = await Promise.all([
         tx.companyRole.findMany({
-          where: { companyId },
+          where,
           orderBy: [{ name: "asc" }, { id: "asc" }],
           select: roleSelect,
           ...pageWindow(query),
@@ -464,11 +515,19 @@ export class CompanyManagementService {
     return this.prisma.$transaction(async (tx) => {
       const oldRole = await this.assertRole(companyId, roleId, tx);
       this.assertDeletionAllowed(this.companyRoleDeletionCapability(oldRole), "reassign its users");
-      await tx.companyRole.delete({ where: { id: roleId } });
+      const archivedAt = new Date();
+      await tx.companyRole.update({
+        data: {
+          deletedAt: archivedAt,
+          deletedById: actor.sub,
+          deletedByType: this.actorType(actor),
+        },
+        where: { id: roleId },
+      });
       await this.auditLog.record(
         actor,
         {
-          action: "company-role.delete",
+          action: "company-role.archive",
           entityId: roleId,
           entityType: "CompanyRole",
           oldValue: oldRole,
@@ -605,7 +664,71 @@ export class CompanyManagementService {
   }
 
   async deactivateCompanyPosition(actor: AuthTokenPayload, companyId: string, positionId: string) {
-    return this.updateCompanyPosition(actor, companyId, positionId, { isActive: false });
+    return this.archiveCompanyPosition(actor, companyId, positionId);
+  }
+
+  async archiveCompanyPosition(
+    actor: AuthTokenPayload,
+    companyId: string,
+    positionId: string,
+    reason?: string,
+  ) {
+    const archivedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockPosition(positionId, tx);
+      const position = await this.assertPosition(companyId, positionId, tx);
+      await tx.companyUserPositionAssignment.updateMany({
+        data: { endedAt: archivedAt, status: PositionAssignmentStatus.ENDED },
+        where: { positionId, status: PositionAssignmentStatus.ACTIVE },
+      });
+      const policies = await tx.alarmRecipientPolicy.findMany({
+        select: { id: true },
+        where: { deletedAt: null, isActive: true, positionId },
+      });
+      await Promise.all(
+        policies.map(({ id }) =>
+          tx.alarmRecipientPolicy.update({
+            data: {
+              activeKey: id,
+              disabledAt: archivedAt,
+              isActive: false,
+              updatedById: actor.sub,
+              updatedByType: this.actorType(actor),
+            },
+            where: { id },
+          }),
+        ),
+      );
+      if (policies.length > 0) {
+        await tx.alarmCounterState.updateMany({
+          data: { currentCount: 0, status: "RESET", version: { increment: 1 } },
+          where: { policyId: { in: policies.map(({ id }) => id) } },
+        });
+      }
+      const archived = await tx.companyPosition.update({
+        data: {
+          deletedAt: archivedAt,
+          deletedById: actor.sub,
+          deletedByType: this.actorType(actor),
+          deleteReason: reason,
+          isActive: false,
+        },
+        where: { id: positionId },
+      });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "company-position.archive",
+          entityId: positionId,
+          entityType: "CompanyPosition",
+          newValue: { deletedAt: archivedAt.toISOString(), reason },
+          oldValue: position,
+          scope: { companyId },
+        },
+        tx,
+      );
+      return { archived: true, id: archived.id };
+    });
   }
 
   async updateCompanyPositionStatus(
@@ -622,56 +745,7 @@ export class CompanyManagementService {
     companyId: string,
     positionId: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockPosition(positionId, tx);
-      const position = await this.assertPosition(companyId, positionId, tx);
-      await this.lockPositionDependencies(positionId, tx);
-      const result = await this.companyPositionDeletionCapability(positionId, tx);
-      const capability = result.deletion;
-      this.assertDeletionAllowed(
-        capability,
-        "remove assignments or move/deactivate alarm policies",
-      );
-      if (capability.mode === "SOFT_DELETE") {
-        const archived = await tx.companyPosition.update({
-          where: { id: positionId },
-          data: {
-            deletedAt: new Date(),
-            deletedById: actor.sub,
-            deletedByType:
-              actor.context === AUTH_CONTEXT.gssAdmin
-                ? AuditActorType.GSS_ADMIN
-                : AuditActorType.COMPANY_USER,
-            isActive: false,
-          },
-          select: positionSelect,
-        });
-        await this.auditLog.record(
-          actor,
-          {
-            action: "company-position.archive",
-            entityId: positionId,
-            entityType: "CompanyPosition",
-            newValue: archived,
-            oldValue: position,
-          },
-          tx,
-        );
-        return { mode: capability.mode };
-      }
-      await tx.companyPosition.delete({ where: { id: positionId } });
-      await this.auditLog.record(
-        actor,
-        {
-          action: "company-position.delete",
-          entityId: positionId,
-          entityType: "CompanyPosition",
-          oldValue: position,
-        },
-        tx,
-      );
-      return { mode: capability.mode };
-    });
+    return this.archiveCompanyPosition(actor, companyId, positionId);
   }
 
   async replaceUserPositionAssignments(
@@ -767,7 +841,7 @@ export class CompanyManagementService {
 
   async getCompanyIdForCompanyUser(companyUserId: string) {
     const user = await this.prisma.companyUser.findUnique({
-      where: { id: companyUserId },
+      where: { id: companyUserId, deletedAt: null, company: { deletedAt: null } },
       select: { companyId: true },
     });
     if (!user) {
@@ -778,7 +852,7 @@ export class CompanyManagementService {
 
   async assertCompanyManager(companyUserId: string) {
     const user = await this.prisma.companyUser.findUnique({
-      where: { id: companyUserId },
+      where: { id: companyUserId, deletedAt: null, company: { deletedAt: null } },
       select: { companyId: true, role: { select: { isCompanyOwnerRole: true } } },
     });
     if (!user?.role.isCompanyOwnerRole) {
@@ -789,7 +863,7 @@ export class CompanyManagementService {
 
   private async assertCompany(companyId: string, executor: PrismaExecutor) {
     const company = await executor.company.findUnique({
-      where: { id: companyId },
+      where: { id: companyId, deletedAt: null },
       select: { id: true },
     });
     if (!company) {
@@ -797,9 +871,15 @@ export class CompanyManagementService {
     }
   }
 
+  private actorType(actor: AuthTokenPayload) {
+    return actor.context === AUTH_CONTEXT.gssAdmin
+      ? AuditActorType.GSS_ADMIN
+      : AuditActorType.COMPANY_USER;
+  }
+
   private async assertCompanyUser(companyId: string, userId: string, executor: PrismaExecutor) {
     const user = await executor.companyUser.findFirst({
-      where: { id: userId, companyId },
+      where: { id: userId, companyId, deletedAt: null, company: { deletedAt: null } },
       select: userSelect,
     });
     if (!user) {
@@ -810,7 +890,7 @@ export class CompanyManagementService {
 
   private async assertRole(companyId: string, roleId: string, executor: PrismaExecutor) {
     const role = await executor.companyRole.findFirst({
-      where: { id: roleId, companyId },
+      where: { id: roleId, companyId, deletedAt: null },
       select: roleSelect,
     });
     if (!role) {
@@ -947,26 +1027,9 @@ export class CompanyManagementService {
     user: Awaited<ReturnType<CompanyManagementService["assertCompanyUser"]>>,
     executor: PrismaExecutor = this.prisma,
   ) {
-    const reportJobs = await executor.reportJob.count({
-      where: {
-        requestedById: user.id,
-        requestedByType: ReportRequesterType.COMPANY_USER,
-      },
-    });
-    const dependencies =
-      user._count.positionAssignments +
-      user._count.alarmRecipientPolicies +
-      user._count.alarmNotifications +
-      reportJobs;
-    if (dependencies > 0) {
-      return {
-        allowed: false,
-        blocker: "The user has assignment, alarm, notification, or report history.",
-        code: "COMPANY_USER_HAS_PROTECTED_HISTORY",
-        mode: "NOT_ALLOWED" as const,
-      };
-    }
-    return { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const };
+    void user;
+    void executor;
+    return { allowed: true, blocker: null, code: null, mode: "ARCHIVE" as const };
   }
 
   private companyRoleDeletionCapability(role: {
@@ -990,7 +1053,7 @@ export class CompanyManagementService {
         mode: "NOT_ALLOWED" as const,
       };
     }
-    return { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const };
+    return { allowed: true, blocker: null, code: null, mode: "ARCHIVE" as const };
   }
 
   private async companyPositionDeletionCapability(
@@ -1032,24 +1095,6 @@ export class CompanyManagementService {
       historicalPolicies,
     };
     const counts = { ...dependencies };
-    if (activeAssignments > 0 || activePolicies > 0) {
-      const recommendedActions = [
-        ...(activeAssignments > 0 ? ["Remove the active user position assignments."] : []),
-        ...(activePolicies > 0 ? ["Move or deactivate the active alarm recipient policies."] : []),
-      ];
-      return {
-        dependencies,
-        deletion: {
-          allowed: false,
-          blocker: `Remove ${activeAssignments} active assignment(s) and move or deactivate ${activePolicies} active alarm policy/policies first.`,
-          code: "COMPANY_POSITION_HAS_ACTIVE_DEPENDENCIES",
-          counts,
-          mode: "NOT_ALLOWED" as const,
-          recommendedActions,
-        },
-      };
-    }
-    const hasHistory = historicalAssignments > 0 || historicalPolicies > 0;
     return {
       dependencies,
       deletion: {
@@ -1057,7 +1102,7 @@ export class CompanyManagementService {
         blocker: null,
         code: null,
         counts,
-        mode: hasHistory ? ("SOFT_DELETE" as const) : ("HARD_DELETE" as const),
+        mode: "ARCHIVE" as const,
         recommendedActions: [],
       },
     };

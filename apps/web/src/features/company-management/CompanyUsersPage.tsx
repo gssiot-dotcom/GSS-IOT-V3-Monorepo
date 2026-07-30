@@ -131,7 +131,7 @@ export function CompanyUsersPage() {
     kind: "position" | "user";
     name: string;
     isActive?: boolean;
-    deleteMode?: "HARD_DELETE" | "SOFT_DELETE";
+    deleteMode?: "ARCHIVE";
   } | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const [mutationError, setMutationError] = useState<string>();
@@ -444,7 +444,7 @@ export function CompanyUsersPage() {
       const base = `/company/${pendingMutation.kind === "user" ? "users" : "positions"}/${pendingMutation.id}`;
       await apiRequest(
         session,
-        pendingMutation.action === "DELETE" ? `${base}/permanent` : `${base}/status`,
+        pendingMutation.action === "DELETE" ? base : `${base}/status`,
         pendingMutation.action === "DELETE"
           ? { method: "DELETE" }
           : { body: JSON.stringify({ isActive: pendingMutation.isActive }), method: "PATCH" },
@@ -608,7 +608,7 @@ export function CompanyUsersPage() {
                                 disabledReason: user.deletion?.blocker ?? undefined,
                                 icon: <IconTrash size={16} />,
                                 key: "delete",
-                                label: t("organizations.deletePermanently"),
+                                label: t("organizations.delete"),
                                 onClick: () =>
                                   setPendingMutation({
                                     action: "DELETE",
@@ -962,20 +962,13 @@ export function CompanyUsersPage() {
                           disabledReason: position.deletion?.blocker ?? undefined,
                           icon: <IconTrash size={16} />,
                           key: "delete",
-                          label: t(
-                            position.deletion?.mode === "SOFT_DELETE"
-                              ? "management.archivePosition"
-                              : "organizations.deletePermanently",
-                          ),
+                          label: t("organizations.delete"),
                           onClick: () =>
                             setPendingMutation({
                               action: "DELETE",
                               kind: "position",
                               id: position.id,
-                              deleteMode:
-                                position.deletion?.mode === "SOFT_DELETE"
-                                  ? "SOFT_DELETE"
-                                  : "HARD_DELETE",
+                              deleteMode: "ARCHIVE",
                               name: position.name,
                             }),
                         },
@@ -1066,18 +1059,14 @@ export function CompanyUsersPage() {
         cancelLabel={t("common.cancel")}
         confirmLabel={t(
           pendingMutation?.action === "DELETE"
-            ? pendingMutation.deleteMode === "SOFT_DELETE"
-              ? "management.archivePosition"
-              : "organizations.deletePermanently"
+            ? "organizations.delete"
             : pendingMutation?.isActive
               ? "organizations.activate"
               : "organizations.deactivate",
         )}
         description={t(
           pendingMutation?.action === "DELETE"
-            ? pendingMutation.deleteMode === "SOFT_DELETE"
-              ? "management.confirmArchivePositionImpact"
-              : "organizations.confirmPermanentDeleteImpact"
+            ? "organizations.confirmPermanentDeleteImpact"
             : pendingMutation?.isActive
               ? "organizations.confirmActivateImpact"
               : "organizations.confirmDeactivateImpact",
@@ -1091,9 +1080,7 @@ export function CompanyUsersPage() {
         opened={Boolean(pendingMutation)}
         title={t(
           pendingMutation?.action === "DELETE"
-            ? pendingMutation.deleteMode === "SOFT_DELETE"
-              ? "management.confirmArchivePositionTitle"
-              : "organizations.confirmPermanentDeleteTitle"
+            ? "organizations.confirmDeleteTitle"
             : pendingMutation?.isActive
               ? "organizations.confirmActivateTitle"
               : "organizations.confirmDeactivateTitle",

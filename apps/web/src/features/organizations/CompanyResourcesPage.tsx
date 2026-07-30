@@ -120,7 +120,7 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
       const base = `/company/${isAreas ? "areas" : "buildings"}/${pendingMutation.id}`;
       await apiRequest(
         session,
-        pendingMutation.action === "DELETE" ? `${base}/permanent` : `${base}/status`,
+        pendingMutation.action === "DELETE" ? base : `${base}/status`,
         pendingMutation.action === "DELETE"
           ? { method: "DELETE" }
           : {
@@ -248,7 +248,7 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
                                   disabledReason: row.deletion?.blocker ?? undefined,
                                   icon: <IconTrash size={16} />,
                                   key: "delete",
-                                  label: t("organizations.deletePermanently"),
+                                  label: t("organizations.delete"),
                                   onClick: () =>
                                     setPendingMutation({ action: "DELETE", id: row.id, name }),
                                 },
@@ -379,7 +379,7 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
                                 disabledReason: row.deletion?.blocker ?? undefined,
                                 icon: <IconTrash size={16} />,
                                 key: "delete",
-                                label: t("organizations.deletePermanently"),
+                                label: t("organizations.delete"),
                                 onClick: () =>
                                   setPendingMutation({
                                     action: "DELETE",
@@ -433,7 +433,7 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
         cancelLabel={t("common.cancel")}
         confirmLabel={t(
           pendingMutation?.action === "DELETE"
-            ? "organizations.deletePermanently"
+            ? "organizations.delete"
             : pendingMutation?.status === "ACTIVE"
               ? "organizations.activate"
               : "organizations.deactivate",
@@ -454,7 +454,7 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
         opened={Boolean(pendingMutation)}
         title={t(
           pendingMutation?.action === "DELETE"
-            ? "organizations.confirmPermanentDeleteTitle"
+            ? "organizations.confirmDeleteTitle"
             : pendingMutation?.status === "ACTIVE"
               ? "organizations.confirmActivateTitle"
               : "organizations.confirmDeactivateTitle",

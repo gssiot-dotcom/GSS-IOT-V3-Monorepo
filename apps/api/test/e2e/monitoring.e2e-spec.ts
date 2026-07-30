@@ -636,20 +636,85 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     await request(server)
       .get(`/company/buildings/${otherBuildingId}/monitoring/door_node`)
       .set("Authorization", `Bearer ${scopedToken}`)
-      .expect(403);
+      .expect(404);
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/monitoring/door_node`)
       .set("Authorization", `Bearer ${noScopeToken}`)
-      .expect(403);
+      .expect(404);
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/monitoring/door_node`)
       .set("Authorization", `Bearer ${foreignToken}`)
-      .expect(403);
+      .expect(404);
     await request(server)
       .get(`/admin/monitoring/buildings/${allowedBuildingId}/node-types/door_node`)
       .set("Authorization", `Bearer ${gssToken}`)
       .expect(200);
     expect(foreignBuildingId).toBeDefined();
+  });
+
+  it("serves server-filtered Sensor History tables and chart data for Admin and scoped Company contexts", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const building = await prisma.constructionBuilding.findUniqueOrThrow({
+      where: { id: allowedBuildingId },
+    });
+    const adminOptions = await request(server)
+      .get("/admin/monitoring/history/options")
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200);
+    expect(
+      adminOptions.body.buildings.some((item: { id: string }) => item.id === allowedBuildingId),
+    ).toBe(true);
+    expect(adminOptions.body.nodes.some((item: { id: string }) => item.id === doorNodeId)).toBe(
+      true,
+    );
+    const companyOptions = await request(server)
+      .get("/company/monitoring/history/options")
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200);
+    expect(companyOptions.body.companies).toEqual([]);
+    expect(companyOptions.body.buildings.map((item: { id: string }) => item.id)).toEqual([
+      allowedBuildingId,
+    ]);
+    const from = encodeURIComponent(new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000).toISOString());
+    const to = encodeURIComponent(new Date(Date.now() + 60_000).toISOString());
+    const baseQuery = `from=${from}&to=${to}&buildingId=${allowedBuildingId}&page=1&pageSize=50`;
+    const admin = await request(server)
+      .get(`/admin/monitoring/history?${baseQuery}&companyId=${building.companyId}`)
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200);
+    expect(admin.body).toMatchObject({ page: 1, pageSize: 50 });
+    expect(admin.body.items.length).toBeGreaterThan(0);
+    expect(
+      admin.body.items.every(
+        (item: { buildingId: string }) => item.buildingId === allowedBuildingId,
+      ),
+    ).toBe(true);
+
+    const chart = await request(server)
+      .get(`/admin/monitoring/history/chart?${baseQuery}`)
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(200);
+    expect(chart.body).toMatchObject({ sampleLimit: 500, sampled: false });
+    expect(chart.body.returnedPointCount).toBe(chart.body.items.length);
+
+    const company = await request(server)
+      .get(`/company/monitoring/history?${baseQuery}`)
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(200);
+    expect(company.body.items.length).toBeGreaterThan(0);
+    await request(server)
+      .get(
+        `/company/monitoring/history?from=${from}&to=${to}&buildingId=${otherBuildingId}&page=1&pageSize=50`,
+      )
+      .set("Authorization", `Bearer ${scopedToken}`)
+      .expect(404);
+    const overLimitFrom = encodeURIComponent(
+      new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000).toISOString(),
+    );
+    await request(server)
+      .get(`/admin/monitoring/history?from=${overLimitFrom}&to=${to}&page=1&pageSize=50`)
+      .set("Authorization", `Bearer ${gssToken}`)
+      .expect(400);
   });
 
   it("authorizes Socket.IO joins and emits updates only to the correct room", async () => {

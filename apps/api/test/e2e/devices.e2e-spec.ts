@@ -408,15 +408,15 @@ describe("Phase 4 device inventory e2e", () => {
     await request(server)
       .get(`/company/areas/${sameCompanyOtherAreaId}/devices`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(403);
+      .expect(404);
     await request(server)
       .get(`/company/buildings/${sameCompanyOtherBuildingId}/devices`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(403);
+      .expect(404);
     await request(server)
       .get(`/company/buildings/${foreignBuildingId}/gateway-node-connections`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(403);
+      .expect(404);
   });
 
   it("rejects validation errors, cross-company assignments, and unassigned gateway-building links", async () => {

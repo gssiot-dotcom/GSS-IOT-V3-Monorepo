@@ -128,8 +128,24 @@ export class MonitoringGateway implements OnGatewayInit {
     const user =
       payload.context === AUTH_CONTEXT.gssAdmin
         ? await this.prisma.gssAdminUser.findUnique({ where: { id: payload.sub } })
-        : await this.prisma.companyUser.findUnique({ where: { id: payload.sub } });
-    if (!user || !user.isActive || user.tokenVersion !== payload.tokenVersion) {
+        : await this.prisma.companyUser.findUnique({
+            include: { company: { select: { deletedAt: true, status: true } } },
+            where: { id: payload.sub },
+          });
+    const companyUserState = user as {
+      company?: { deletedAt: Date | null; status: string };
+      deletedAt?: Date | null;
+    } | null;
+    if (
+      !user ||
+      !user.isActive ||
+      user.tokenVersion !== payload.tokenVersion ||
+      Boolean(companyUserState?.deletedAt) ||
+      Boolean(
+        companyUserState?.company &&
+        (companyUserState.company.status !== "ACTIVE" || companyUserState.company.deletedAt),
+      )
+    ) {
       throw new UnauthorizedException("The authenticated user is inactive or revoked.");
     }
     return payload;

@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { CanActivate, ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { AccessLevel } from "@prisma/client";
@@ -46,7 +46,7 @@ export class CompanyScopeGuard implements CanActivate {
     );
 
     if (!allowed) {
-      throw new ForbiddenException("The requested resource is outside the assigned scope.");
+      throw new NotFoundException("The requested resource was not found.");
     }
 
     return true;
@@ -64,13 +64,22 @@ export class CompanyScopeGuard implements CanActivate {
     }
 
     const role = await this.prisma.companyRole.findUnique({ where: { id: roleId } });
-    if (!role) {
+    if (!role || role.deletedAt) {
       return false;
     }
 
     if (requirement.type === "area") {
-      const area = await this.prisma.constructionArea.findUnique({ where: { id: resourceId } });
-      if (!area || area.companyId !== companyId) {
+      const area = await this.prisma.constructionArea.findUnique({
+        include: { company: { select: { deletedAt: true, status: true } } },
+        where: { id: resourceId },
+      });
+      if (
+        !area ||
+        area.companyId !== companyId ||
+        area.deletedAt ||
+        area.company.deletedAt ||
+        area.company.status !== "ACTIVE"
+      ) {
         return false;
       }
 
@@ -88,9 +97,20 @@ export class CompanyScopeGuard implements CanActivate {
     }
 
     const building = await this.prisma.constructionBuilding.findUnique({
+      include: {
+        area: { select: { deletedAt: true } },
+        company: { select: { deletedAt: true, status: true } },
+      },
       where: { id: resourceId },
     });
-    if (!building || building.companyId !== companyId) {
+    if (
+      !building ||
+      building.companyId !== companyId ||
+      building.deletedAt ||
+      building.area.deletedAt ||
+      building.company.deletedAt ||
+      building.company.status !== "ACTIVE"
+    ) {
       return false;
     }
 

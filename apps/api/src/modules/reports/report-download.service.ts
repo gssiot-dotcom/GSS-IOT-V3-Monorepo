@@ -19,6 +19,7 @@ const gssReportPermissions: Partial<Record<ReportType, string>> = {
   GATEWAY_STATUS_HISTORY: "reports.monitoring",
   NODE_STATUS_HISTORY: "reports.monitoring",
   SENSOR_HISTORY: "reports.monitoring",
+  ARCHIVE_EVIDENCE: "archive.view",
   ALARM_HISTORY: "reports.alarms",
   MQTT_COMMAND_HISTORY: "reports.devices",
   USER_ACTIVITY: "reports.audit",

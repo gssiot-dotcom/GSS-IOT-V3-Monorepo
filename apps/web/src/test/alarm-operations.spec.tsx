@@ -132,7 +132,10 @@ describe("alarm operations", () => {
 
     releasePatch(
       jsonResponse(
-        { message: "The alarm cannot be manually resolved while the latest state is unsafe." },
+        {
+          code: "ALARM_EVENT_LATEST_STATE_UNSAFE",
+          message: "The alarm cannot be manually resolved while the latest state is unsafe.",
+        },
         409,
       ),
     );

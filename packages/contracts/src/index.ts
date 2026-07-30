@@ -89,7 +89,7 @@ export interface PaginatedResponse<T> {
 
 export interface DeleteCapability {
   allowed: boolean;
-  mode: "HARD_DELETE" | "SOFT_DELETE" | "NOT_ALLOWED";
+  mode: "ARCHIVE" | "PERMANENT_PURGE" | "HARD_DELETE" | "SOFT_DELETE" | "NOT_ALLOWED";
   blocker: string | null;
   code: string | null;
   counts?: Record<string, number>;
@@ -641,6 +641,10 @@ export interface AlarmNotificationRecord {
   status: AlarmNotificationStatus;
   title: string;
   body: string;
+  templateSnapshot?: {
+    key: string;
+    params?: Readonly<Record<string, string | number>>;
+  } | null;
   attemptCount: number;
   maxAttempts: number;
   sentAt: string | null;
@@ -728,7 +732,8 @@ export type ReportType =
   | "ALARM_HISTORY"
   | "MQTT_COMMAND_HISTORY"
   | "USER_ACTIVITY"
-  | "AUDIT_LOG";
+  | "AUDIT_LOG"
+  | "ARCHIVE_EVIDENCE";
 export type ReportFileFormat = "CSV" | "XLSX";
 
 export interface ReportExportRecord {

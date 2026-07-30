@@ -386,3 +386,34 @@ themes.
 - Administrators, GSS roles and Permissions form one translated Admin sidebar section. The
   Administrator list uses bounded search/pagination, interactive row details and permission-limited
   mutation controls without exposing authentication internals.
+- GSS Archive uses the existing Mantine shell/tokens: read-only evidence rows, actor/time/reason
+  metadata, 50/100 header pagination, nested evidence detail and a red irreversible confirmation.
+  Permanent purge controls never appear in Company navigation. Company Delete confirmations say
+  that normal/operational visibility ends while GSS evidence remains; they never claim physical
+  deletion. Sensor History uses the shared filter surface, semantic severity badges, table/chart
+  states and responsive horizontal containment.
+
+## Archive and Sensor History interaction surfaces
+
+Archive destructive actions use the existing red danger treatment only inside GSS Archive Center,
+after a red irreversible-impact alert and exact-name confirmation. Company portal Delete keeps the
+ordinary archive confirmation copy and never says “permanently.” Job progress uses the shared
+Alert/Progress/Code stack with explicit failed, retry and completed states. Sensor History uses
+cascading native selectors, the shared bounded chart/table surfaces and a separate GSS-only filtered
+purge modal. These layouts are verified at 1440×900, 1280×800 and 390×844.
+
+## Korean and English localization
+
+- Korean (`ko-KR`) is the deterministic default. Browser language is not an implicit product
+  decision; a valid stored user choice may restore English (`en-US`).
+- The globe language selector is always visible in the Admin and Company header immediately before
+  the theme control. Changing it updates the current route without a reload, persists the choice and
+  updates the root `html lang` attribute.
+- UI copy uses the typed catalogs in `apps/web/src/app/i18n/locales`. Domain terminology follows
+  `KOREAN_COPY_GLOSSARY.md`; user-visible Korean must not use 알람, 통지, 아카이브, 퍼지 or 회수.
+- Dates, times, numbers, percentages, file sizes, durations and relative times use the shared
+  explicit-locale formatters. System notifications retain a template key plus parameter snapshot so
+  historical messages can render in the current language.
+- Text growth must not hide header controls or introduce document-level horizontal overflow at
+  1440×900, 1280×800 or 390×844. Machine identifiers, MQTT payload keys and immutable evidence are
+  not translated.

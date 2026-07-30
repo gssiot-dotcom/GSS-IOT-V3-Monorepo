@@ -81,6 +81,11 @@ export class AlarmOccurrenceEvaluatorService {
       },
       where: {
         activeKey: "active",
+        building: {
+          area: { deletedAt: null },
+          company: { deletedAt: null, status: "ACTIVE" },
+          deletedAt: null,
+        },
         buildingId: input.buildingId,
         deletedAt: null,
         isActive: true,

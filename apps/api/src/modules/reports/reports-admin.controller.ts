@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Inject,
   Param,
   Post,
@@ -16,6 +17,7 @@ import { CurrentPrincipal } from "../../common/decorators/current-principal.deco
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
 import { ReportDownloadService } from "./report-download.service";
 import { ReportsService } from "./reports.service";
+import { attachmentDisposition } from "./report-localization";
 import { ListReportJobsQueryDto, RequestReportExportDto } from "./dto/reports.dto";
 
 @AdminEndpoint()
@@ -36,7 +38,6 @@ export class ReportsAdminController {
     return this.reports.listJobs(auth!.principal, query);
   }
 
-  @RequirePermissions("reports.view")
   @Get("reports/:jobId")
   getJob(@CurrentPrincipal() auth: AuthenticatedRequest["auth"], @Param("jobId") jobId: string) {
     return this.reports.getJob(auth!.principal, jobId);
@@ -46,10 +47,11 @@ export class ReportsAdminController {
   @Post("reports/export")
   requestExport(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Headers("accept-language") acceptLanguage: string | undefined,
     @Body(new ValidationPipe({ expectedType: RequestReportExportDto, transform: true }))
     dto: RequestReportExportDto,
   ) {
-    return this.reports.requestExport(auth!.principal, dto);
+    return this.reports.requestExport(auth!.principal, dto, acceptLanguage);
   }
 
   @RequirePermissions("reports.export")
@@ -60,7 +62,7 @@ export class ReportsAdminController {
   ) {
     const report = await this.downloads.download(auth!.principal, exportId);
     return new StreamableFile(report.body, {
-      disposition: `attachment; filename="${report.fileName}"`,
+      disposition: attachmentDisposition(report.fileName),
       type: report.contentType,
     });
   }

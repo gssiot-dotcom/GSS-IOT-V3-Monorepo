@@ -53,8 +53,9 @@ const gssUserSelect = {
 } as const;
 
 const companyUserSelect = {
-  company: { select: { id: true, name: true } },
+  company: { select: { deletedAt: true, id: true, name: true, status: true } },
   companyId: true,
+  deletedAt: true,
   email: true,
   id: true,
   isActive: true,
@@ -99,7 +100,7 @@ export class AuthService {
       select: companyUserSelect,
     });
 
-    await this.assertCredentials(user, login.password);
+    await this.assertCompanyCredentials(user, login.password);
     const activeUser = user!;
     const loginAt = new Date();
     await this.prisma.companyUser.update({
@@ -123,7 +124,12 @@ export class AuthService {
             select: companyUserSelect,
           });
 
-    if (!user || !user.isActive) {
+    if (
+      !user ||
+      !user.isActive ||
+      ("deletedAt" in user && user.deletedAt) ||
+      ("company" in user && (user.company.status !== "ACTIVE" || user.company.deletedAt))
+    ) {
       throw new UnauthorizedException("The user is inactive or unavailable.");
     }
 
@@ -154,11 +160,38 @@ export class AuthService {
     }
   }
 
+  private async assertCompanyCredentials(
+    user: {
+      company: { deletedAt: Date | null; status: "ACTIVE" | "INACTIVE" };
+      deletedAt: Date | null;
+      isActive: boolean;
+      passwordHash: string;
+    } | null,
+    password: string,
+  ): Promise<void> {
+    if (
+      !user ||
+      !user.isActive ||
+      user.deletedAt ||
+      user.company.status !== "ACTIVE" ||
+      user.company.deletedAt ||
+      !(await compare(password, user.passwordHash))
+    ) {
+      throw new UnauthorizedException("The email or password is invalid.");
+    }
+  }
+
   private async createSession(
     context: AuthContext,
     user: {
       companyId?: string;
-      company?: { id: string; name: string } | null;
+      company?: {
+        deletedAt?: Date | null;
+        id: string;
+        name: string;
+        status?: "ACTIVE" | "INACTIVE";
+      } | null;
+      deletedAt?: Date | null;
       email: string;
       id: string;
       isActive: boolean;

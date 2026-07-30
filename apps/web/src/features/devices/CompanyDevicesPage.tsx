@@ -13,7 +13,7 @@ import {
 import { Stack, Text, TextInput } from "@mantine/core";
 import { useEffect, useMemo, useState } from "react";
 
-import { t, tf } from "../../app/i18n";
+import { nodeTypeLabel, t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
@@ -205,7 +205,10 @@ export function CompanyDevicesPage() {
                   key: "identity",
                   label: t("devices.node"),
                   render: (row) => (
-                    <EntityPrimaryCell identifier={row.nodeType.displayName} title={row.number} />
+                    <EntityPrimaryCell
+                      identifier={nodeTypeLabel(row.nodeType.key, row.nodeType.displayName)}
+                      title={row.number}
+                    />
                   ),
                 },
                 {

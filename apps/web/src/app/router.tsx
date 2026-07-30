@@ -25,6 +25,8 @@ import {
   NodeTypeMonitoringPage,
 } from "../features/monitoring/CompanyMonitoringPage";
 import { AdminMonitoringPage } from "../features/monitoring/AdminMonitoringPage";
+import { SensorHistoryPage } from "../features/monitoring/SensorHistoryPage";
+import { ArchivePage } from "../features/archive/ArchivePage";
 import {
   AdminCompanyBuildingsSection,
   AdminCompanyDevicesSection,
@@ -148,6 +150,10 @@ export function AppRouter(): ReactElement {
                       <AdminSystemSettingsPage />
                     ) : item.path === "/admin/monitoring" ? (
                       <AdminMonitoringPage />
+                    ) : item.path === "/admin/monitoring/history" ? (
+                      <SensorHistoryPage context="admin" />
+                    ) : item.path === "/admin/archive" ? (
+                      <ArchivePage />
                     ) : (
                       <PlaceholderPage titleKey={item.titleKey} />
                     )}
@@ -216,6 +222,8 @@ export function AppRouter(): ReactElement {
                       <WelcomePage context="company-user" />
                     ) : item.path === "/company/monitoring" ? (
                       <CompanyMonitoringIndexPage />
+                    ) : item.path === "/company/monitoring/history" ? (
+                      <SensorHistoryPage context="company" />
                     ) : item.path === "/company/dashboard" ? (
                       <CompanyDashboardPage />
                     ) : item.path === "/company/alarms" ? (

@@ -48,9 +48,22 @@ export class DashboardService {
 
     if (auth.context === AUTH_CONTEXT.gssAdmin && can("companies.view")) {
       const [activeCompanies, activeSites, activeBuildings] = await Promise.all([
-        this.prisma.company.count({ where: { status: "ACTIVE" } }),
-        this.prisma.constructionArea.count({ where: { status: "ACTIVE" } }),
-        this.prisma.constructionBuilding.count({ where: { status: "ACTIVE" } }),
+        this.prisma.company.count({ where: { deletedAt: null, status: "ACTIVE" } }),
+        this.prisma.constructionArea.count({
+          where: {
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+            status: "ACTIVE",
+          },
+        }),
+        this.prisma.constructionBuilding.count({
+          where: {
+            area: { deletedAt: null },
+            company: { deletedAt: null, status: "ACTIVE" },
+            deletedAt: null,
+            status: "ACTIVE",
+          },
+        }),
       ]);
       summary.kpis.activeCompanies = activeCompanies;
       summary.kpis.activeSites = activeSites;
@@ -59,11 +72,17 @@ export class DashboardService {
       const locationWhere = this.locationWhere(scope);
       const [activeSites, activeBuildings, activeCompanyUsers] = await Promise.all([
         this.prisma.constructionArea.count({
-          where: { companyId: scope.companyId, id: { in: scope.areaIds ?? [] }, status: "ACTIVE" },
+          where: {
+            company: { deletedAt: null, status: "ACTIVE" },
+            companyId: scope.companyId,
+            deletedAt: null,
+            id: { in: scope.areaIds ?? [] },
+            status: "ACTIVE",
+          },
         }),
         this.prisma.constructionBuilding.count({ where: { ...locationWhere, status: "ACTIVE" } }),
         this.prisma.companyUser.count({
-          where: { companyId: scope.companyId, isActive: true },
+          where: { companyId: scope.companyId, deletedAt: null, isActive: true },
         }),
       ]);
       summary.kpis.activeSites = activeSites;
@@ -210,7 +229,11 @@ export class DashboardService {
   }
 
   private async commandSummary(scope: DashboardScope, from: Date) {
-    const where = { createdAt: { gte: from }, gateway: this.gatewayWhere(scope, true) };
+    const where = {
+      createdAt: { gte: from },
+      deletedAt: null,
+      gateway: this.gatewayWhere(scope, true),
+    };
     const [statuses, failures] = await Promise.all([
       this.prisma.gatewayCommand.groupBy({ _count: { _all: true }, by: ["status"], where }),
       this.prisma.gatewayCommand.findMany({
@@ -231,6 +254,9 @@ export class DashboardService {
 
   private locationWhere(scope: DashboardScope): Prisma.ConstructionBuildingWhereInput {
     return {
+      area: { deletedAt: null },
+      company: { deletedAt: null, status: "ACTIVE" },
+      deletedAt: null,
       ...(scope.companyId ? { companyId: scope.companyId } : {}),
       ...(scope.buildingIds ? { id: { in: scope.buildingIds } } : {}),
     };
@@ -238,6 +264,11 @@ export class DashboardService {
 
   private locationReadingWhere(scope: DashboardScope): Prisma.SensorReadingWhereInput {
     return {
+      building: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+      },
       ...(scope.companyId ? { companyId: scope.companyId } : {}),
       ...(scope.buildingIds ? { buildingId: { in: scope.buildingIds } } : {}),
     };
@@ -245,6 +276,11 @@ export class DashboardService {
 
   private locationStateWhere(scope: DashboardScope): Prisma.LatestNodeStateWhereInput {
     return {
+      building: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+      },
       ...(scope.companyId ? { companyId: scope.companyId } : {}),
       ...(scope.buildingIds ? { buildingId: { in: scope.buildingIds } } : {}),
     };
@@ -252,6 +288,11 @@ export class DashboardService {
 
   private locationAlarmWhere(scope: DashboardScope): Prisma.AlarmEventWhereInput {
     return {
+      building: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+      },
       ...(scope.companyId ? { companyId: scope.companyId } : {}),
       ...(scope.buildingIds ? { buildingId: { in: scope.buildingIds } } : {}),
     };
@@ -263,13 +304,23 @@ export class DashboardService {
       OR: [
         {
           companyAssignments: {
-            some: { companyId: scope.companyId, status: AssignmentStatus.ACTIVE },
+            some: {
+              company: { deletedAt: null, status: "ACTIVE" },
+              companyId: scope.companyId,
+              status: AssignmentStatus.ACTIVE,
+            },
           },
         },
         {
           buildingAssignments: {
             some: {
-              building: { companyId: scope.companyId, id: { in: scope.buildingIds ?? [] } },
+              building: {
+                area: { deletedAt: null },
+                company: { deletedAt: null, status: "ACTIVE" },
+                companyId: scope.companyId,
+                deletedAt: null,
+                id: { in: scope.buildingIds ?? [] },
+              },
               status: AssignmentStatus.ACTIVE,
             },
           },
@@ -284,7 +335,11 @@ export class DashboardService {
       OR: [
         {
           companyAssignments: {
-            some: { companyId: scope.companyId, status: AssignmentStatus.ACTIVE },
+            some: {
+              company: { deletedAt: null, status: "ACTIVE" },
+              companyId: scope.companyId,
+              status: AssignmentStatus.ACTIVE,
+            },
           },
         },
         {

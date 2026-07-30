@@ -1,11 +1,15 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { hash } from "bcrypt";
-import type { Prisma } from "@prisma/client";
+import {
+  AlarmCounterStatus,
+  AuditActorType,
+  GatewayCommandStatus,
+  type Prisma,
+} from "@prisma/client";
 
-import type { AuthTokenPayload } from "../../common/auth.types";
+import { AUTH_CONTEXT, type AuthTokenPayload } from "../../common/auth.types";
 import { type PaginationQueryDto, pageWindow, paginated } from "../../common/dto/pagination.dto";
 import { AuditLogService } from "../audit-logs/audit-log.service";
-import { CompanyLogoStorageService } from "../company-branding/company-logo-storage.service";
 import { ensureDefaultCompanyRoles } from "../company-management/default-company-roles";
 import { PrismaService } from "../../prisma/prisma.service";
 import type {
@@ -28,6 +32,7 @@ const companySelect = {
   email: true,
   logoKey: true,
   status: true,
+  deletedAt: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.CompanySelect;
@@ -39,6 +44,7 @@ const areaSelect = {
   address: true,
   description: true,
   status: true,
+  deletedAt: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ConstructionAreaSelect;
@@ -53,6 +59,7 @@ const buildingSelect = {
   buildingType: true,
   startDate: true,
   status: true,
+  deletedAt: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ConstructionBuildingSelect;
@@ -62,7 +69,6 @@ export class OrganizationsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditLogService) private readonly auditLog: AuditLogService,
-    @Inject(CompanyLogoStorageService) private readonly logoStorage: CompanyLogoStorageService,
   ) {}
 
   async listCompanies(query: PaginationQueryDto) {
@@ -71,8 +77,9 @@ export class OrganizationsService {
         ...pageWindow(query),
         orderBy: [{ name: "asc" }, { id: "asc" }],
         select: companySelect,
+        where: { deletedAt: null },
       }),
-      this.prisma.company.count(),
+      this.prisma.company.count({ where: { deletedAt: null } }),
     ]);
     const items = await Promise.all(
       companies.map(async (company) => ({
@@ -168,8 +175,56 @@ export class OrganizationsService {
     });
   }
 
-  async deactivateCompany(actor: AuthTokenPayload, companyId: string) {
-    return this.updateCompany(actor, companyId, { status: "INACTIVE" });
+  async archiveCompany(actor: AuthTokenPayload, companyId: string, reason?: string) {
+    const archivedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Company" WHERE "id" = ${companyId}::uuid FOR UPDATE`;
+      const company = await this.getCompanyOrThrow(companyId, tx);
+      const buildingIds = (
+        await tx.constructionBuilding.findMany({
+          select: { id: true },
+          where: { companyId, deletedAt: null },
+        })
+      ).map(({ id }) => id);
+      await this.teardownArchivedScope(
+        { buildingIds, companyId, reason, rootType: "Company" },
+        actor,
+        archivedAt,
+        tx,
+      );
+      const archived = await tx.company.update({
+        data: {
+          deletedAt: archivedAt,
+          deletedById: actor.sub,
+          deletedByType: this.actorType(actor),
+          deleteReason: reason,
+          status: "INACTIVE",
+        },
+        select: companySelect,
+        where: { id: companyId },
+      });
+      await tx.companyUser.updateMany({
+        data: { isActive: false, tokenVersion: { increment: 1 } },
+        where: { companyId, deletedAt: null },
+      });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "company.archive",
+          entityId: companyId,
+          entityType: "Company",
+          newValue: { deletedAt: archivedAt.toISOString(), reason },
+          oldValue: toPublicCompany(company),
+          scope: { companyId },
+        },
+        tx,
+      );
+      return { archived: true, id: archived.id };
+    });
+  }
+
+  async deactivateCompany(actor: AuthTokenPayload, companyId: string, reason?: string) {
+    return this.archiveCompany(actor, companyId, reason);
   }
 
   async setCompanyStatus(
@@ -181,57 +236,12 @@ export class OrganizationsService {
   }
 
   async deleteCompanyPermanently(actor: AuthTokenPayload, companyId: string): Promise<void> {
-    const company = await this.getCompanyOrThrow(companyId);
-    const deletion = await this.getCompanyDeletionCapability(companyId);
-    this.assertDeletionAllowed(deletion, "company", "DEACTIVATE");
-
-    const storedLogo = company.logoKey ? await this.logoStorage.get(company.logoKey) : undefined;
-    if (company.logoKey) {
-      try {
-        await this.logoStorage.remove(company.logoKey);
-      } catch {
-        throw new ConflictException({
-          blocker: "companyLogoCleanup",
-          code: "COMPANY_LOGO_CLEANUP_FAILED",
-          message: "The private company logo could not be removed. Retry the deletion.",
-          recommendedAlternative: "DEACTIVATE",
-        });
-      }
-    }
-
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        const current = await this.getCompanyOrThrow(companyId, tx);
-        this.assertDeletionAllowed(
-          await this.getCompanyDeletionCapability(companyId, tx),
-          "company",
-          "DEACTIVATE",
-        );
-        await tx.company.delete({ where: { id: companyId } });
-        await this.auditLog.record(
-          actor,
-          {
-            action: "company.delete",
-            entityId: companyId,
-            entityType: "Company",
-            oldValue: toPublicCompany(current),
-          },
-          tx,
-        );
-      });
-    } catch (error) {
-      if (company.logoKey && storedLogo) {
-        await this.logoStorage
-          .put(company.logoKey, storedLogo.body, storedLogo.contentType)
-          .catch(() => undefined);
-      }
-      throw error;
-    }
+    await this.archiveCompany(actor, companyId);
   }
 
   async listAdminAreas(companyId: string, query: PaginationQueryDto) {
     await this.getCompanyOrThrow(companyId);
-    const where = { companyId };
+    const where = { companyId, deletedAt: null };
     const [areas, total] = await this.prisma.$transaction([
       this.prisma.constructionArea.findMany({
         ...pageWindow(query),
@@ -294,8 +304,51 @@ export class OrganizationsService {
     });
   }
 
-  async deactivateArea(actor: AuthTokenPayload, areaId: string) {
-    return this.updateArea(actor, areaId, { status: "INACTIVE" });
+  async archiveArea(actor: AuthTokenPayload, areaId: string, reason?: string) {
+    const archivedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "ConstructionArea" WHERE "id" = ${areaId}::uuid FOR UPDATE`;
+      const area = await this.getAreaOrThrow(areaId, tx);
+      const buildingIds = (
+        await tx.constructionBuilding.findMany({
+          select: { id: true },
+          where: { areaId, deletedAt: null },
+        })
+      ).map(({ id }) => id);
+      await this.teardownArchivedScope(
+        { areaId, buildingIds, companyId: area.companyId, reason, rootType: "ConstructionArea" },
+        actor,
+        archivedAt,
+        tx,
+      );
+      const archived = await tx.constructionArea.update({
+        data: {
+          deletedAt: archivedAt,
+          deletedById: actor.sub,
+          deletedByType: this.actorType(actor),
+          deleteReason: reason,
+          status: "INACTIVE",
+        },
+        where: { id: areaId },
+      });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "construction-area.archive",
+          entityId: areaId,
+          entityType: "ConstructionArea",
+          newValue: { deletedAt: archivedAt.toISOString(), reason },
+          oldValue: area,
+          scope: { areaId, companyId: area.companyId },
+        },
+        tx,
+      );
+      return { archived: true, id: archived.id };
+    });
+  }
+
+  async deactivateArea(actor: AuthTokenPayload, areaId: string, reason?: string) {
+    return this.archiveArea(actor, areaId, reason);
   }
 
   async setAreaStatus(actor: AuthTokenPayload, areaId: string, status: "ACTIVE" | "INACTIVE") {
@@ -303,30 +356,12 @@ export class OrganizationsService {
   }
 
   async deleteAreaPermanently(actor: AuthTokenPayload, areaId: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const area = await this.getAreaOrThrow(areaId, tx);
-      this.assertDeletionAllowed(
-        await this.getAreaDeletionCapability(areaId, tx),
-        "construction area",
-        "DEACTIVATE",
-      );
-      await tx.constructionArea.delete({ where: { id: areaId } });
-      await this.auditLog.record(
-        actor,
-        {
-          action: "construction-area.delete",
-          entityId: areaId,
-          entityType: "ConstructionArea",
-          oldValue: area,
-        },
-        tx,
-      );
-    });
+    await this.archiveArea(actor, areaId);
   }
 
   async listAdminBuildings(companyId: string, query: PaginationQueryDto) {
     await this.getCompanyOrThrow(companyId);
-    const where = { companyId };
+    const where = { companyId, deletedAt: null, area: { deletedAt: null } };
     const [buildings, total] = await this.prisma.$transaction([
       this.prisma.constructionBuilding.findMany({
         ...pageWindow(query),
@@ -398,8 +433,55 @@ export class OrganizationsService {
     });
   }
 
-  async deactivateBuilding(actor: AuthTokenPayload, buildingId: string) {
-    return this.updateBuilding(actor, buildingId, { status: "INACTIVE" });
+  async archiveBuilding(actor: AuthTokenPayload, buildingId: string, reason?: string) {
+    const archivedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "ConstructionBuilding" WHERE "id" = ${buildingId}::uuid FOR UPDATE`;
+      const building = await this.getBuildingOrThrow(buildingId, tx);
+      await this.teardownArchivedScope(
+        {
+          areaId: building.areaId,
+          buildingIds: [buildingId],
+          companyId: building.companyId,
+          reason,
+          rootType: "ConstructionBuilding",
+        },
+        actor,
+        archivedAt,
+        tx,
+      );
+      const archived = await tx.constructionBuilding.update({
+        data: {
+          deletedAt: archivedAt,
+          deletedById: actor.sub,
+          deletedByType: this.actorType(actor),
+          deleteReason: reason,
+          status: "INACTIVE",
+        },
+        where: { id: buildingId },
+      });
+      await this.auditLog.record(
+        actor,
+        {
+          action: "construction-building.archive",
+          entityId: buildingId,
+          entityType: "ConstructionBuilding",
+          newValue: { deletedAt: archivedAt.toISOString(), reason },
+          oldValue: building,
+          scope: {
+            areaId: building.areaId,
+            buildingId,
+            companyId: building.companyId,
+          },
+        },
+        tx,
+      );
+      return { archived: true, id: archived.id };
+    });
+  }
+
+  async deactivateBuilding(actor: AuthTokenPayload, buildingId: string, reason?: string) {
+    return this.archiveBuilding(actor, buildingId, reason);
   }
 
   async setBuildingStatus(
@@ -411,32 +493,18 @@ export class OrganizationsService {
   }
 
   async deleteBuildingPermanently(actor: AuthTokenPayload, buildingId: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const building = await this.getBuildingOrThrow(buildingId, tx);
-      this.assertDeletionAllowed(
-        await this.getBuildingDeletionCapability(buildingId, tx),
-        "construction building",
-        "DEACTIVATE",
-      );
-      await tx.constructionBuilding.delete({ where: { id: buildingId } });
-      await this.auditLog.record(
-        actor,
-        {
-          action: "construction-building.delete",
-          entityId: buildingId,
-          entityType: "ConstructionBuilding",
-          oldValue: building,
-        },
-        tx,
-      );
-    });
+    await this.archiveBuilding(actor, buildingId);
   }
 
   async listCompanyAreas(companyUserId: string, query: PaginationQueryDto) {
     const context = await this.getCompanyUserContext(companyUserId);
     const where: Prisma.ConstructionAreaWhereInput = context.isOwner
-      ? { companyId: context.companyId }
-      : { companyId: context.companyId, userAccess: { some: { companyUserId } } };
+      ? { companyId: context.companyId, deletedAt: null }
+      : {
+          companyId: context.companyId,
+          deletedAt: null,
+          userAccess: { some: { companyUserId } },
+        };
     const [areas, total] = await this.prisma.$transaction([
       this.prisma.constructionArea.findMany({
         ...pageWindow(query),
@@ -458,9 +526,11 @@ export class OrganizationsService {
   async listCompanyBuildings(companyUserId: string, query: PaginationQueryDto) {
     const context = await this.getCompanyUserContext(companyUserId);
     const where: Prisma.ConstructionBuildingWhereInput = context.isOwner
-      ? { companyId: context.companyId }
+      ? { companyId: context.companyId, deletedAt: null, area: { deletedAt: null } }
       : {
           companyId: context.companyId,
+          deletedAt: null,
+          area: { deletedAt: null },
           OR: [
             { userAccess: { some: { companyUserId } } },
             { area: { userAccess: { some: { companyUserId } } } },
@@ -516,7 +586,7 @@ export class OrganizationsService {
 
   private async getCompanyOrThrow(companyId: string, executor: PrismaExecutor = this.prisma) {
     const company = await executor.company.findUnique({
-      where: { id: companyId },
+      where: { id: companyId, deletedAt: null },
       select: companySelect,
     });
     if (!company) {
@@ -527,7 +597,7 @@ export class OrganizationsService {
 
   private async getAreaOrThrow(areaId: string, executor: PrismaExecutor = this.prisma) {
     const area = await executor.constructionArea.findUnique({
-      where: { id: areaId },
+      where: { id: areaId, deletedAt: null, company: { deletedAt: null } },
       select: areaSelect,
     });
     if (!area) {
@@ -538,7 +608,12 @@ export class OrganizationsService {
 
   private async getBuildingOrThrow(buildingId: string, executor: PrismaExecutor = this.prisma) {
     const building = await executor.constructionBuilding.findUnique({
-      where: { id: buildingId },
+      where: {
+        id: buildingId,
+        deletedAt: null,
+        area: { deletedAt: null },
+        company: { deletedAt: null },
+      },
       select: buildingSelect,
     });
     if (!building) {
@@ -549,7 +624,7 @@ export class OrganizationsService {
 
   private async getCompanyUserContext(companyUserId: string) {
     const user = await this.prisma.companyUser.findUnique({
-      where: { id: companyUserId },
+      where: { id: companyUserId, deletedAt: null, company: { deletedAt: null } },
       select: { companyId: true, role: { select: { isCompanyOwnerRole: true } } },
     });
     if (!user) {
@@ -558,80 +633,141 @@ export class OrganizationsService {
     return { companyId: user.companyId, isOwner: user.role.isCompanyOwnerRole };
   }
 
+  private actorType(actor: AuthTokenPayload) {
+    return actor.context === AUTH_CONTEXT.gssAdmin
+      ? AuditActorType.GSS_ADMIN
+      : AuditActorType.COMPANY_USER;
+  }
+
+  private async teardownArchivedScope(
+    scope: {
+      areaId?: string;
+      buildingIds: string[];
+      companyId: string;
+      reason?: string;
+      rootType: "Company" | "ConstructionArea" | "ConstructionBuilding";
+    },
+    actor: AuthTokenPayload,
+    archivedAt: Date,
+    tx: Prisma.TransactionClient,
+  ) {
+    if (scope.buildingIds.length > 0) {
+      await tx.gatewayBuildingAssignment.updateMany({
+        data: {
+          activeKey: `archived:${archivedAt.toISOString()}`,
+          status: "ENDED",
+          unassignedAt: archivedAt,
+        },
+        where: { buildingId: { in: scope.buildingIds }, status: "ACTIVE" },
+      });
+    }
+
+    const rules = await tx.alarmRule.findMany({
+      select: { id: true },
+      where: {
+        deletedAt: null,
+        ...(scope.rootType === "Company"
+          ? { companyId: scope.companyId }
+          : scope.rootType === "ConstructionArea"
+            ? { areaId: scope.areaId }
+            : { buildingId: { in: scope.buildingIds } }),
+      },
+    });
+    const ruleIds = rules.map(({ id }) => id);
+    if (ruleIds.length > 0) {
+      const policies = await tx.alarmRecipientPolicy.findMany({
+        select: { id: true },
+        where: { deletedAt: null, ruleId: { in: ruleIds } },
+      });
+      await Promise.all(
+        policies.map(({ id }) =>
+          tx.alarmRecipientPolicy.update({
+            data: {
+              activeKey: id,
+              disabledAt: archivedAt,
+              isActive: false,
+              updatedById: actor.sub,
+              updatedByType: this.actorType(actor),
+            },
+            where: { id },
+          }),
+        ),
+      );
+      await tx.alarmCounterState.updateMany({
+        data: { currentCount: 0, status: AlarmCounterStatus.RESET, version: { increment: 1 } },
+        where: { ruleId: { in: ruleIds } },
+      });
+      await Promise.all(
+        rules.map(({ id }) =>
+          tx.alarmRule.update({
+            data: {
+              activeKey: id,
+              disabledAt: archivedAt,
+              isActive: false,
+              updatedById: actor.sub,
+              updatedByType: this.actorType(actor),
+            },
+            where: { id },
+          }),
+        ),
+      );
+    }
+
+    const commands = await tx.gatewayCommand.findMany({
+      select: { id: true },
+      where: {
+        deletedAt: null,
+        status: { in: [GatewayCommandStatus.PENDING, GatewayCommandStatus.SENT] },
+        OR: [
+          { companyId: scope.companyId },
+          ...(scope.areaId ? [{ areaId: scope.areaId }] : []),
+          ...(scope.buildingIds.length > 0
+            ? [
+                { buildingId: { in: scope.buildingIds } },
+                { provisioningRequest: { buildingId: { in: scope.buildingIds } } },
+                {
+                  alarmLevelDesiredApplications: {
+                    some: { buildingId: { in: scope.buildingIds } },
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
+    });
+    await Promise.all(
+      commands.map(({ id }) =>
+        tx.gatewayCommand.update({
+          data: {
+            activeKey: id,
+            cancelledAt: archivedAt,
+            failureReason: "Archived tenant scope cancelled the operational command.",
+            status: GatewayCommandStatus.CANCELLED,
+          },
+          where: { id },
+        }),
+      ),
+    );
+  }
+
   private deletionCapability(blocker: string | null, code: string | null = null) {
     return blocker
       ? { allowed: false, blocker, code, mode: "NOT_ALLOWED" as const }
-      : { allowed: true, blocker: null, code: null, mode: "HARD_DELETE" as const };
-  }
-
-  private assertDeletionAllowed(
-    deletion: ReturnType<OrganizationsService["deletionCapability"]>,
-    entityLabel: string,
-    recommendedAlternative: string,
-  ) {
-    if (deletion.allowed) return;
-    throw new ConflictException({
-      blocker: deletion.blocker,
-      code: deletion.code ?? "PROTECTED_HISTORY_EXISTS",
-      message: `This ${entityLabel} has protected relationships or history and cannot be hard-deleted.`,
-      recommendedAlternative,
-    });
+      : { allowed: true, blocker: null, code: null, mode: "ARCHIVE" as const };
   }
 
   private async getCompanyDeletionCapability(
     companyId: string,
     executor: PrismaExecutor = this.prisma,
   ) {
-    const [
-      areas,
-      buildings,
-      users,
-      roles,
-      positions,
-      assignments,
-      alarmRules,
-      alarmEvents,
-      reports,
-    ] = await Promise.all([
-      executor.constructionArea.count({ where: { companyId } }),
-      executor.constructionBuilding.count({ where: { companyId } }),
-      executor.companyUser.count({ where: { companyId } }),
-      executor.companyRole.count({ where: { companyId } }),
-      executor.companyPosition.count({ where: { companyId } }),
-      executor.companyDeviceAssignment.count({ where: { companyId } }),
-      executor.alarmRule.count({ where: { companyId } }),
-      executor.alarmEvent.count({ where: { companyId } }),
-      executor.reportJob.count({ where: { companyId } }),
-    ]);
-    if (areas) return this.deletionCapability("childSites", "COMPANY_HAS_SITES");
-    if (buildings) return this.deletionCapability("childBuildings", "COMPANY_HAS_BUILDINGS");
-    if (assignments)
-      return this.deletionCapability("deviceAssignmentHistory", "COMPANY_HAS_DEVICE_HISTORY");
-    if (alarmRules || alarmEvents)
-      return this.deletionCapability("alarmHistory", "COMPANY_HAS_ALARM_HISTORY");
-    if (reports) return this.deletionCapability("reportHistory", "COMPANY_HAS_REPORT_HISTORY");
-    if (users) return this.deletionCapability("companyUsers", "COMPANY_HAS_USERS");
-    if (positions) return this.deletionCapability("companyPositions", "COMPANY_HAS_POSITIONS");
-    if (roles) return this.deletionCapability("companyRoles", "COMPANY_HAS_ROLES");
+    void companyId;
+    void executor;
     return this.deletionCapability(null);
   }
 
   private async getAreaDeletionCapability(areaId: string, executor: PrismaExecutor = this.prisma) {
-    const [buildings, access, positions, rules, events, readings, reports] = await Promise.all([
-      executor.constructionBuilding.count({ where: { areaId } }),
-      executor.companyUserAreaAccess.count({ where: { areaId } }),
-      executor.companyUserPositionAssignment.count({ where: { areaId } }),
-      executor.alarmRule.count({ where: { areaId } }),
-      executor.alarmEvent.count({ where: { areaId } }),
-      executor.sensorReading.count({ where: { areaId } }),
-      executor.reportJob.count({ where: { areaId } }),
-    ]);
-    if (buildings) return this.deletionCapability("childBuildings", "AREA_HAS_BUILDINGS");
-    if (access || positions)
-      return this.deletionCapability("userScopeHistory", "AREA_HAS_SCOPE_HISTORY");
-    if (rules || events || readings)
-      return this.deletionCapability("operationalHistory", "AREA_HAS_OPERATIONAL_HISTORY");
-    if (reports) return this.deletionCapability("reportHistory", "AREA_HAS_REPORT_HISTORY");
+    void areaId;
+    void executor;
     return this.deletionCapability(null);
   }
 
@@ -639,39 +775,8 @@ export class OrganizationsService {
     buildingId: string,
     executor: PrismaExecutor = this.prisma,
   ) {
-    const [
-      images,
-      access,
-      positions,
-      gatewayAssignments,
-      provisioning,
-      levels,
-      rules,
-      events,
-      readings,
-      latest,
-      reports,
-    ] = await Promise.all([
-      executor.buildingPlanImage.count({ where: { buildingId } }),
-      executor.companyUserBuildingAccess.count({ where: { buildingId } }),
-      executor.companyUserPositionAssignment.count({ where: { buildingId } }),
-      executor.gatewayBuildingAssignment.count({ where: { buildingId } }),
-      executor.nodeGatewayProvisioningRequest.count({ where: { buildingId } }),
-      executor.buildingAlarmLevelConfiguration.count({ where: { buildingId } }),
-      executor.alarmRule.count({ where: { buildingId } }),
-      executor.alarmEvent.count({ where: { buildingId } }),
-      executor.sensorReading.count({ where: { buildingId } }),
-      executor.latestNodeState.count({ where: { buildingId } }),
-      executor.reportJob.count({ where: { buildingId } }),
-    ]);
-    if (images) return this.deletionCapability("buildingPlanAssets", "BUILDING_HAS_ASSETS");
-    if (access || positions)
-      return this.deletionCapability("userScopeHistory", "BUILDING_HAS_SCOPE_HISTORY");
-    if (gatewayAssignments || provisioning)
-      return this.deletionCapability("deviceAssignmentHistory", "BUILDING_HAS_DEVICE_HISTORY");
-    if (levels || rules || events || readings || latest)
-      return this.deletionCapability("operationalHistory", "BUILDING_HAS_OPERATIONAL_HISTORY");
-    if (reports) return this.deletionCapability("reportHistory", "BUILDING_HAS_REPORT_HISTORY");
+    void buildingId;
+    void executor;
     return this.deletionCapability(null);
   }
 }

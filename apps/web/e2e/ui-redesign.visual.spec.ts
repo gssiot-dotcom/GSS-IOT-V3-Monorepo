@@ -1,9 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import { Buffer } from "node:buffer";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 
 const apiOrigin = "http://localhost:3000";
 const storageKey = "gss-iot-v3-auth-session";
 const colorSchemeKey = "mantine-color-scheme-value";
+const localeKey = "gss-iot.locale.v1";
 
 function tomorrowCalendarLabel() {
   const tomorrow = new Date();
@@ -437,8 +440,16 @@ async function installFixture(
   page: Page,
   context: "gss-admin" | "company-user",
   permissions: readonly string[],
+  options: { locale?: "en" | null } = {},
 ) {
   const session = sessionFor(context, permissions);
+  let archiveDeletionStatus: "FAILED" | "PENDING" | "COMPLETED" = "FAILED";
+  if (options.locale !== null) {
+    await page.addInitScript(({ key, locale }) => window.localStorage.setItem(key, locale), {
+      key: localeKey,
+      locale: options.locale ?? "en",
+    });
+  }
   await page.addInitScript(
     ({ key, storedSession }) => sessionStorage.setItem(key, JSON.stringify(storedSession)),
     {
@@ -474,6 +485,214 @@ async function installFixture(
       });
     if (path === "/admin/reports" || path === "/company/reports")
       return route.fulfill({ json: { items: reportJobs, page: 1, pageSize: 50, total: 1 } });
+    if (path === "/admin/reports/export" && route.request().method() === "POST")
+      return route.fulfill({
+        json: {
+          exports: [],
+          id: "archive-report-job",
+          progress: 0,
+          reportType: "ARCHIVE_EVIDENCE",
+          status: "PENDING",
+        },
+      });
+    if (path === "/admin/reports/archive-report-job")
+      return route.fulfill({
+        json: {
+          exports: [{ fileName: "archive-evidence.csv", format: "CSV", id: "archive-export-1" }],
+          id: "archive-report-job",
+          progress: 100,
+          reportType: "ARCHIVE_EVIDENCE",
+          status: "COMPLETED",
+        },
+      });
+    if (path === "/admin/reports/exports/archive-export-1/download")
+      return route.fulfill({
+        body: "entityType,id,name\nCOMPANY,archive-company-1,Archived Acme\n",
+        contentType: "text/csv",
+        headers: { "content-disposition": 'attachment; filename="archive-evidence.csv"' },
+      });
+    if (path === "/admin/archive" && route.request().method() === "GET")
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              deleteReason: "Tenant offboarding",
+              deletedAt: "2026-07-28T08:00:00.000Z",
+              deletedById: "admin-1",
+              deletedByType: "GSS_ADMIN",
+              id: "archive-company-1",
+              name: "Archived Acme",
+              parentDerived: false,
+            },
+          ],
+          page: 1,
+          pageSize: 50,
+          total: 1,
+        },
+      });
+    if (path === "/admin/archive/COMPANY/archive-company-1")
+      return route.fulfill({
+        json: {
+          counts: { buildings: 2, sensorReadings: 12, sites: 1, users: 3 },
+          root: {
+            deleteReason: "Tenant offboarding",
+            id: "archive-company-1",
+            name: "Archived Acme",
+          },
+          rootType: "COMPANY",
+          subtree: { buildings, sites: areas },
+        },
+      });
+    if (path === "/admin/archive/purge/preview")
+      return route.fulfill({
+        json: {
+          counts: { buildings: 2, sensorReadings: 12, sites: 1, users: 3 },
+          estimatedDeletionRows: 19,
+          globalDevicesPreserved: { gateways: 2, nodes: 7 },
+          previewHash: "a".repeat(64),
+          rootId: "archive-company-1",
+          rootName: "Archived Acme",
+          rootType: "COMPANY",
+        },
+      });
+    if (path === "/admin/archive/purge/jobs" && route.request().method() === "POST") {
+      archiveDeletionStatus = "FAILED";
+      return route.fulfill({
+        json: {
+          currentPhase: "STORAGE_CLEANUP",
+          deletedCounts: { sites: 1 },
+          id: "delete-job-1",
+          safeErrorSummary: "STORAGE_DELETE_FAILED",
+          status: archiveDeletionStatus,
+        },
+      });
+    }
+    if (path === "/admin/archive/purge/jobs/delete-job-1/retry") {
+      archiveDeletionStatus = "PENDING";
+      return route.fulfill({
+        json: {
+          currentPhase: "PREPARE",
+          deletedCounts: { sites: 1 },
+          id: "delete-job-1",
+          safeErrorSummary: null,
+          status: archiveDeletionStatus,
+        },
+      });
+    }
+    if (path === "/admin/archive/purge/jobs/delete-job-1") {
+      archiveDeletionStatus = "COMPLETED";
+      return route.fulfill({
+        json: {
+          currentPhase: "COMPLETE",
+          deletedCounts: { buildings: 2, sites: 1, users: 3 },
+          id: "delete-job-1",
+          safeErrorSummary: null,
+          status: archiveDeletionStatus,
+        },
+      });
+    }
+    if (
+      path === "/admin/monitoring/history/options" ||
+      path === "/company/monitoring/history/options"
+    )
+      return route.fulfill({
+        json: {
+          areas,
+          buildings,
+          companies: path.startsWith("/admin") ? [company] : [],
+          nodeTypes: [{ ...nodeTypes[1], buildingId: buildings[0].id }],
+          nodes: [
+            {
+              buildingId: buildings[0].id,
+              id: "node-2",
+              nodeTypeId: nodeTypes[1].id,
+              number: "101",
+            },
+          ],
+        },
+      });
+    if (path === "/admin/monitoring/history/chart" || path === "/company/monitoring/history/chart")
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              buildingId: buildings[0].id,
+              faultFiltered: false,
+              gateway: { id: "gateway-1", serialNumber: "0300" },
+              gatewayId: "gateway-1",
+              id: "history-reading-1",
+              measuredAt: "2026-07-29T08:00:00.000Z",
+              node: { id: "node-2", installedLocation: "Roof", number: "101" },
+              nodeId: "node-2",
+              nodeType: nodeTypes[1],
+              nodeTypeId: nodeTypes[1].id,
+              receivedAt: "2026-07-29T08:00:00.000Z",
+              status: "warning",
+              values: { angleX: 2.4, angleY: -1.1 },
+            },
+          ],
+          returnedPointCount: 1,
+          sampleLimit: 500,
+          sampled: false,
+          totalRawPointCount: 1,
+        },
+      });
+    if (path === "/admin/monitoring/history" || path === "/company/monitoring/history")
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              buildingId: buildings[0].id,
+              faultFiltered: false,
+              gateway: { id: "gateway-1", serialNumber: "0300" },
+              gatewayId: "gateway-1",
+              id: "history-reading-1",
+              measuredAt: "2026-07-29T08:00:00.000Z",
+              node: { id: "node-2", installedLocation: "Roof", number: "101" },
+              nodeId: "node-2",
+              nodeType: nodeTypes[1],
+              nodeTypeId: nodeTypes[1].id,
+              receivedAt: "2026-07-29T08:00:00.000Z",
+              status: "warning",
+              values: { angleX: 2.4, angleY: -1.1 },
+            },
+          ],
+          page: 1,
+          pageSize: 50,
+          total: 1,
+        },
+      });
+    if (path === "/admin/archive/sensor-readings/preview")
+      return route.fulfill({
+        json: {
+          confirmation: "DELETE 1",
+          eligible: 1,
+          estimatedSizeBytes: 512,
+          matched: 2,
+          preservedReferenced: 1,
+          previewHash: "b".repeat(64),
+        },
+      });
+    if (path === "/admin/archive/sensor-readings/jobs")
+      return route.fulfill({
+        json: {
+          currentPhase: "SENSOR_READINGS",
+          deletedCounts: {},
+          id: "sensor-delete-job",
+          safeErrorSummary: null,
+          status: "PENDING",
+        },
+      });
+    if (path === "/admin/archive/purge/jobs/sensor-delete-job")
+      return route.fulfill({
+        json: {
+          currentPhase: "COMPLETE",
+          deletedCounts: { sensorReadings: 1 },
+          id: "sensor-delete-job",
+          safeErrorSummary: null,
+          status: "COMPLETED",
+        },
+      });
     if (path === "/company/users" || path === "/admin/companies/company-1/users")
       return route.fulfill({
         json: { items: companyUsers, page: 1, pageSize: 100, total: companyUsers.length },
@@ -1527,7 +1746,6 @@ test("captures Wave 4 final evidence at exact responsive viewports", async ({ pa
     "company-dashboard-final",
     viewports,
     outputPath,
-    "dashboard-kpi-grid",
   );
   await captureExactViewports(
     page,
@@ -2211,7 +2429,8 @@ test("captures the Company users KPI and expanded logo plate", async ({ page }, 
     .evaluate((element) =>
       [...element.children].map((child) => Math.round(child.getBoundingClientRect().top)),
     );
-  expect(new Set(kpiRowTops).size).toBe(1);
+  expect(kpiRowTops.filter((top) => top === kpiRowTops[0])).toHaveLength(6);
+  expect(new Set(kpiRowTops).size).toBe(2);
   await page.screenshot({
     fullPage: true,
     path: testInfo.outputPath("company-dashboard-kpi-logo-desktop-light.png"),
@@ -2228,4 +2447,170 @@ test("captures the Company users KPI and expanded logo plate", async ({ page }, 
     fullPage: true,
     path: testInfo.outputPath("company-dashboard-kpi-logo-mobile-dark.png"),
   });
+});
+
+test("verifies Archive Center detail, export, purge failure/retry and responsive states", async ({
+  page,
+}, testInfo) => {
+  await installFixture(page, "gss-admin", [
+    "archive.purge",
+    "archive.view",
+    "companies.delete",
+    "reports.export",
+  ]);
+  await page.setViewportSize({ height: 900, width: 1440 });
+  await page.goto("/admin/archive", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "GSS Archive Center" })).toBeVisible();
+  await expect(page.getByText("Archived Acme")).toBeVisible();
+
+  await page.getByRole("button", { name: "View detail" }).click();
+  await expect(page.getByText("Archive evidence detail")).toBeVisible();
+  await expect(page.getByText("Backend dependency counts")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "Export evidence" }).focus();
+  await expect(page.getByRole("button", { name: "Export evidence" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/COMPLETED · 100%/)).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole("button", { name: "Download evidence" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Permanently delete" }).click();
+  await expect(page.getByText("Physical and irreversible deletion")).toBeVisible();
+  await page.getByLabel("Type the exact record name to confirm").fill("Archived Acme");
+  await page.getByRole("button", { name: "Start permanent deletion" }).click();
+  await expect(page.getByText("STORAGE_DELETE_FAILED")).toBeVisible();
+  await page.getByRole("button", { name: "Retry failed job" }).click();
+  await expect(page.getByText(/COMPLETED · COMPLETE/)).toBeVisible({ timeout: 5_000 });
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("archive-center-desktop.png"),
+  });
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.screenshot({ fullPage: true, path: testInfo.outputPath("archive-center-tablet.png") });
+  await page.setViewportSize({ height: 844, width: 390 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+  ).toBe(true);
+  await page.screenshot({ fullPage: true, path: testInfo.outputPath("archive-center-mobile.png") });
+});
+
+test("verifies Admin and Company Sensor History chart/filter and GSS-only filtered purge", async ({
+  page,
+}, testInfo) => {
+  await installFixture(page, "gss-admin", [
+    "archive.purge",
+    "monitoring.view",
+    "reports.export",
+    "sensor-readings.purge",
+  ]);
+  await page.setViewportSize({ height: 900, width: 1440 });
+  await page.goto("/admin/monitoring/history", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Sensor Reading History" })).toBeVisible();
+  await expect(page.getByText("Filtered history chart")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Angle Node" })).toBeVisible();
+  await page.getByLabel("Status", { exact: true }).selectOption("WARNING");
+  await expect(page.getByRole("cell", { name: "101" })).toBeVisible();
+  await page.getByRole("button", { name: "Purge filtered readings" }).click();
+  await expect(page.getByText(/1 of 2 matched readings are eligible/)).toBeVisible();
+  await page.getByLabel("Type DELETE 1 to confirm").fill("DELETE 1");
+  await page.getByRole("button", { name: "Start permanent purge" }).click();
+  await expect(page.getByText(/COMPLETED · COMPLETE/)).toBeVisible({ timeout: 5_000 });
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("sensor-history-admin-desktop.png"),
+  });
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+  ).toBe(true);
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("sensor-history-admin-mobile.png"),
+  });
+
+  const companyPage = await page.context().newPage();
+  await installFixture(companyPage, "company-user", ["monitoring.view", "reports.export"]);
+  await companyPage.setViewportSize({ height: 800, width: 1280 });
+  await companyPage.goto("/company/monitoring/history", { waitUntil: "domcontentloaded" });
+  await expect(companyPage.getByRole("heading", { name: "Sensor Reading History" })).toBeVisible();
+  await expect(companyPage.getByRole("button", { name: "Purge filtered readings" })).toHaveCount(0);
+  await expect(companyPage.getByText("Filtered history chart")).toBeVisible();
+  await companyPage.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("sensor-history-company-tablet.png"),
+  });
+  await companyPage.close();
+});
+
+test("verifies persisted KO/EN switching in Admin and Company at required viewports", async ({
+  context,
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const permissions = ["welcome.view", "dashboard.view", "monitoring.view", "notifications.view"];
+  const screenshotRoot = path.resolve("..", "..", "output", "playwright");
+  await mkdir(screenshotRoot, { recursive: true });
+
+  async function verifyPortal(
+    target: Page,
+    portal: "admin" | "company",
+    route: "/admin/dashboard" | "/company/dashboard",
+  ) {
+    await target.goto(route, { waitUntil: "domcontentloaded" });
+    await target.evaluate((key) => window.localStorage.removeItem(key), localeKey);
+    await target.reload({ waitUntil: "domcontentloaded" });
+    await expect(target.locator("html")).toHaveAttribute("lang", "ko");
+    await expect(target.getByRole("button", { name: "언어 선택" })).toBeVisible();
+
+    for (const viewport of [
+      { height: 900, name: "1440x900", width: 1440 },
+      { height: 800, name: "1280x800", width: 1280 },
+      { height: 844, name: "390x844", width: 390 },
+    ]) {
+      await target.setViewportSize({ height: viewport.height, width: viewport.width });
+      await expect(target.getByTestId("app-root")).toBeVisible();
+      expect(
+        await target.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      await target.screenshot({
+        fullPage: true,
+        path: path.join(screenshotRoot, `i18n-${portal}-ko-${viewport.name}.png`),
+      });
+    }
+
+    await target.setViewportSize({ height: 900, width: 1440 });
+    await target.getByRole("button", { name: "언어 선택" }).click();
+    await target.getByText("English", { exact: true }).click();
+    await expect(target.locator("html")).toHaveAttribute("lang", "en");
+    await expect(target.getByRole("button", { name: "Select language" })).toBeVisible();
+    expect(await target.evaluate((key) => window.localStorage.getItem(key), localeKey)).toBe("en");
+    await target.reload({ waitUntil: "domcontentloaded" });
+    await expect(target.locator("html")).toHaveAttribute("lang", "en");
+
+    for (const viewport of [
+      { height: 900, name: "1440x900", width: 1440 },
+      { height: 800, name: "1280x800", width: 1280 },
+      { height: 844, name: "390x844", width: 390 },
+    ]) {
+      await target.setViewportSize({ height: viewport.height, width: viewport.width });
+      expect(
+        await target.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      await target.screenshot({
+        fullPage: true,
+        path: path.join(screenshotRoot, `i18n-${portal}-en-${viewport.name}.png`),
+      });
+    }
+  }
+
+  await installFixture(page, "gss-admin", permissions, { locale: null });
+  await verifyPortal(page, "admin", "/admin/dashboard");
+
+  const companyPage = await context.newPage();
+  await installFixture(companyPage, "company-user", permissions, { locale: null });
+  await verifyPortal(companyPage, "company", "/company/dashboard");
+  await companyPage.close();
 });

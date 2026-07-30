@@ -9,7 +9,7 @@ import {
   IconWifiOff,
 } from "@tabler/icons-react";
 
-import { t, tf } from "../../../app/i18n";
+import { t, tf, tx } from "../../../app/i18n";
 import { StatusBadge } from "@gss-iot/ui";
 import { gssStatusColors } from "@gss-iot/ui";
 import { TShapeStatusIndicator, type LedPosition } from "./TShapeStatusIndicator";
@@ -47,7 +47,7 @@ function getLedPosition(state: MonitoringNodeStateRecord): LedPosition {
 
 function valueSummary(state: MonitoringNodeStateRecord) {
   if ("doorState" in state.values) {
-    return `${t(`monitoring.doorState.${state.values.doorState}` as never)} · ${
+    return `${tx(`monitoring.doorState.${state.values.doorState}`, state.values.doorState)} · ${
       state.values.batteryLevel === null ? "-" : `${state.values.batteryLevel}%`
     }`;
   }
@@ -64,7 +64,7 @@ export function NodeStateCard({
   const doorValues = "doorState" in state.values ? state.values : undefined;
   const angleValues = "angleX" in state.values ? state.values : undefined;
   const doorOpen = doorValues?.doorState === "open";
-  const statusLabel = t(`status.${state.status}` as never);
+  const statusLabel = tx(`status.${state.status}`, state.status);
   const label = tf("monitoring.nodeCardLabel", {
     node: state.node.number,
     status: statusLabel,
@@ -121,7 +121,7 @@ export function NodeStateCard({
           <Stack align="flex-end" gap={4}>
             <Text fw={600} size="sm">
               {doorValues
-                ? t(`monitoring.doorState.${doorValues.doorState}` as never)
+                ? tx(`monitoring.doorState.${doorValues.doorState}`, doorValues.doorState)
                 : `X ${angleValues?.angleX.toFixed(1)}° · Y ${angleValues?.angleY.toFixed(1)}°`}
             </Text>
             {doorValues ? (

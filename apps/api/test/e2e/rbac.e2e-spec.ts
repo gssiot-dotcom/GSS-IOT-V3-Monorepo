@@ -879,11 +879,11 @@ describe("RBAC e2e", () => {
     await request(server)
       .get(`/rbac-probe/buildings/${sameCompanyOtherBuildingId}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(403);
+      .expect(404);
     await request(server)
       .get(`/rbac-probe/buildings/${otherCompanyBuildingId}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(403);
+      .expect(404);
   });
 
   it("rejects a GSS token at a company endpoint", async () => {
@@ -1216,7 +1216,7 @@ describe("RBAC e2e", () => {
       .patch(`/company/users/${user.body.id}/positions`)
       .set("Authorization", `Bearer ${managerToken}`)
       .send({ assignments: [{ positionId: position.body.id }] })
-      .expect(403);
+      .expect(404);
 
     const archivePosition = await request(server)
       .post("/company/positions")
@@ -1229,19 +1229,9 @@ describe("RBAC e2e", () => {
       .send({ assignments: [{ positionId: archivePosition.body.id }] })
       .expect(200);
     await request(server)
-      .delete(`/company/positions/${archivePosition.body.id}/permanent`)
+      .delete(`/company/positions/${archivePosition.body.id}`)
       .set("Authorization", `Bearer ${managerToken}`)
-      .expect(409)
-      .expect(({ body }) => {
-        expect(body.code).toBe("COMPANY_POSITION_HAS_ACTIVE_DEPENDENCIES");
-        expect(body.counts.activeAssignments).toBe(1);
-      });
-    await request(server)
-      .patch(`/company/users/${user.body.id}/positions`)
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ assignments: [] })
-      .expect(200)
-      .expect(({ body }) => expect(body).toHaveLength(0));
+      .expect(200);
     expect(
       await prisma.companyUserPositionAssignment.findFirst({
         where: { companyUserId: user.body.id, positionId: archivePosition.body.id },
@@ -1254,16 +1244,11 @@ describe("RBAC e2e", () => {
     expect(
       positionsAfterRemoval.body.items.find(
         (item: { id: string }) => item.id === archivePosition.body.id,
-      ).deletion.mode,
-    ).toBe("SOFT_DELETE");
-    await request(server)
-      .delete(`/company/positions/${archivePosition.body.id}/permanent`)
-      .set("Authorization", `Bearer ${managerToken}`)
-      .expect(200)
-      .expect(({ body }) => expect(body.mode).toBe("SOFT_DELETE"));
+      ),
+    ).toBeUndefined();
     expect(
-      await prisma.companyPosition.findUnique({ where: { id: archivePosition.body.id } }),
-    ).toMatchObject({ isActive: false });
+      await prisma.companyPosition.findUniqueOrThrow({ where: { id: archivePosition.body.id } }),
+    ).toMatchObject({ isActive: false, deletedAt: expect.any(Date) });
     const archivedPositions = await request(server)
       .get("/company/positions?pageSize=100")
       .set("Authorization", `Bearer ${managerToken}`)
@@ -1281,11 +1266,13 @@ describe("RBAC e2e", () => {
       .expect(201);
     await request(server)
       .delete(
-        `/admin/companies/${companyResponse.body.company.id}/positions/${pristinePosition.body.id}/permanent`,
+        `/admin/companies/${companyResponse.body.company.id}/positions/${pristinePosition.body.id}`,
       )
       .set("Authorization", `Bearer ${gssToken}`)
-      .expect(200)
-      .expect(({ body }) => expect(body.mode).toBe("HARD_DELETE"));
+      .expect(200);
+    expect(
+      await prisma.companyPosition.findUniqueOrThrow({ where: { id: pristinePosition.body.id } }),
+    ).toMatchObject({ isActive: false, deletedAt: expect.any(Date) });
 
     const companyRoles = await request(server)
       .get("/company/roles")
@@ -1469,11 +1456,11 @@ describe("RBAC e2e", () => {
     await request(server)
       .get(`/company/areas/${siblingArea.body.id}`)
       .set("Authorization", `Bearer ${scopedToken}`)
-      .expect(403);
+      .expect(404);
     await request(server)
       .get(`/company/buildings/${siblingBuilding.body.id}`)
       .set("Authorization", `Bearer ${scopedToken}`)
-      .expect(403);
+      .expect(404);
 
     const companyRoles = await request(server)
       .get("/company/roles")
@@ -1523,11 +1510,11 @@ describe("RBAC e2e", () => {
     await request(server)
       .get(`/company/areas/${area.body.id}`)
       .set("Authorization", `Bearer ${noScopeToken}`)
-      .expect(403);
+      .expect(404);
     await request(server)
       .get(`/company/buildings/${building.body.id}`)
       .set("Authorization", `Bearer ${noScopeToken}`)
-      .expect(403);
+      .expect(404);
 
     const noPermissionRole = (companyRoles.body.items as Array<{ id: string; key: string }>).find(
       (role) => role.key === "no_permission",
@@ -1585,11 +1572,11 @@ describe("RBAC e2e", () => {
     await request(server)
       .get(`/company/areas/${foreignArea.body.id}`)
       .set("Authorization", `Bearer ${scopedToken}`)
-      .expect(403);
+      .expect(404);
     await request(server)
       .get(`/company/buildings/${foreignBuilding.body.id}`)
       .set("Authorization", `Bearer ${scopedToken}`)
-      .expect(403);
+      .expect(404);
 
     await request(server)
       .patch(`/company/users/${companyResponse.body.platformManager.id}`)

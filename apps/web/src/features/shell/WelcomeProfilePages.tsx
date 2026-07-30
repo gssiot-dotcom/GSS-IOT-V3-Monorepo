@@ -4,16 +4,14 @@ import { IconArrowUpRight, IconBuilding, IconKey, IconMail, IconPhone } from "@t
 import { Link } from "react-router-dom";
 import { PageHeader, ResponsiveContentGrid, EmptyState, LoadingState } from "@gss-iot/ui";
 
-import { t, tf } from "../../app/i18n";
+import { formatDateTime, t, tf } from "../../app/i18n";
 import { useAuth } from "../../shared/auth/auth-context";
 import { filterSidebarItems } from "../../shared/rbac/filter-sidebar-items";
 import { adminNavItems, companyNavItems } from "./navigation";
 
 function displayDate(value: string | null | undefined): string {
   if (!value) return t("welcome.notAvailable");
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(value),
-  );
+  return formatDateTime(value);
 }
 
 function sessionProfile(session: AuthSession) {

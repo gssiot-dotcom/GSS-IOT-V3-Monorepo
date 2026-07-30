@@ -103,16 +103,6 @@ export class CompanyManagementAdminController {
     );
   }
 
-  @RequirePermissions("company-users.delete")
-  @Delete("companies/:companyId/users/:userId/permanent")
-  permanentlyDeleteUser(
-    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
-    @Param("companyId") companyId: string,
-    @Param("userId") userId: string,
-  ) {
-    return this.companyManagement.permanentlyDeleteCompanyUser(auth!.principal, companyId, userId);
-  }
-
   @RequirePermissions("company-roles.view")
   @Get("companies/:companyId/roles")
   listRoles(
@@ -241,20 +231,6 @@ export class CompanyManagementAdminController {
       companyId,
       positionId,
       dto.isActive,
-    );
-  }
-
-  @RequirePermissions("company-users.manage")
-  @Delete("companies/:companyId/positions/:positionId/permanent")
-  permanentlyDeletePosition(
-    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
-    @Param("companyId") companyId: string,
-    @Param("positionId") positionId: string,
-  ) {
-    return this.companyManagement.permanentlyDeleteCompanyPosition(
-      auth!.principal,
-      companyId,
-      positionId,
     );
   }
 

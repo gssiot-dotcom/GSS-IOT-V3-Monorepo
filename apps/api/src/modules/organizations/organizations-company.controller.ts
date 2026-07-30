@@ -29,6 +29,7 @@ import {
 } from "../../common/decorators/require-scope.decorator";
 import {
   CreateAreaDto,
+  ArchiveReasonDto,
   CreateBuildingDto,
   UploadBuildingImageDto,
   UpdateAreaDto,
@@ -100,8 +101,10 @@ export class OrganizationsCompanyController {
   deactivateArea(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("areaId") areaId: string,
+    @Body(new ValidationPipe({ expectedType: ArchiveReasonDto, transform: true }))
+    dto: ArchiveReasonDto,
   ) {
-    return this.organizations.deactivateArea(auth!.principal, areaId);
+    return this.organizations.archiveArea(auth!.principal, areaId, dto.reason);
   }
 
   @RequirePermissions("areas.update")
@@ -114,16 +117,6 @@ export class OrganizationsCompanyController {
     dto: UpdateOrganizationStatusDto,
   ) {
     return this.organizations.setAreaStatus(auth!.principal, areaId, dto.status);
-  }
-
-  @RequirePermissions("areas.delete")
-  @RequireManageAreaScope("areaId")
-  @Delete("areas/:areaId/permanent")
-  deleteAreaPermanently(
-    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
-    @Param("areaId") areaId: string,
-  ) {
-    return this.organizations.deleteAreaPermanently(auth!.principal, areaId);
   }
 
   @RequirePermissions("buildings.view")
@@ -176,8 +169,10 @@ export class OrganizationsCompanyController {
   deactivateBuilding(
     @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
     @Param("buildingId") buildingId: string,
+    @Body(new ValidationPipe({ expectedType: ArchiveReasonDto, transform: true }))
+    dto: ArchiveReasonDto,
   ) {
-    return this.organizations.deactivateBuilding(auth!.principal, buildingId);
+    return this.organizations.archiveBuilding(auth!.principal, buildingId, dto.reason);
   }
 
   @RequirePermissions("buildings.update")
@@ -190,16 +185,6 @@ export class OrganizationsCompanyController {
     dto: UpdateOrganizationStatusDto,
   ) {
     return this.organizations.setBuildingStatus(auth!.principal, buildingId, dto.status);
-  }
-
-  @RequirePermissions("buildings.delete")
-  @RequireManageBuildingScope("buildingId")
-  @Delete("buildings/:buildingId/permanent")
-  deleteBuildingPermanently(
-    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
-    @Param("buildingId") buildingId: string,
-  ) {
-    return this.organizations.deleteBuildingPermanently(auth!.principal, buildingId);
   }
 
   @RequirePermissions("building-plans.view")

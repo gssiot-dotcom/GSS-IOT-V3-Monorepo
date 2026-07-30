@@ -2,8 +2,8 @@ import type { DashboardRange, DashboardSummary, ReportJobRecord } from "@gss-iot
 import {
   Box,
   Group,
-  Paper,
   NativeSelect,
+  Paper,
   SimpleGrid,
   Skeleton,
   Stack,
@@ -24,10 +24,6 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { t, tf } from "../../app/i18n";
-import { apiRequest } from "../../shared/api/api-client";
-import { useAuth } from "../../shared/auth/auth-context";
-import { hasPermission } from "../../shared/rbac/has-permission";
 import {
   DashboardKpiCard,
   DashboardSection,
@@ -37,6 +33,10 @@ import {
   PageHeader,
   StatusBadge,
 } from "@gss-iot/ui";
+import { formatDateTime, getActiveLocale, intlLocaleByLocale, t, tf, tx } from "../../app/i18n";
+import { apiRequest } from "../../shared/api/api-client";
+import { useAuth } from "../../shared/auth/auth-context";
+import { hasPermission } from "../../shared/rbac/has-permission";
 import {
   ChartTooltip,
   chartTooltipPosition,
@@ -44,7 +44,7 @@ import {
 } from "../../shared/ui/ChartTooltip";
 
 function statusLabel(status: ReportJobRecord["status"]): string {
-  return t(`reports.status.${status}` as never);
+  return tx(`reports.status.${status}`, status);
 }
 
 export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/company" }) {
@@ -135,9 +135,9 @@ export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/comp
                 <Paper key={job.id} p="sm" withBorder>
                   <Group align="flex-start" justify="space-between" wrap="nowrap">
                     <Stack gap={4} style={{ minWidth: 0 }}>
-                      <Text fw={700}>{t(`reports.type.${job.reportType}` as never)}</Text>
+                      <Text fw={700}>{tx(`reports.type.${job.reportType}`, job.reportType)}</Text>
                       <Text c="dimmed" size="sm">
-                        {new Date(job.createdAt).toLocaleString()}
+                        {formatDateTime(job.createdAt)}
                       </Text>
                     </Stack>
                     <Box style={{ flexShrink: 0 }}>
@@ -172,7 +172,7 @@ export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/comp
                 <Table.Tbody>
                   {jobs.map((job) => (
                     <Table.Tr key={job.id}>
-                      <Table.Td>{t(`reports.type.${job.reportType}` as never)}</Table.Td>
+                      <Table.Td>{tx(`reports.type.${job.reportType}`, job.reportType)}</Table.Td>
                       <Table.Td>
                         <StatusBadge
                           label={statusLabel(job.status)}
@@ -187,7 +187,7 @@ export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/comp
                           }
                         />
                       </Table.Td>
-                      <Table.Td>{new Date(job.createdAt).toLocaleString()}</Table.Td>
+                      <Table.Td>{formatDateTime(job.createdAt)}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -278,11 +278,12 @@ function TrendChart({
   const yTicks = [...new Set([0, Math.ceil(yMax / 2), yMax])];
   const labelEvery = days.length <= 8 ? 1 : days.length <= 31 ? 5 : 15;
   const sampledCount = trend.reduce((sum, item) => sum + item.count, 0);
-  const fullDate = new Intl.DateTimeFormat(undefined, {
+  const activeIntlLocale = intlLocaleByLocale[getActiveLocale()];
+  const fullDate = new Intl.DateTimeFormat(activeIntlLocale, {
     dateStyle: "full",
     timeZone: "UTC",
   });
-  const shortDate = new Intl.DateTimeFormat(undefined, {
+  const shortDate = new Intl.DateTimeFormat(activeIntlLocale, {
     day: "numeric",
     month: "short",
     timeZone: "UTC",
@@ -412,7 +413,7 @@ function SeverityChart({
         <Stack gap={4} key={severity}>
           <Group justify="space-between">
             <Text size="sm" tt="capitalize">
-              {t(`status.${severity}` as never)}
+              {tx(`status.${severity}`, severity)}
             </Text>
             <Text fw={600} size="sm">
               {count}
@@ -600,7 +601,7 @@ function DashboardPage({
                   <IconAlertTriangle size={17} />
                 </ThemeIcon>
                 <Text>
-                  {t(`status.${severity.toLowerCase()}` as never)}: <strong>{count}</strong>
+                  {tx(`status.${severity.toLowerCase()}`, severity)}: <strong>{count}</strong>
                 </Text>
               </Group>
             ))}

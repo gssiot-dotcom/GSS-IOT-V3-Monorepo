@@ -383,3 +383,47 @@ keyboard accessible. The viewer contains overscroll and pan without introducing 
 The Company Dashboard compact KPI set includes Company users, defined as active users in the
 authenticated Company. The Company logo plate removes CSS padding and enlarges contained visible
 content while retaining skeleton, initials, missing and error states in light/dark desktop/mobile.
+
+## Archive and Sensor History
+
+`/admin/archive` is permission-hidden unless `archive.view` is effective. It groups evidence by
+Company and domain, supports backend filters/search/50-or-100 pagination, and exposes read-only
+metadata/detail. Its permanent-delete modal shows backend counts, preserved global device counts,
+irreversible DB/private-storage impact, exact-name confirmation, progress/error/retry and optional
+evidence download. Company has no archive route or purge control.
+
+`/admin/monitoring/history` and `/company/monitoring/history` use the documented hierarchy, date,
+severity and fault-filter filters. Company scope derives from the session and backend access; GSS
+adds Company selection. Export creates the existing `SENSOR_HISTORY` report job. GSS-only filtered
+purge is permission-gated and must use a server-side filter snapshot, never browser-collected IDs.
+
+## Archive Center and Sensor History completion
+
+- `/admin/archive` supports entity type, Company/Site/Building, date, actor and search filters;
+  parent-derived badges; subtree detail Drawer; CSV/XLSX job status/download; and purge
+  preview/progress/failure/retry.
+- `/admin/monitoring/history` uses Company → Site → Building → Node Type → Node selectors.
+- `/company/monitoring/history` omits Company and physical-purge controls and applies
+  Site → Building → Node Type → Node scope.
+- Both history pages provide range, severity, fault, chart, table, 50/100 pagination, loading,
+  empty and error states. Global route/session boundaries provide forbidden and inactive-session
+  handling.
+
+## Runtime language behavior
+
+The protected Admin and Company shells expose a keyboard-accessible globe menu immediately before
+the theme toggle. Korean is selected when no valid preference exists. Selecting 한국어 or English
+updates every catalog-backed route, modal, drawer, table, state, validation summary and accessible
+label in place; route, auth session, filters, pagination and color scheme are not reset. The choice
+is stored under `gss-iot.locale.v1` and `html[lang]` is kept in sync.
+
+Backend error `code` values are mapped to localized, actionable UI copy; unknown codes use a
+localized HTTP-status category and raw backend text remains technical detail only. Notification
+template snapshots and report-export locale snapshots keep system-generated content deterministic.
+CSV/XLSX headers, semantic status values and filenames follow the requesting locale while IDs,
+timestamps and audit evidence remain stable. Permission scope/action/module descriptions and the
+three canonical node-type labels use key-driven display mappings.
+
+Any new user-facing JSX literal, implicit browser-locale formatter, catalog-key mismatch or
+placeholder mismatch must fail `pnpm i18n:audit`. Responsive acceptance covers Admin and Company in
+both languages at 1440×900, 1280×800 and 390×844.

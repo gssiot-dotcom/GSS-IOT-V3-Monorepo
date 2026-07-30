@@ -21,7 +21,7 @@ import { Code, Drawer, Group, Paper, Select, SimpleGrid, Stack, Text } from "@ma
 import { IconEye, IconPlayerPause, IconRefresh } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { t, tf } from "../../app/i18n";
+import { formatDateTime, t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { hasPermission } from "../../shared/rbac/has-permission";
@@ -54,7 +54,7 @@ function commandTypeLabel(commandType: GatewayCommandRecord["commandType"]): str
 }
 
 function formatDate(value: string | null) {
-  return value ? new Date(value).toLocaleString() : t("common.notAvailable");
+  return value ? formatDateTime(value) : t("common.notAvailable");
 }
 
 function jsonRecord(value: unknown): Record<string, unknown> | null {

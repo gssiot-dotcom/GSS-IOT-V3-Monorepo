@@ -57,7 +57,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 
 import { readWebEnv } from "../../app/env";
-import { t, tf } from "../../app/i18n";
+import { formatDateTime, t, tf, tx } from "../../app/i18n";
 import type { TranslationKey } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
@@ -994,7 +994,7 @@ function FaultFilterGatewayEditor({
 
 function commandStatusBadge(status: GatewayCommandStatus) {
   const statusKey = status.toLowerCase() as Parameters<typeof StatusBadge>[0]["status"];
-  return <StatusBadge label={t(`status.${statusKey}` as never)} status={statusKey} />;
+  return <StatusBadge label={tx(`status.${statusKey}`, status)} status={statusKey} />;
 }
 
 export function NodeStateMobileList({
@@ -1049,7 +1049,7 @@ function HistoryTable({ history }: { history?: PaginatedSensorHistory }) {
           {
             key: "receivedAt",
             label: t("monitoring.receivedAt"),
-            render: (row) => new Date(row.receivedAt).toLocaleString(),
+            render: (row) => formatDateTime(row.receivedAt),
           },
           {
             key: "value",
@@ -1090,7 +1090,7 @@ function formatAge(lastSeenAt: string): string {
 }
 
 function formatDate(value: string | null): string {
-  return value ? new Date(value).toLocaleString() : "-";
+  return value ? formatDateTime(value) : "-";
 }
 
 export function upsertState(

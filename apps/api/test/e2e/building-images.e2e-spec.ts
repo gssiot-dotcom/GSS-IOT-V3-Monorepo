@@ -244,9 +244,17 @@ describe("private building images e2e", () => {
       .attach("image", png, { contentType: "image/png", filename: "plan-5.png" })
       .expect(409);
     await request(server)
-      .delete(`/admin/buildings/${buildingId}/permanent`)
+      .delete(`/admin/buildings/${buildingId}`)
       .set("Authorization", `Bearer ${adminToken}`)
-      .expect(409);
+      .send({ reason: "Building image archive regression" })
+      .expect(200);
+    expect(await prisma.buildingPlanImage.count({ where: { buildingId } })).toBe(4);
+    expect(
+      await prisma.constructionBuilding.findUniqueOrThrow({
+        select: { deletedAt: true },
+        where: { id: buildingId },
+      }),
+    ).toMatchObject({ deletedAt: expect.any(Date) });
 
     const foreignImage = await request(server)
       .post(`/admin/buildings/${foreignBuildingId}/images`)

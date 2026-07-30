@@ -96,14 +96,21 @@ const provisioningOptionsSelect = {
   areas: {
     orderBy: { name: "asc" as const },
     select: { companyId: true, id: true, name: true, status: true },
+    where: { company: { deletedAt: null, status: "ACTIVE" as const }, deletedAt: null },
   },
   buildings: {
     orderBy: { title: "asc" as const },
     select: { areaId: true, companyId: true, id: true, status: true, title: true },
+    where: {
+      area: { deletedAt: null },
+      company: { deletedAt: null, status: "ACTIVE" as const },
+      deletedAt: null,
+    },
   },
   companies: {
     orderBy: { name: "asc" as const },
     select: { id: true, name: true, status: true },
+    where: { deletedAt: null, status: "ACTIVE" as const },
   },
 };
 
@@ -853,8 +860,8 @@ export class DevicesService {
   }
 
   private async getCompanyOrThrow(companyId: string, executor: PrismaExecutor) {
-    const company = await executor.company.findUnique({
-      where: { id: companyId },
+    const company = await executor.company.findFirst({
+      where: { deletedAt: null, id: companyId, status: "ACTIVE" },
       select: { id: true },
     });
     if (!company) {
@@ -864,8 +871,13 @@ export class DevicesService {
   }
 
   private async getBuildingOrThrow(buildingId: string, executor: PrismaExecutor) {
-    const building = await executor.constructionBuilding.findUnique({
-      where: { id: buildingId },
+    const building = await executor.constructionBuilding.findFirst({
+      where: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        deletedAt: null,
+        id: buildingId,
+      },
       select: { areaId: true, companyId: true, id: true },
     });
     if (!building) {
@@ -877,7 +889,11 @@ export class DevicesService {
   private async getActiveGatewayCompanyAssignment(gatewayId: string, executor: PrismaExecutor) {
     await this.getGatewayOrThrow(gatewayId, executor);
     const assignment = await executor.companyDeviceAssignment.findFirst({
-      where: { gatewayId, status: AssignmentStatus.ACTIVE },
+      where: {
+        company: { deletedAt: null, status: "ACTIVE" },
+        gatewayId,
+        status: AssignmentStatus.ACTIVE,
+      },
     });
     if (!assignment) {
       throw new ConflictException("The gateway must be assigned to a company first.");
@@ -946,9 +962,20 @@ export class DevicesService {
   private async getCompanyUserContext(companyUserId: string) {
     const user = await this.prisma.companyUser.findUnique({
       where: { id: companyUserId },
-      select: { companyId: true },
+      select: {
+        company: { select: { deletedAt: true, status: true } },
+        companyId: true,
+        deletedAt: true,
+        isActive: true,
+      },
     });
-    if (!user) {
+    if (
+      !user ||
+      !user.isActive ||
+      user.deletedAt ||
+      user.company.deletedAt ||
+      user.company.status !== "ACTIVE"
+    ) {
       throw new NotFoundException("The company user was not found.");
     }
     return user;
@@ -956,7 +983,12 @@ export class DevicesService {
 
   private async assertAreaBelongsToCompany(areaId: string, companyId: string) {
     const area = await this.prisma.constructionArea.findFirst({
-      where: { companyId, id: areaId },
+      where: {
+        company: { deletedAt: null, status: "ACTIVE" },
+        companyId,
+        deletedAt: null,
+        id: areaId,
+      },
       select: { id: true },
     });
     if (!area) {
@@ -966,7 +998,13 @@ export class DevicesService {
 
   private async assertBuildingBelongsToCompany(buildingId: string, companyId: string) {
     const building = await this.prisma.constructionBuilding.findFirst({
-      where: { companyId, id: buildingId },
+      where: {
+        area: { deletedAt: null },
+        company: { deletedAt: null, status: "ACTIVE" },
+        companyId,
+        deletedAt: null,
+        id: buildingId,
+      },
       select: { id: true },
     });
     if (!building) {

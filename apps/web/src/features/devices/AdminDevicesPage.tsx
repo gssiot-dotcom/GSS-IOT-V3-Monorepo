@@ -46,7 +46,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { t, tf } from "../../app/i18n";
+import { nodeTypeLabel, t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
@@ -215,7 +215,10 @@ export function AdminDevicesPage() {
             node.gatewayAssignments[0]?.gatewayId === gatewayId)) &&
         node.nodeTypeId === provisionNodeTypeId,
     )
-    .map((node) => ({ label: `${node.number} (${node.nodeType.displayName})`, value: node.id }));
+    .map((node) => ({
+      label: `${node.number} (${nodeTypeLabel(node.nodeType.key, node.nodeType.displayName)})`,
+      value: node.id,
+    }));
   const finalProvisionNodeIds = useMemo(() => {
     const ids = provisioningMode === "APPEND" ? currentProvisionNodes.map((node) => node.id) : [];
     return [...new Set([...ids, ...provisionNodeIds])];
@@ -697,7 +700,7 @@ export function AdminDevicesPage() {
               />
               <Select
                 data={nodeTypes.map((nodeType) => ({
-                  label: nodeType.displayName,
+                  label: nodeTypeLabel(nodeType.key, nodeType.displayName),
                   value: nodeType.id,
                 }))}
                 label={t("devices.nodeType")}
@@ -937,7 +940,10 @@ export function AdminDevicesPage() {
                   key: "identity",
                   label: t("devices.node"),
                   render: (row) => (
-                    <EntityPrimaryCell identifier={row.nodeType.displayName} title={row.number} />
+                    <EntityPrimaryCell
+                      identifier={nodeTypeLabel(row.nodeType.key, row.nodeType.displayName)}
+                      title={row.number}
+                    />
                   ),
                 },
                 {
@@ -1087,7 +1093,7 @@ export function AdminDevicesPage() {
           />
           <Select
             data={nodeTypes.map((nodeType) => ({
-              label: nodeType.displayName,
+              label: nodeTypeLabel(nodeType.key, nodeType.displayName),
               value: nodeType.id,
             }))}
             label={t("devices.nodeType")}

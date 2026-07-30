@@ -41,7 +41,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
-import { t, tf } from "../../app/i18n";
+import { formatDateTime, t, tf } from "../../app/i18n";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
@@ -283,9 +283,7 @@ export function GssAdministratorsPage() {
                 key: "lastLogin",
                 label: t("settings.lastLogin"),
                 render: (user) =>
-                  user.lastLoginAt
-                    ? new Date(user.lastLoginAt).toLocaleString()
-                    : t("settings.never"),
+                  user.lastLoginAt ? formatDateTime(user.lastLoginAt) : t("settings.never"),
               },
               {
                 key: "actions",
@@ -389,9 +387,7 @@ export function GssAdministratorsPage() {
               <Detail
                 label={t("settings.lastLogin")}
                 value={
-                  viewing.lastLoginAt
-                    ? new Date(viewing.lastLoginAt).toLocaleString()
-                    : t("settings.never")
+                  viewing.lastLoginAt ? formatDateTime(viewing.lastLoginAt) : t("settings.never")
                 }
               />
             </SimpleGrid>

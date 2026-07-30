@@ -22,15 +22,28 @@ export class CompanyBrandingService {
   async getCompanyIdForUser(userId: string): Promise<string> {
     const user = await this.prisma.companyUser.findUnique({
       where: { id: userId },
-      select: { companyId: true },
+      select: {
+        company: { select: { deletedAt: true, status: true } },
+        companyId: true,
+        deletedAt: true,
+        isActive: true,
+      },
     });
-    if (!user) throw new NotFoundException("The authenticated company was not found.");
+    if (
+      !user ||
+      !user.isActive ||
+      user.deletedAt ||
+      user.company.deletedAt ||
+      user.company.status !== "ACTIVE"
+    ) {
+      throw new NotFoundException("The authenticated company was not found.");
+    }
     return user.companyId;
   }
 
   async getLogo(companyId: string) {
-    const company = await this.prisma.company.findUnique({
-      where: { id: companyId },
+    const company = await this.prisma.company.findFirst({
+      where: { deletedAt: null, id: companyId, status: "ACTIVE" },
       select: { logoKey: true },
     });
     if (!company) throw new NotFoundException("The company was not found.");
@@ -52,8 +65,8 @@ export class CompanyBrandingService {
     let oldKey: string | null = null;
     try {
       await this.prisma.$transaction(async (tx) => {
-        const company = await tx.company.findUnique({
-          where: { id: companyId },
+        const company = await tx.company.findFirst({
+          where: { deletedAt: null, id: companyId, status: "ACTIVE" },
           select: { logoKey: true },
         });
         if (!company) throw new NotFoundException("The company was not found.");
@@ -87,8 +100,8 @@ export class CompanyBrandingService {
   async removeLogo(actor: AuthTokenPayload, companyId: string) {
     let oldKey: string | null = null;
     await this.prisma.$transaction(async (tx) => {
-      const company = await tx.company.findUnique({
-        where: { id: companyId },
+      const company = await tx.company.findFirst({
+        where: { deletedAt: null, id: companyId, status: "ACTIVE" },
         select: { logoKey: true },
       });
       if (!company) throw new NotFoundException("The company was not found.");
@@ -112,8 +125,8 @@ export class CompanyBrandingService {
   }
 
   private async assertCompanyExists(companyId: string): Promise<void> {
-    const company = await this.prisma.company.findUnique({
-      where: { id: companyId },
+    const company = await this.prisma.company.findFirst({
+      where: { deletedAt: null, id: companyId, status: "ACTIVE" },
       select: { id: true },
     });
     if (!company) throw new NotFoundException("The company was not found.");

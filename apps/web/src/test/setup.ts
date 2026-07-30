@@ -1,4 +1,11 @@
 import { configure } from "@testing-library/react";
+import { afterEach } from "vitest";
+
+import { setActiveLocale } from "../app/i18n";
+
+setActiveLocale("en");
+
+afterEach(() => setActiveLocale("en"));
 
 configure({ asyncUtilTimeout: 15_000 });
 

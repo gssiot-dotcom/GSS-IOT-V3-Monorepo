@@ -5,11 +5,13 @@ import {
   IsInt,
   IsIn,
   IsOptional,
+  IsString,
   IsUUID,
+  MaxLength,
   Min,
   ValidateNested,
 } from "class-validator";
-import { ReportFileFormat, ReportJobStatus, ReportType } from "@prisma/client";
+import { ArchiveEntityType, ReportFileFormat, ReportJobStatus, ReportType } from "@prisma/client";
 
 export class ReportFiltersDto {
   @IsOptional()
@@ -43,6 +45,27 @@ export class ReportFiltersDto {
   @IsOptional()
   @IsISO8601()
   to?: string;
+
+  @IsOptional()
+  @IsEnum(ArchiveEntityType)
+  archiveEntityType?: ArchiveEntityType;
+
+  @IsOptional()
+  @IsISO8601()
+  archivedFrom?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  archivedTo?: string;
+
+  @IsOptional()
+  @IsUUID()
+  archivedBy?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
 }
 
 export class RequestReportExportDto {

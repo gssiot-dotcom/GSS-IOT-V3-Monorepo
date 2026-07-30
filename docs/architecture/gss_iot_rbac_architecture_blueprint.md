@@ -2167,3 +2167,26 @@ router.get('/:id', ...)
 ```
 
 Lekin bu faqat vaqtinchalik. To'g'ri yechim: yangi RBAC + ScopeGuard.
+
+## 20. Two-tier deletion addendum (2026-07-29)
+
+Company-context Delete is an Archive operation, never physical deletion. Archived and
+ancestor-archived resources are absent from normal Company/GSS lists, details, scopes, monitoring,
+reports, commands and writes. The authoritative evidence surface is GSS-only `/admin/archive`.
+Physical purge requires an archived root, backend dependency preview/fingerprint, typed
+confirmation, an idempotent `DeletionJob`, `archive.purge`, and the canonical domain permission.
+Strictly owned tenant data is removed in dependency order; Gateway, Node, NodeType, Permission and
+GSS identities remain global. Trigger-referenced SensorReading remains until the final evidence
+reference is purged. Full contracts and rollout gates are defined in
+`TWO_TIER_ARCHIVE_CASCADE_PURGE_AND_SENSOR_RETENTION.md`.
+
+## 2026-07-29 Archive/Purge completion addendum
+
+The authoritative lifecycle capability vocabulary is `ARCHIVE`, `PERMANENT_PURGE`, and
+`NOT_ALLOWED`. Company-context Delete may expose only `ARCHIVE`; permanent purge exists only in
+the GSS Archive Center and requires `archive.purge` plus the canonical domain permission. Archive
+evidence export additionally requires `archive.view + reports.export`; Company users cannot request
+the Archive report type. Filtered SensorReading purge requires both `archive.purge` and
+`sensor-readings.purge` and persists a typed backend filter snapshot rather than browser-collected
+IDs. All earlier permission-plus-scope, separate-auth-context and backend-boundary invariants remain
+authoritative.

@@ -5,7 +5,11 @@ import { CompanyEndpoint } from "../../common/decorators/company-endpoint.decora
 import { CurrentPrincipal } from "../../common/decorators/current-principal.decorator";
 import { RequirePermissions } from "../../common/decorators/require-permissions.decorator";
 import { RequireBuildingScope } from "../../common/decorators/require-scope.decorator";
-import { SensorHistoryChartQueryDto, SensorHistoryQueryDto } from "./dto/monitoring.dto";
+import {
+  SensorHistoryChartQueryDto,
+  SensorHistoryListQueryDto,
+  SensorHistoryQueryDto,
+} from "./dto/monitoring.dto";
 import { MonitoringService } from "./monitoring.service";
 
 @CompanyEndpoint()
@@ -66,5 +70,37 @@ export class MonitoringCompanyController {
       nodeId,
       query,
     );
+  }
+}
+
+@CompanyEndpoint()
+@Controller("company/monitoring")
+export class CompanySensorHistoryController {
+  constructor(@Inject(MonitoringService) private readonly monitoring: MonitoringService) {}
+
+  @RequirePermissions("monitoring.view")
+  @Get("history")
+  listHistory(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: SensorHistoryListQueryDto, transform: true }))
+    query: SensorHistoryListQueryDto,
+  ) {
+    return this.monitoring.listSensorHistory(auth!.principal, query);
+  }
+
+  @RequirePermissions("monitoring.view")
+  @Get("history/options")
+  historyOptions(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
+    return this.monitoring.listSensorHistoryOptions(auth!.principal);
+  }
+
+  @RequirePermissions("monitoring.view")
+  @Get("history/chart")
+  historyChart(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: SensorHistoryListQueryDto, transform: true }))
+    query: SensorHistoryListQueryDto,
+  ) {
+    return this.monitoring.listSensorHistoryChart(auth!.principal, query);
   }
 }

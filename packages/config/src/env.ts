@@ -50,6 +50,11 @@ const rawApiEnvSchema = z
     ASSET_STORAGE_PROVIDER: assetStorageProviderSchema.optional(),
     CORS_ALLOWED_ORIGINS: z.string().optional(),
     DATABASE_URL: z.string().url(),
+    DELETION_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(1_000).default(250),
+    DELETION_WORKER_ENABLED: optionalBooleanStringSchema,
+    DELETION_WORKER_HEARTBEAT_MS: z.coerce.number().int().min(1_000).default(5_000),
+    DELETION_WORKER_INTERVAL_MS: z.coerce.number().int().min(1_000).default(5_000),
+    DELETION_WORKER_LEASE_MS: z.coerce.number().int().min(5_000).default(30_000),
     GSS_SUPER_ADMIN_EMAIL: z.string().email(),
     GSS_SUPER_ADMIN_PASSWORD: z.string().min(12),
     JWT_EXPIRES_IN: z.coerce.number().int().positive().default(900),
@@ -82,8 +87,34 @@ const rawApiEnvSchema = z
     REPORT_WORKER_ENABLED: optionalBooleanStringSchema,
     REPORT_WORKER_INTERVAL_MS: z.coerce.number().int().min(1_000).default(30_000),
     REDIS_URL: z.string().url(),
+    SENSOR_RETENTION_BATCH_SIZE: z.coerce.number().int().min(1).max(10_000).default(1_000),
+    SENSOR_RETENTION_DAYS: z.coerce.number().int().min(1).max(3_650).default(180),
+    SENSOR_RETENTION_DRY_RUN: optionalBooleanStringSchema,
+    SENSOR_RETENTION_ENABLED: optionalBooleanStringSchema,
+    SENSOR_RETENTION_INTERVAL_MS: z.coerce.number().int().min(1_000).default(3_600_000),
+    SENSOR_RETENTION_MAX_ROWS_PER_CYCLE: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100_000)
+      .default(10_000),
   })
   .superRefine((env, context) => {
+    if (env.DELETION_WORKER_LEASE_MS <= env.DELETION_WORKER_HEARTBEAT_MS * 2) {
+      context.addIssue({
+        code: "custom",
+        message: "DELETION_WORKER_LEASE_MS must exceed twice DELETION_WORKER_HEARTBEAT_MS.",
+        path: ["DELETION_WORKER_LEASE_MS"],
+      });
+    }
+    if (env.SENSOR_RETENTION_MAX_ROWS_PER_CYCLE < env.SENSOR_RETENTION_BATCH_SIZE) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "SENSOR_RETENTION_MAX_ROWS_PER_CYCLE must be at least SENSOR_RETENTION_BATCH_SIZE.",
+        path: ["SENSOR_RETENTION_MAX_ROWS_PER_CYCLE"],
+      });
+    }
     const assetProvider =
       env.ASSET_STORAGE_PROVIDER ?? (env.NODE_ENV === "production" ? "s3" : "local");
     if (env.NODE_ENV === "production" && assetProvider !== "s3") {
@@ -146,6 +177,10 @@ export const apiEnvSchema = rawApiEnvSchema.transform((env) => ({
     env.ASSET_STORAGE_PROVIDER ??
     (env.NODE_ENV === "production" ? "s3" : env.NODE_ENV === "test" ? "memory" : "local"),
   CORS_ALLOWED_ORIGINS: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS, env.NODE_ENV),
+  DELETION_WORKER_ENABLED:
+    env.DELETION_WORKER_ENABLED === undefined
+      ? env.NODE_ENV !== "test"
+      : env.DELETION_WORKER_ENABLED === "true" || env.DELETION_WORKER_ENABLED === "1",
   REPORT_CLEANUP_ENABLED:
     env.REPORT_CLEANUP_ENABLED === undefined
       ? true
@@ -160,6 +195,14 @@ export const apiEnvSchema = rawApiEnvSchema.transform((env) => ({
     env.REPORT_WORKER_ENABLED === undefined
       ? env.NODE_ENV !== "test"
       : env.REPORT_WORKER_ENABLED === "true" || env.REPORT_WORKER_ENABLED === "1",
+  SENSOR_RETENTION_DRY_RUN:
+    env.SENSOR_RETENTION_DRY_RUN === undefined
+      ? true
+      : env.SENSOR_RETENTION_DRY_RUN === "true" || env.SENSOR_RETENTION_DRY_RUN === "1",
+  SENSOR_RETENTION_ENABLED:
+    env.SENSOR_RETENTION_ENABLED === undefined
+      ? false
+      : env.SENSOR_RETENTION_ENABLED === "true" || env.SENSOR_RETENTION_ENABLED === "1",
 }));
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

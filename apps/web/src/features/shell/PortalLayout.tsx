@@ -34,7 +34,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 
 import { readWebEnv } from "../../app/env";
-import { t, tf } from "../../app/i18n";
+import { LanguageSelector, t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
@@ -169,18 +169,20 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
               </Text>
             </Stack>
           </Group>
-          <Group gap="xs" wrap="nowrap">
+          <Group className="gss-shell-header-actions" gap="xs" wrap="nowrap">
             {realtimeState !== "idle" && realtimeState !== "connected" ? (
-              <RealtimeStatusBadge
-                label={
-                  realtimeState === "connecting"
-                    ? t("shell.realtimeConnecting")
-                    : realtimeState === "reconnecting"
-                      ? t("shell.realtimeReconnecting")
-                      : t("shell.realtimeOffline")
-                }
-                status={realtimeState}
-              />
+              <Box className="gss-shell-header-realtime">
+                <RealtimeStatusBadge
+                  label={
+                    realtimeState === "connecting"
+                      ? t("shell.realtimeConnecting")
+                      : realtimeState === "reconnecting"
+                        ? t("shell.realtimeReconnecting")
+                        : t("shell.realtimeOffline")
+                  }
+                  status={realtimeState}
+                />
+              </Box>
             ) : null}
             {canViewNotifications ? (
               <Tooltip label={t("app.notifications")}>
@@ -198,6 +200,7 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
                 </Indicator>
               </Tooltip>
             ) : null}
+            <LanguageSelector />
             <Tooltip
               label={
                 computedColorScheme === "dark"

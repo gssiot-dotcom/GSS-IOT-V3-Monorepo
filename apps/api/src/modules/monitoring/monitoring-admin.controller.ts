@@ -8,6 +8,7 @@ import {
   AdminMonitoringQueryDto,
   SensorHistoryChartQueryDto,
   SensorHistoryQueryDto,
+  SensorHistoryListQueryDto,
 } from "./dto/monitoring.dto";
 import { MonitoringService } from "./monitoring.service";
 
@@ -15,6 +16,32 @@ import { MonitoringService } from "./monitoring.service";
 @Controller("admin/monitoring")
 export class MonitoringAdminController {
   constructor(@Inject(MonitoringService) private readonly monitoring: MonitoringService) {}
+
+  @RequirePermissions("monitoring.view")
+  @Get("history")
+  listHistory(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: SensorHistoryListQueryDto, transform: true }))
+    query: SensorHistoryListQueryDto,
+  ) {
+    return this.monitoring.listSensorHistory(auth!.principal, query);
+  }
+
+  @RequirePermissions("monitoring.view")
+  @Get("history/options")
+  historyOptions(@CurrentPrincipal() auth: AuthenticatedRequest["auth"]) {
+    return this.monitoring.listSensorHistoryOptions(auth!.principal);
+  }
+
+  @RequirePermissions("monitoring.view")
+  @Get("history/chart")
+  historyChart(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Query(new ValidationPipe({ expectedType: SensorHistoryListQueryDto, transform: true }))
+    query: SensorHistoryListQueryDto,
+  ) {
+    return this.monitoring.listSensorHistoryChart(auth!.principal, query);
+  }
 
   @RequirePermissions("monitoring.view")
   @Get("options")

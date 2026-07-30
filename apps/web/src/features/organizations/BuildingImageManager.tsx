@@ -24,7 +24,7 @@ import {
 import { IconPhotoPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { t, tf } from "../../app/i18n";
+import { formatDateTime, t, tf } from "../../app/i18n";
 import { ApiError, apiBlob, apiMultipartRequest, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { hasPermission } from "../../shared/rbac/has-permission";
@@ -211,7 +211,7 @@ export function BuildingImageManager({
                 <PrivateBuildingImage image={image} />
                 <Text c="dimmed" size="xs">
                   {tf("buildingImages.metadata", {
-                    date: new Date(image.createdAt).toLocaleString(),
+                    date: formatDateTime(image.createdAt),
                     size: image.byteSize ? Math.ceil(image.byteSize / 1024) : "-",
                   })}
                 </Text>

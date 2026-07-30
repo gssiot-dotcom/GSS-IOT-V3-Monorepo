@@ -157,4 +157,17 @@ The frontend keeps the last known value visible when the socket disconnects and 
 
 ## Retention
 
-Phase 6 defines a default sensor history retention target of 180 days and adds indexes for node/time and building/node-type/time queries. Phase 10 will decide production partitioning, archival and physical purge jobs.
+Phase 6 defines a default sensor history retention target of 180 days and adds indexes for node/time
+and building/node-type/time queries. The 2026-07-29 forward implementation adds a validated,
+bounded worker. Eligibility requires `receivedAt < cutoff` and no trigger/counter first/last
+reference; referenced evidence survives archive and age. `LatestNodeState` is excluded. Test
+defaults are disabled/dry-run, and destructive production enablement remains an explicit rollout
+decision. See `TWO_TIER_ARCHIVE_CASCADE_PURGE_AND_SENSOR_RETENTION.md`.
+
+## Sensor History completion — 2026-07-29
+
+`/admin/monitoring/history` and `/company/monitoring/history` use a 31-day server-authoritative
+range, 50/100 pagination, severity/fault and cascading scope options, and a bounded 500-point chart.
+Company options and queries are filtered by permission plus resolved building scope and never
+accept a caller-selected company. CSV export uses ReportJob. Only GSS Admin can run the filtered
+physical purge preview/job, and referenced alarm/counter readings remain ineligible.

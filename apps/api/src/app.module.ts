@@ -4,6 +4,7 @@ import { HealthController } from "./health.controller";
 import { AuthModule } from "./modules/auth/auth.module";
 import { AuditLogsModule } from "./modules/audit-logs/audit-logs.module";
 import { AlarmLevelsModule } from "./modules/alarm-levels/alarm-levels.module";
+import { ArchiveModule } from "./modules/archive/archive.module";
 import { AlarmsModule } from "./modules/alarms/alarms.module";
 import { CompanyManagementModule } from "./modules/company-management/company-management.module";
 import { CompanyBrandingModule } from "./modules/company-branding/company-branding.module";
@@ -25,6 +26,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     AuditLogsModule,
     AlarmLevelsModule,
     AlarmsModule,
+    ArchiveModule,
     OrganizationsModule,
     CompanyBrandingModule,
     CompanyManagementModule,

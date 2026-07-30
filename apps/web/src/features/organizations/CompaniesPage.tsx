@@ -180,7 +180,7 @@ export function CompaniesPage() {
     setIsSaving(true);
     setMutationError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${deleteTarget.id}/permanent`, {
+      await apiRequest(session, `/admin/companies/${deleteTarget.id}`, {
         method: "DELETE",
       });
       setDeleteTarget(undefined);

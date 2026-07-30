@@ -180,6 +180,7 @@ enum ReportType {
   MQTT_COMMAND_HISTORY
   USER_ACTIVITY
   AUDIT_LOG
+  ARCHIVE_EVIDENCE
 }
 
 enum ReportFileFormat {
@@ -191,6 +192,39 @@ enum AuditActorType {
   GSS_ADMIN
   COMPANY_USER
   SYSTEM
+}
+
+enum ArchiveEntityType {
+  COMPANY
+  CONSTRUCTION_AREA
+  CONSTRUCTION_BUILDING
+  COMPANY_USER
+  COMPANY_POSITION
+  COMPANY_ROLE
+  ALARM_RULE
+  ALARM_RECIPIENT_POLICY
+  ALARM_EVENT
+  ALARM_NOTIFICATION
+  GATEWAY_COMMAND
+  SENSOR_READING_FILTER
+}
+
+enum DeletionJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum DeletionJobPhase {
+  PREPARE
+  OPERATIONAL_TEARDOWN
+  STORAGE_CLEANUP
+  SENSOR_READINGS
+  EVIDENCE
+  TENANT_RELATIONS
+  ROOT
+  COMPLETE
 }
 
 model Permission {
@@ -234,6 +268,7 @@ model GssAdminUser {
   tokenVersion Int                      @default(0)
   lastLoginAt  DateTime?
   permissions  GssAdminUserPermission[]
+  deletionJobs DeletionJob[]
   createdAt    DateTime                 @default(now())
   updatedAt    DateTime                 @updatedAt
 }
@@ -266,6 +301,10 @@ model Company {
   email                    String?
   logoKey                  String?
   status                   CompanyStatus                     @default(ACTIVE)
+  deletedAt                DateTime?
+  deletedByType            AuditActorType?
+  deletedById              String?                           @db.Uuid
+  deleteReason             String?
   areas                    ConstructionArea[]
   buildings                ConstructionBuilding[]
   deviceAssignments        CompanyDeviceAssignment[]
@@ -283,6 +322,7 @@ model Company {
   updatedAt                DateTime                          @updatedAt
 
   @@index([status, name, id])
+  @@index([deletedAt, name, id])
 }
 
 model ConstructionArea {
@@ -293,6 +333,10 @@ model ConstructionArea {
   address             String?
   description         String?
   status              CompanyStatus                   @default(ACTIVE)
+  deletedAt           DateTime?
+  deletedByType       AuditActorType?
+  deletedById         String?                         @db.Uuid
+  deleteReason        String?
   buildings           ConstructionBuilding[]
   latestNodeStates    LatestNodeState[]
   sensorReadings      SensorReading[]
@@ -306,6 +350,7 @@ model ConstructionArea {
 
   @@unique([companyId, name])
   @@index([companyId, status, name, id])
+  @@index([companyId, deletedAt, name, id])
 }
 
 model ConstructionBuilding {
@@ -320,6 +365,10 @@ model ConstructionBuilding {
   buildingType             String?
   startDate                DateTime?
   status                   CompanyStatus                     @default(ACTIVE)
+  deletedAt                DateTime?
+  deletedByType            AuditActorType?
+  deletedById              String?                           @db.Uuid
+  deleteReason             String?
   userAccess               CompanyUserBuildingAccess[]
   planImages               BuildingPlanImage[]
   positionAssignments      CompanyUserPositionAssignment[]
@@ -338,6 +387,8 @@ model ConstructionBuilding {
   @@unique([areaId, title])
   @@index([companyId, status, title, id])
   @@index([areaId, status, title, id])
+  @@index([companyId, deletedAt, title, id])
+  @@index([areaId, deletedAt, title, id])
 }
 
 model NodeType {
@@ -475,6 +526,10 @@ model GatewayCommand {
   responsePayload               Json?
   requesterType                 AuditActorType
   requesterId                   String?                          @db.Uuid
+  companyId                     String?                          @db.Uuid
+  areaId                        String?                          @db.Uuid
+  buildingId                    String?                          @db.Uuid
+  scopeSnapshot                 Json?
   correlationKey                String
   activeKey                     String                           @default("active")
   attemptCount                  Int                              @default(0)
@@ -486,6 +541,10 @@ model GatewayCommand {
   expiresAt                     DateTime
   cancelledAt                   DateTime?
   failureReason                 String?
+  deletedAt                     DateTime?
+  deletedByType                 AuditActorType?
+  deletedById                   String?                          @db.Uuid
+  deleteReason                  String?
   provisioningRequest           NodeGatewayProvisioningRequest?
   alarmLevelDesiredApplications GatewayAlarmLevelApplication[]   @relation("AlarmLevelDesiredCommand")
   alarmLevelAppliedApplications GatewayAlarmLevelApplication[]   @relation("AlarmLevelAppliedCommand")
@@ -500,6 +559,9 @@ model GatewayCommand {
   @@index([status, expiresAt])
   @@index([createdAt])
   @@index([status, createdAt, id])
+  @@index([companyId, deletedAt, createdAt, id])
+  @@index([areaId, deletedAt, createdAt, id])
+  @@index([buildingId, deletedAt, createdAt, id])
 }
 
 model BuildingAlarmLevelConfiguration {
@@ -761,6 +823,10 @@ model CompanyRole {
   name               String
   isSystem           Boolean                 @default(false)
   isCompanyOwnerRole Boolean                 @default(false)
+  deletedAt          DateTime?
+  deletedByType      AuditActorType?
+  deletedById        String?                 @db.Uuid
+  deleteReason       String?
   users              CompanyUser[]
   permissions        CompanyRolePermission[]
   createdAt          DateTime                @default(now())
@@ -768,6 +834,7 @@ model CompanyRole {
 
   @@unique([companyId, key])
   @@index([companyId, name, id])
+  @@index([companyId, deletedAt, name, id])
 }
 
 model CompanyUser {
@@ -783,6 +850,10 @@ model CompanyUser {
   isActive               Boolean                         @default(true)
   tokenVersion           Int                             @default(0)
   lastLoginAt            DateTime?
+  deletedAt              DateTime?
+  deletedByType          AuditActorType?
+  deletedById            String?                          @db.Uuid
+  deleteReason           String?
   permissions            CompanyUserPermission[]
   areaAccess             CompanyUserAreaAccess[]
   buildingAccess         CompanyUserBuildingAccess[]
@@ -793,6 +864,7 @@ model CompanyUser {
   updatedAt              DateTime                        @updatedAt
 
   @@index([companyId, isActive, name, id])
+  @@index([companyId, deletedAt, isActive, name, id])
 }
 
 model BuildingPlanImage {
@@ -830,6 +902,7 @@ model CompanyPosition {
   deletedAt              DateTime?
   deletedByType          AuditActorType?
   deletedById            String?                         @db.Uuid
+  deleteReason           String?
   assignments            CompanyUserPositionAssignment[]
   alarmRecipientPolicies AlarmRecipientPolicy[]
   createdAt              DateTime                        @default(now())
@@ -861,6 +934,7 @@ model AlarmRule {
   deletedAt         DateTime?
   deletedByType     AuditActorType?
   deletedById       String?                @db.Uuid
+  deleteReason      String?
   company           Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
   area              ConstructionArea       @relation(fields: [areaId], references: [id], onDelete: Restrict)
   building          ConstructionBuilding   @relation(fields: [buildingId], references: [id], onDelete: Restrict)
@@ -903,6 +977,7 @@ model AlarmRecipientPolicy {
   deletedAt               DateTime?
   deletedByType           AuditActorType?
   deletedById             String?              @db.Uuid
+  deleteReason            String?
   rule                    AlarmRule            @relation(fields: [ruleId], references: [id], onDelete: Restrict)
   position                CompanyPosition?     @relation(fields: [positionId], references: [id], onDelete: Restrict)
   specificUser            CompanyUser?         @relation("AlarmPolicySpecificUser", fields: [specificUserId], references: [id], onDelete: Restrict)
@@ -980,6 +1055,7 @@ model AlarmEvent {
   deletedAt            DateTime?
   deletedByType        AuditActorType?
   deletedById          String?                @db.Uuid
+  deleteReason         String?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   company              Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
@@ -1043,7 +1119,7 @@ model AlarmNotification {
   alarmEventId        String                  @db.Uuid
   policyTriggerId     String                  @db.Uuid
   policyId            String                  @db.Uuid
-  recipientUserId     String                  @db.Uuid
+  recipientUserId     String?                 @db.Uuid
   channel             AlarmChannel
   status              AlarmNotificationStatus @default(PENDING)
   title               String
@@ -1064,12 +1140,13 @@ model AlarmNotification {
   deletedAt           DateTime?
   deletedByType       AuditActorType?
   deletedById         String?                 @db.Uuid
+  deleteReason        String?
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   alarmEvent          AlarmEvent              @relation(fields: [alarmEventId], references: [id], onDelete: Restrict)
   policyTrigger       AlarmPolicyTrigger      @relation(fields: [policyTriggerId], references: [id], onDelete: Restrict)
   policy              AlarmRecipientPolicy    @relation(fields: [policyId], references: [id], onDelete: Restrict)
-  recipientUser       CompanyUser             @relation(fields: [recipientUserId], references: [id], onDelete: Restrict)
+  recipientUser       CompanyUser?            @relation(fields: [recipientUserId], references: [id], onDelete: SetNull)
   deliveryLogs        AlarmDeliveryLog[]
 
   @@unique([policyTriggerId, recipientUserId, channel])
@@ -1126,6 +1203,10 @@ model AuditLog {
   action     String
   entityType String
   entityId   String?        @db.Uuid
+  companyId  String?        @db.Uuid
+  areaId     String?        @db.Uuid
+  buildingId String?        @db.Uuid
+  scopeSnapshot Json?
   oldValue   Json?
   newValue   Json?
   ipAddress  String?
@@ -1135,6 +1216,59 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorType, actorId])
   @@index([createdAt])
+  @@index([companyId, createdAt])
+  @@index([areaId, createdAt])
+  @@index([buildingId, createdAt])
+}
+
+model DeletionJob {
+  id               String             @id @default(uuid()) @db.Uuid
+  rootType         ArchiveEntityType
+  rootId           String?            @db.Uuid
+  targetKey        String
+  requesterAdminId String             @db.Uuid
+  requesterAdmin   GssAdminUser       @relation(fields: [requesterAdminId], references: [id], onDelete: Restrict)
+  companyId        String?            @db.Uuid
+  areaId           String?            @db.Uuid
+  buildingId       String?            @db.Uuid
+  typedFilter      Json
+  previewHash      String
+  idempotencyKey   String             @unique
+  activeKey        String             @default("active")
+  status           DeletionJobStatus  @default(PENDING)
+  currentPhase     DeletionJobPhase   @default(PREPARE)
+  totalCounts      Json
+  deletedCounts    Json
+  failedCounts     Json
+  safeErrorSummary String?
+  leaseOwner       String?
+  leaseExpiresAt   DateTime?
+  heartbeatAt      DateTime?
+  attemptCount     Int                @default(0)
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  receipt          PurgeReceipt?
+
+  @@unique([targetKey, activeKey])
+  @@index([status, createdAt])
+  @@index([status, leaseExpiresAt, createdAt])
+  @@index([companyId, status, createdAt])
+}
+
+model PurgeReceipt {
+  id                 String            @id @default(uuid()) @db.Uuid
+  deletionJobId      String            @unique @db.Uuid
+  deletionJob        DeletionJob       @relation(fields: [deletionJobId], references: [id], onDelete: Restrict)
+  actorId            String            @db.Uuid
+  rootEntityType     ArchiveEntityType
+  deletedGroupCounts Json
+  completedAt        DateTime
+  status             DeletionJobStatus
+  createdAt          DateTime          @default(now())
+
+  @@index([completedAt])
 }
 
 model ReportJob {

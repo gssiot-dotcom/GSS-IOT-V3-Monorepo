@@ -72,6 +72,9 @@ const permissionCatalog = [
   ["device-assignments.manage", PermissionScopeType.GSS],
   ["mqtt-commands.view", PermissionScopeType.GSS],
   ["mqtt-commands.manage", PermissionScopeType.GSS],
+  ["archive.view", PermissionScopeType.GSS],
+  ["archive.purge", PermissionScopeType.GSS],
+  ["sensor-readings.purge", PermissionScopeType.GSS],
   ["monitoring.view", PermissionScopeType.BOTH],
   ["monitoring.realtime", PermissionScopeType.BOTH],
   ["monitoring.admin-overview", PermissionScopeType.GSS],
@@ -104,6 +107,7 @@ const permissionModuleLabels: Record<string, string> = {
   "alarm-levels": "alarm-level thresholds",
   "alarm-rules": "alarm occurrence and recipient rules",
   alarms: "alarm events",
+  archive: "the GSS evidence archive",
   areas: "construction sites",
   "audit-logs": "audit logs",
   "building-plans": "building plan metadata",
@@ -125,6 +129,7 @@ const permissionModuleLabels: Record<string, string> = {
   notifications: "alarm notifications",
   permissions: "the GSS permission catalog",
   reports: "reports",
+  "sensor-readings": "sensor reading history",
   settings: "portal settings",
   welcome: "the authenticated welcome workspace",
 };
@@ -271,7 +276,9 @@ async function main(): Promise<void> {
 
   await assignGssPermissions(
     gssAdminRole.id,
-    permissionCatalog.map(([key]) => key),
+    permissionCatalog
+      .map(([key]) => key)
+      .filter((key) => key !== "archive.purge" && key !== "sensor-readings.purge"),
   );
   await assignGssPermissions(
     deviceManagerRole.id,

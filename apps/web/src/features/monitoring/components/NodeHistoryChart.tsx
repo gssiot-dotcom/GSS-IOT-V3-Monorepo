@@ -6,7 +6,7 @@ import type {
 import { Group, Stack, Text } from "@mantine/core";
 import { useState } from "react";
 
-import { t, tf } from "../../../app/i18n";
+import { formatDateTime, t, tf, tx } from "../../../app/i18n";
 import {
   ChartTooltip,
   chartTooltipPosition,
@@ -40,7 +40,7 @@ export function NodeHistoryChart({
     left + (index / Math.max(history.items.length - 1, 1)) * plotWidth;
   const label = isDoor ? t("monitoring.doorHistoryChart") : t("monitoring.angleHistoryChart");
   const showTooltip = (target: SVGElement, item: PaginatedSensorHistory["items"][number]) => {
-    const receivedAt = new Date(item.receivedAt).toLocaleString();
+    const receivedAt = formatDateTime(item.receivedAt);
     const content =
       "angleX" in item.values ? (
         <Stack gap={2}>
@@ -54,7 +54,9 @@ export function NodeHistoryChart({
             {tf("monitoring.historyTooltipAngleY", { value: item.values.angleY.toFixed(1) })}
           </Text>
           <Text c="dimmed" size="xs">
-            {tf("monitoring.historyTooltipStatus", { status: t(`status.${item.status}` as never) })}
+            {tf("monitoring.historyTooltipStatus", {
+              status: tx(`status.${item.status}`, item.status),
+            })}
           </Text>
         </Stack>
       ) : (
@@ -64,7 +66,7 @@ export function NodeHistoryChart({
           </Text>
           <Text size="sm">
             {tf("monitoring.historyTooltipDoor", {
-              state: t(`monitoring.doorState.${item.values.doorState}` as never),
+              state: tx(`monitoring.doorState.${item.values.doorState}`, item.values.doorState),
             })}
           </Text>
           {item.values.batteryLevel !== null ? (
@@ -73,7 +75,9 @@ export function NodeHistoryChart({
             </Text>
           ) : null}
           <Text c="dimmed" size="xs">
-            {tf("monitoring.historyTooltipStatus", { status: t(`status.${item.status}` as never) })}
+            {tf("monitoring.historyTooltipStatus", {
+              status: tx(`status.${item.status}`, item.status),
+            })}
           </Text>
         </Stack>
       );
@@ -189,8 +193,8 @@ export function NodeHistoryChart({
           {history.items.map((item, index) => {
             if (!("angleX" in item.values)) return null;
             const pointLabel = tf("monitoring.historyPointLabel", {
-              date: new Date(item.receivedAt).toLocaleString(),
-              status: t(`status.${item.status}` as never),
+              date: formatDateTime(item.receivedAt),
+              status: tx(`status.${item.status}`, item.status),
             });
             return (
               <g key={item.id}>
@@ -314,8 +318,8 @@ export function NodeHistoryChart({
         />
         {history.items.map((item, index) => {
           const pointLabel = tf("monitoring.historyPointLabel", {
-            date: new Date(item.receivedAt).toLocaleString(),
-            status: t(`status.${item.status}` as never),
+            date: formatDateTime(item.receivedAt),
+            status: tx(`status.${item.status}`, item.status),
           });
           return (
             <circle
