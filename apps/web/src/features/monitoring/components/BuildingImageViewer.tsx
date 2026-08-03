@@ -107,7 +107,7 @@ export function BuildingImageViewerPanel({
     return () => {
       active = false;
     };
-  }, [basePath, buildingId, canView, session?.accessToken]);
+  }, [basePath, buildingId, canView, session?.user.id]);
 
   const current = useMemo(
     () => (images ?? []).filter((image) => image.kind === kind),
@@ -181,7 +181,7 @@ function PrivateInteractiveImage({ image }: { image: BuildingPlanImageRecord }) 
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [image.contentPath, session?.accessToken]);
+  }, [image.contentPath, session?.user.id]);
 
   if (status === 401) return <SessionExpiredState title={t("common.sessionExpired")} />;
   if (status === 403)

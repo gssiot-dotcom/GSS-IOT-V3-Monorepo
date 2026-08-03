@@ -11,6 +11,8 @@ import { AUTH_CONTEXT, type AuthTokenPayload } from "../../common/auth.types";
 import { type PaginationQueryDto, pageWindow, paginated } from "../../common/dto/pagination.dto";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { ensureDefaultCompanyRoles } from "../company-management/default-company-roles";
+import { toContractStatus } from "../monitoring/monitoring-mappers";
+import { PermissionResolverService } from "../rbac/permission-resolver.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import type {
   CreateAreaDto,
@@ -64,11 +66,26 @@ const buildingSelect = {
   updatedAt: true,
 } satisfies Prisma.ConstructionBuildingSelect;
 
+const OVERVIEW_PREVIEW_LIMIT = 100;
+const GATEWAY_ONLINE_WINDOW_MS = 5 * 60 * 1000;
+
+type OverviewUserRow = {
+  areaAccess: Array<{ areaId: string }>;
+  buildingAccess: Array<{ buildingId: string }>;
+  email: string;
+  id: string;
+  isActive: boolean;
+  name: string;
+  role: { id: string; isCompanyOwnerRole: boolean; name: string };
+};
+
 @Injectable()
 export class OrganizationsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditLogService) private readonly auditLog: AuditLogService,
+    @Inject(PermissionResolverService)
+    private readonly permissionResolver: PermissionResolverService,
   ) {}
 
   async listCompanies(query: PaginationQueryDto) {
@@ -554,6 +571,258 @@ export class OrganizationsService {
     return paginated(items, total, query);
   }
 
+  async getCompanyAreaOverview(areaId: string, companyUserId: string) {
+    const [area, permissionResolution] = await Promise.all([
+      this.assertCompanyArea(areaId, companyUserId),
+      this.permissionResolver.resolve(AUTH_CONTEXT.companyUser, companyUserId),
+    ]);
+    const canViewBuildings = permissionResolution.permissions.has("buildings.view");
+    const canViewUsers = permissionResolution.permissions.has("company-users.view");
+    const canViewDevices = permissionResolution.permissions.has("company-devices.view");
+    const buildingWhere: Prisma.ConstructionBuildingWhereInput = {
+      areaId,
+      companyId: area.companyId,
+      deletedAt: null,
+    };
+    const userWhere = this.overviewUserWhere(area.companyId, { areaId });
+
+    const [buildingTotal, buildingPreview, userTotal, userPreview, gatewayTotal, nodeTotal] =
+      await Promise.all([
+        canViewBuildings ? this.prisma.constructionBuilding.count({ where: buildingWhere }) : null,
+        canViewBuildings
+          ? this.prisma.constructionBuilding.findMany({
+              orderBy: [{ title: "asc" }, { id: "asc" }],
+              select: buildingSelect,
+              take: OVERVIEW_PREVIEW_LIMIT,
+              where: buildingWhere,
+            })
+          : [],
+        canViewUsers ? this.prisma.companyUser.count({ where: userWhere }) : null,
+        canViewUsers
+          ? this.prisma.companyUser.findMany({
+              orderBy: [{ name: "asc" }, { id: "asc" }],
+              select: this.overviewUserSelect(areaId),
+              take: OVERVIEW_PREVIEW_LIMIT,
+              where: userWhere,
+            })
+          : [],
+        canViewDevices
+          ? this.prisma.gatewayBuildingAssignment.count({
+              where: this.gatewayAssignmentWhere(area.companyId, { areaId }),
+            })
+          : null,
+        canViewDevices
+          ? this.prisma.nodeGatewayAssignment.count({
+              where: this.nodeAssignmentWhere(area.companyId, { areaId }),
+            })
+          : null,
+      ]);
+
+    const buildings = await Promise.all(
+      buildingPreview.map(async (building) => {
+        const [assignedUsers, gateways, nodes] = await Promise.all([
+          canViewUsers
+            ? this.prisma.companyUser.count({
+                where: this.overviewUserWhere(area.companyId, {
+                  areaId,
+                  buildingId: building.id,
+                }),
+              })
+            : null,
+          canViewDevices
+            ? this.prisma.gatewayBuildingAssignment.count({
+                where: this.gatewayAssignmentWhere(area.companyId, { buildingId: building.id }),
+              })
+            : null,
+          canViewDevices
+            ? this.prisma.nodeGatewayAssignment.count({
+                where: this.nodeAssignmentWhere(area.companyId, { buildingId: building.id }),
+              })
+            : null,
+        ]);
+        return { ...building, metrics: { assignedUsers, gateways, nodes } };
+      }),
+    );
+
+    return {
+      area,
+      buildings: {
+        available: canViewBuildings,
+        items: buildings,
+        total: buildingTotal,
+      },
+      metrics: {
+        assignedUsers: userTotal,
+        buildings: buildingTotal,
+        gateways: gatewayTotal,
+        nodes: nodeTotal,
+      },
+      users: {
+        available: canViewUsers,
+        items: userPreview.map((user) => this.toOverviewUser(user)),
+        total: userTotal,
+      },
+    };
+  }
+
+  async getCompanyBuildingOverview(buildingId: string, companyUserId: string) {
+    const [building, permissionResolution] = await Promise.all([
+      this.assertCompanyBuilding(buildingId, companyUserId),
+      this.permissionResolver.resolve(AUTH_CONTEXT.companyUser, companyUserId),
+    ]);
+    const canViewArea = permissionResolution.permissions.has("areas.view");
+    const canViewUsers = permissionResolution.permissions.has("company-users.view");
+    const canViewDevices = permissionResolution.permissions.has("company-devices.view");
+    const userWhere = this.overviewUserWhere(building.companyId, {
+      areaId: building.areaId,
+      buildingId,
+    });
+    const gatewayWhere = this.gatewayAssignmentWhere(building.companyId, { buildingId });
+    const nodeWhere = this.nodeAssignmentWhere(building.companyId, { buildingId });
+    const onlineCutoff = new Date(Date.now() - GATEWAY_ONLINE_WINDOW_MS);
+
+    const [
+      area,
+      userTotal,
+      userPreview,
+      gatewayTotal,
+      gatewayPreview,
+      onlineGateways,
+      nodeTotal,
+      nodePreview,
+      activeNodes,
+      faultNodes,
+    ] = await Promise.all([
+      canViewArea ? this.getAreaOrThrow(building.areaId) : null,
+      canViewUsers ? this.prisma.companyUser.count({ where: userWhere }) : null,
+      canViewUsers
+        ? this.prisma.companyUser.findMany({
+            orderBy: [{ name: "asc" }, { id: "asc" }],
+            select: this.overviewUserSelect(building.areaId, buildingId),
+            take: OVERVIEW_PREVIEW_LIMIT,
+            where: userWhere,
+          })
+        : [],
+      canViewDevices ? this.prisma.gatewayBuildingAssignment.count({ where: gatewayWhere }) : null,
+      canViewDevices
+        ? this.prisma.gatewayBuildingAssignment.findMany({
+            orderBy: [{ gateway: { serialNumber: "asc" } }, { id: "asc" }],
+            select: {
+              gateway: {
+                select: {
+                  id: true,
+                  installedLocation: true,
+                  lastSeenAt: true,
+                  serialNumber: true,
+                  status: true,
+                },
+              },
+            },
+            take: OVERVIEW_PREVIEW_LIMIT,
+            where: gatewayWhere,
+          })
+        : [],
+      canViewDevices
+        ? this.prisma.gatewayBuildingAssignment.count({
+            where: this.gatewayAssignmentWhere(building.companyId, { buildingId }, onlineCutoff),
+          })
+        : null,
+      canViewDevices ? this.prisma.nodeGatewayAssignment.count({ where: nodeWhere }) : null,
+      canViewDevices
+        ? this.prisma.nodeGatewayAssignment.findMany({
+            orderBy: [{ node: { number: "asc" } }, { id: "asc" }],
+            select: {
+              gateway: { select: { id: true, serialNumber: true } },
+              node: {
+                select: {
+                  id: true,
+                  installedLocation: true,
+                  lastSeenAt: true,
+                  latestState: { select: { status: true } },
+                  nodeType: { select: { displayName: true, id: true, key: true } },
+                  number: true,
+                  status: true,
+                },
+              },
+            },
+            take: OVERVIEW_PREVIEW_LIMIT,
+            where: nodeWhere,
+          })
+        : [],
+      canViewDevices
+        ? this.prisma.nodeGatewayAssignment.count({
+            where: this.nodeAssignmentWhere(building.companyId, { buildingId }, true),
+          })
+        : null,
+      canViewDevices
+        ? this.prisma.latestNodeState.count({
+            where: {
+              buildingId,
+              companyId: building.companyId,
+              node: {
+                companyAssignments: { some: { companyId: building.companyId, status: "ACTIVE" } },
+              },
+              status: { in: ["WARNING", "DANGER"] },
+            },
+          })
+        : null,
+    ]);
+
+    const devices = await Promise.all(
+      gatewayPreview.map(async ({ gateway }) => ({
+        ...gateway,
+        isOnline: Boolean(gateway.lastSeenAt && gateway.lastSeenAt >= onlineCutoff),
+        lastSeenAt: gateway.lastSeenAt?.toISOString() ?? null,
+        nodeCount: await this.prisma.nodeGatewayAssignment.count({
+          where: {
+            gatewayId: gateway.id,
+            node: {
+              companyAssignments: {
+                some: { companyId: building.companyId, status: "ACTIVE" },
+              },
+              status: { not: "RETIRED" },
+            },
+            status: "ACTIVE",
+          },
+        }),
+      })),
+    );
+
+    return {
+      area,
+      building,
+      devices: { available: canViewDevices, items: devices, total: gatewayTotal },
+      metrics: {
+        activeNodes,
+        assignedUsers: userTotal,
+        faultNodes,
+        gateways: gatewayTotal,
+        nodes: nodeTotal,
+        offlineGateways: gatewayTotal === null ? null : gatewayTotal - (onlineGateways ?? 0),
+        onlineGateways,
+      },
+      nodes: {
+        available: canViewDevices,
+        items: nodePreview.map(({ gateway, node }) => ({
+          gateway,
+          id: node.id,
+          installedLocation: node.installedLocation,
+          lastSeenAt: node.lastSeenAt?.toISOString() ?? null,
+          latestStatus: node.latestState ? toContractStatus(node.latestState.status) : null,
+          nodeType: node.nodeType,
+          number: node.number,
+          status: node.status,
+        })),
+        total: nodeTotal,
+      },
+      users: {
+        available: canViewUsers,
+        items: userPreview.map((user) => this.toOverviewUser(user)),
+        total: userTotal,
+      },
+    };
+  }
+
   async assertCompanyArea(areaId: string, companyUserId: string) {
     const [area, context] = await Promise.all([
       this.getAreaOrThrow(areaId),
@@ -563,6 +832,103 @@ export class OrganizationsService {
       throw new NotFoundException("The construction area was not found.");
     }
     return area;
+  }
+
+  private overviewUserWhere(
+    companyId: string,
+    scope: { areaId: string; buildingId?: string },
+  ): Prisma.CompanyUserWhereInput {
+    return {
+      companyId,
+      deletedAt: null,
+      OR: [
+        { role: { isCompanyOwnerRole: true } },
+        { areaAccess: { some: { areaId: scope.areaId } } },
+        scope.buildingId
+          ? { buildingAccess: { some: { buildingId: scope.buildingId } } }
+          : { buildingAccess: { some: { building: { areaId: scope.areaId, deletedAt: null } } } },
+      ],
+    };
+  }
+
+  private overviewUserSelect(areaId: string, buildingId?: string) {
+    return {
+      areaAccess: { select: { areaId: true }, where: { areaId } },
+      buildingAccess: {
+        select: { buildingId: true },
+        where: buildingId ? { buildingId } : { building: { areaId, deletedAt: null } },
+      },
+      email: true,
+      id: true,
+      isActive: true,
+      name: true,
+      role: { select: { id: true, isCompanyOwnerRole: true, name: true } },
+    } as const;
+  }
+
+  private toOverviewUser(user: OverviewUserRow) {
+    const accessSources: Array<"AREA" | "BUILDING" | "COMPANY"> = [];
+    if (user.role.isCompanyOwnerRole) accessSources.push("COMPANY");
+    if (user.areaAccess.length > 0) accessSources.push("AREA");
+    if (user.buildingAccess.length > 0) accessSources.push("BUILDING");
+    return {
+      accessSources,
+      email: user.email,
+      id: user.id,
+      isActive: user.isActive,
+      name: user.name,
+      role: { id: user.role.id, name: user.role.name },
+    };
+  }
+
+  private gatewayAssignmentWhere(
+    companyId: string,
+    scope: { areaId?: string; buildingId?: string },
+    onlineAfter?: Date,
+  ): Prisma.GatewayBuildingAssignmentWhereInput {
+    return {
+      building: {
+        ...(scope.areaId ? { areaId: scope.areaId } : {}),
+        companyId,
+        deletedAt: null,
+      },
+      ...(scope.buildingId ? { buildingId: scope.buildingId } : {}),
+      gateway: {
+        companyAssignments: { some: { companyId, status: "ACTIVE" } },
+        ...(onlineAfter ? { lastSeenAt: { gte: onlineAfter } } : {}),
+        status: { not: "RETIRED" },
+      },
+      status: "ACTIVE",
+    };
+  }
+
+  private nodeAssignmentWhere(
+    companyId: string,
+    scope: { areaId?: string; buildingId?: string },
+    activeOnly = false,
+  ): Prisma.NodeGatewayAssignmentWhereInput {
+    return {
+      gateway: {
+        buildingAssignments: {
+          some: {
+            building: {
+              ...(scope.areaId ? { areaId: scope.areaId } : {}),
+              companyId,
+              deletedAt: null,
+            },
+            ...(scope.buildingId ? { buildingId: scope.buildingId } : {}),
+            status: "ACTIVE",
+          },
+        },
+        companyAssignments: { some: { companyId, status: "ACTIVE" } },
+        status: { not: "RETIRED" },
+      },
+      node: {
+        companyAssignments: { some: { companyId, status: "ACTIVE" } },
+        status: activeOnly ? "ACTIVE" : { not: "RETIRED" },
+      },
+      status: "ACTIVE",
+    };
   }
 
   async assertCompanyBuilding(buildingId: string, companyUserId: string) {

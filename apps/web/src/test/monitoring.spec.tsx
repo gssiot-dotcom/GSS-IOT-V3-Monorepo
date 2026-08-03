@@ -19,7 +19,6 @@ import { apiRequest } from "../shared/api/api-client";
 vi.mock("../shared/auth/auth-context", () => ({
   useAuth: () => ({
     session: {
-      accessToken: "token",
       context: "company-user",
       user: {
         email: "monitor@example.com",
@@ -78,9 +77,12 @@ describe("Phase 6 monitoring UI", () => {
   afterEach(() => {
     cleanup();
     window.localStorage.clear();
+    vi.useRealTimers();
   });
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-22T12:00:00.000Z"));
     vi.mocked(apiRequest).mockResolvedValue({
       building: {
         address: null,

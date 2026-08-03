@@ -6,7 +6,7 @@ import { ApiError, apiRequest } from "../shared/api/api-client";
 
 vi.mock("../app/env", () => ({ readWebEnv: () => ({ apiBaseUrl: "http://api.test" }) }));
 
-const session = { accessToken: "token" } as AuthSession;
+const session = {} as AuthSession;
 
 afterEach(() => vi.unstubAllGlobals());
 

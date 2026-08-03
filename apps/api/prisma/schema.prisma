@@ -183,6 +183,11 @@ enum ReportType {
   ARCHIVE_EVIDENCE
 }
 
+enum AuthSessionContext {
+  GSS_ADMIN    @map("gss-admin")
+  COMPANY_USER @map("company-user")
+}
+
 enum ReportFileFormat {
   CSV
   XLSX
@@ -257,20 +262,21 @@ model GssRole {
 }
 
 model GssAdminUser {
-  id           String                   @id @default(uuid()) @db.Uuid
-  roleId       String                   @db.Uuid
-  role         GssRole                  @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  name         String
-  email        String                   @unique
-  passwordHash String
-  phone        String?
-  isActive     Boolean                  @default(true)
-  tokenVersion Int                      @default(0)
-  lastLoginAt  DateTime?
-  permissions  GssAdminUserPermission[]
-  deletionJobs DeletionJob[]
-  createdAt    DateTime                 @default(now())
-  updatedAt    DateTime                 @updatedAt
+  id              String                   @id @default(uuid()) @db.Uuid
+  roleId          String                   @db.Uuid
+  role            GssRole                  @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  name            String
+  email           String                   @unique
+  passwordHash    String
+  phone           String?
+  isActive        Boolean                  @default(true)
+  tokenVersion    Int                      @default(0)
+  lastLoginAt     DateTime?
+  permissions     GssAdminUserPermission[]
+  deletionJobs    DeletionJob[]
+  refreshSessions RefreshSession[]
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
 }
 
 model GssRolePermission {
@@ -852,7 +858,7 @@ model CompanyUser {
   lastLoginAt            DateTime?
   deletedAt              DateTime?
   deletedByType          AuditActorType?
-  deletedById            String?                          @db.Uuid
+  deletedById            String?                         @db.Uuid
   deleteReason           String?
   permissions            CompanyUserPermission[]
   areaAccess             CompanyUserAreaAccess[]
@@ -860,11 +866,39 @@ model CompanyUser {
   positionAssignments    CompanyUserPositionAssignment[]
   alarmRecipientPolicies AlarmRecipientPolicy[]          @relation("AlarmPolicySpecificUser")
   alarmNotifications     AlarmNotification[]
+  refreshSessions        RefreshSession[]
   createdAt              DateTime                        @default(now())
   updatedAt              DateTime                        @updatedAt
 
   @@index([companyId, isActive, name, id])
   @@index([companyId, deletedAt, isActive, name, id])
+}
+
+model RefreshSession {
+  id             String             @id @default(uuid()) @db.Uuid
+  context        AuthSessionContext
+  familyId       String             @db.Uuid
+  currentJti     String             @unique @db.Uuid
+  tokenHash      String             @unique
+  tokenVersion   Int
+  gssAdminUserId String?            @db.Uuid
+  companyUserId  String?            @db.Uuid
+  expiresAt      DateTime
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  revokeReason   String?
+  replacedById   String?            @unique @db.Uuid
+  replacedBy     RefreshSession?    @relation("RefreshRotation", fields: [replacedById], references: [id], onDelete: Restrict)
+  replaces       RefreshSession[]   @relation("RefreshRotation")
+  gssAdminUser   GssAdminUser?      @relation(fields: [gssAdminUserId], references: [id], onDelete: Cascade)
+  companyUser    CompanyUser?       @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([familyId, revokedAt])
+  @@index([gssAdminUserId, revokedAt, expiresAt])
+  @@index([companyUserId, revokedAt, expiresAt])
+  @@index([expiresAt])
 }
 
 model BuildingPlanImage {
@@ -1197,21 +1231,21 @@ model CompanyUserPositionAssignment {
 }
 
 model AuditLog {
-  id         String         @id @default(uuid()) @db.Uuid
-  actorType  AuditActorType
-  actorId    String?        @db.Uuid
-  action     String
-  entityType String
-  entityId   String?        @db.Uuid
-  companyId  String?        @db.Uuid
-  areaId     String?        @db.Uuid
-  buildingId String?        @db.Uuid
+  id            String         @id @default(uuid()) @db.Uuid
+  actorType     AuditActorType
+  actorId       String?        @db.Uuid
+  action        String
+  entityType    String
+  entityId      String?        @db.Uuid
+  companyId     String?        @db.Uuid
+  areaId        String?        @db.Uuid
+  buildingId    String?        @db.Uuid
   scopeSnapshot Json?
-  oldValue   Json?
-  newValue   Json?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime       @default(now())
+  oldValue      Json?
+  newValue      Json?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime       @default(now())
 
   @@index([entityType, entityId])
   @@index([actorType, actorId])
@@ -1222,21 +1256,21 @@ model AuditLog {
 }
 
 model DeletionJob {
-  id               String             @id @default(uuid()) @db.Uuid
+  id               String            @id @default(uuid()) @db.Uuid
   rootType         ArchiveEntityType
-  rootId           String?            @db.Uuid
+  rootId           String?           @db.Uuid
   targetKey        String
-  requesterAdminId String             @db.Uuid
-  requesterAdmin   GssAdminUser       @relation(fields: [requesterAdminId], references: [id], onDelete: Restrict)
-  companyId        String?            @db.Uuid
-  areaId           String?            @db.Uuid
-  buildingId       String?            @db.Uuid
+  requesterAdminId String            @db.Uuid
+  requesterAdmin   GssAdminUser      @relation(fields: [requesterAdminId], references: [id], onDelete: Restrict)
+  companyId        String?           @db.Uuid
+  areaId           String?           @db.Uuid
+  buildingId       String?           @db.Uuid
   typedFilter      Json
   previewHash      String
-  idempotencyKey   String             @unique
-  activeKey        String             @default("active")
-  status           DeletionJobStatus  @default(PENDING)
-  currentPhase     DeletionJobPhase   @default(PREPARE)
+  idempotencyKey   String            @unique
+  activeKey        String            @default("active")
+  status           DeletionJobStatus @default(PENDING)
+  currentPhase     DeletionJobPhase  @default(PREPARE)
   totalCounts      Json
   deletedCounts    Json
   failedCounts     Json
@@ -1244,11 +1278,11 @@ model DeletionJob {
   leaseOwner       String?
   leaseExpiresAt   DateTime?
   heartbeatAt      DateTime?
-  attemptCount     Int                @default(0)
+  attemptCount     Int               @default(0)
   startedAt        DateTime?
   completedAt      DateTime?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
   receipt          PurgeReceipt?
 
   @@unique([targetKey, activeKey])

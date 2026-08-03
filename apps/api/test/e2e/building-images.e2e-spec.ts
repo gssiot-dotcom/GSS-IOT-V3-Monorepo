@@ -163,7 +163,8 @@ describe("private building images e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const uploaded = await request(server)
       .post(`/admin/buildings/${buildingId}/images`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .field("kind", "PLAN")
       .attach("image", png, { contentType: "image/png", filename: "plan.png" })
       .expect(201);
@@ -180,28 +181,33 @@ describe("private building images e2e", () => {
 
     const listed = await request(server)
       .get(`/company/buildings/${buildingId}/images`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(listed.body).toHaveLength(1);
     expect(listed.body[0].contentPath).toBe(`/company/building-images/${uploaded.body.id}/content`);
     const content = await request(server)
       .get(listed.body[0].contentPath)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect("Content-Type", /image\/png/);
     expect(content.body).toEqual(png);
 
     await request(server)
       .get(`/company/buildings/${buildingId}/images`)
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .delete(`/company/building-images/${uploaded.body.id}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .delete(`/company/building-images/${uploaded.body.id}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await expect(storage.get(stored.storageKey)).resolves.toBeUndefined();
     expect(
@@ -215,13 +221,15 @@ describe("private building images e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     await request(server)
       .post(`/company/buildings/${buildingId}/images`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .field("kind", "REAL")
       .attach("image", png, { contentType: "image/jpeg", filename: "fake.jpg" })
       .expect(400);
     await request(server)
       .post(`/company/buildings/${buildingId}/images`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .field("kind", "REAL")
       .attach("image", Buffer.alloc(8 * 1024 * 1024 + 1), {
         contentType: "image/png",
@@ -232,20 +240,23 @@ describe("private building images e2e", () => {
     for (let index = 0; index < 4; index += 1) {
       await request(server)
         .post(`/admin/buildings/${buildingId}/images`)
-        .set("Authorization", `Bearer ${adminToken}`)
+        .set("Cookie", adminToken)
+        .set("x-csrf-token", "test-csrf-token")
         .field("kind", "PLAN")
         .attach("image", png, { contentType: "image/png", filename: `plan-${index}.png` })
         .expect(201);
     }
     await request(server)
       .post(`/admin/buildings/${buildingId}/images`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .field("kind", "PLAN")
       .attach("image", png, { contentType: "image/png", filename: "plan-5.png" })
       .expect(409);
     await request(server)
       .delete(`/admin/buildings/${buildingId}`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ reason: "Building image archive regression" })
       .expect(200);
     expect(await prisma.buildingPlanImage.count({ where: { buildingId } })).toBe(4);
@@ -258,22 +269,30 @@ describe("private building images e2e", () => {
 
     const foreignImage = await request(server)
       .post(`/admin/buildings/${foreignBuildingId}/images`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .field("kind", "REAL")
       .attach("image", png, { contentType: "image/png", filename: "foreign.png" })
       .expect(201);
     await request(server)
       .get(`/company/building-images/${foreignImage.body.id}/content`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
   });
 
   async function login(path: string, email: string): Promise<string> {
     const response = await request(app.getHttpServer() as Parameters<typeof request>[0])
       .post(path)
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email, password: "test-password" })
       .expect(201);
-    return response.body.accessToken as string;
+    const setCookies = response.headers["set-cookie"];
+    const cookieValues = Array.isArray(setCookies) ? setCookies : setCookies ? [setCookies] : [];
+    return ["gss_csrf=test-csrf-token", ...cookieValues.map((cookie) => cookie.split(";")[0])].join(
+      "; ",
+    );
   }
 });
 

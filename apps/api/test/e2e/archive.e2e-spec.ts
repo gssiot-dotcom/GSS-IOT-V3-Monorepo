@@ -259,7 +259,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
   it("exposes ARCHIVE capabilities despite child and historical dependencies", async () => {
     const buildings = await request(server)
       .get("/company/buildings?pageSize=100")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     for (const id of [activeBuildingId, endedBuildingId, siteBuildingId]) {
       expect(
@@ -268,7 +269,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
     }
     const sites = await request(server)
       .get("/company/areas?pageSize=100")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(sites.body.items.find((item: { id: string }) => item.id === siteId)?.deletion.mode).toBe(
       "ARCHIVE",
@@ -278,7 +280,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
   it("archives a Building with an active assignment, retains history, and hides direct access", async () => {
     await request(server)
       .delete(`/company/buildings/${activeBuildingId}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ reason: "Archive active building" })
       .expect(200);
     expect(
@@ -292,11 +295,13 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
     ).resolves.not.toBeNull();
     await request(server)
       .get(`/company/buildings/${activeBuildingId}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     const detail = await request(server)
       .get(`/admin/archive/CONSTRUCTION_BUILDING/${activeBuildingId}`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(detail.body).toMatchObject({ root: { id: activeBuildingId } });
   });
@@ -304,7 +309,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
   it("archives a non-empty Site and exposes its child as parent-derived evidence", async () => {
     await request(server)
       .delete(`/company/areas/${siteId}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ reason: "Archive site subtree" })
       .expect(200);
     expect(await prisma.constructionArea.findUnique({ where: { id: siteId } })).toMatchObject({
@@ -315,7 +321,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
     ).toMatchObject({ deletedAt: null });
     const evidence = await request(server)
       .get(`/admin/archive?entityType=CONSTRUCTION_BUILDING&areaId=${siteId}&pageSize=50`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       evidence.body.items.find((item: { id: string }) => item.id === siteBuildingId),
@@ -325,32 +332,38 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
   it("preserves archive security, last-owner safety and purge permission conjunction", async () => {
     await request(server)
       .get("/admin/archive")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .get("/admin/archive")
-      .set("Authorization", `Bearer ${noArchiveToken}`)
+      .set("Cookie", noArchiveToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .delete(`/company/users/${soleOwnerId}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ reason: "must fail" })
       .expect(403);
 
     await request(server)
       .delete(`/company/buildings/${endedBuildingId}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ reason: "Archive historical assignment building" })
       .expect(200);
 
     const preview = await request(server)
       .post("/admin/archive/purge/preview")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ rootId: endedBuildingId, rootType: "CONSTRUCTION_BUILDING" })
       .expect(201);
     await request(server)
       .post("/admin/archive/purge/jobs")
-      .set("Authorization", `Bearer ${noArchiveToken}`)
+      .set("Cookie", noArchiveToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         confirmation: preview.body.rootName,
         idempotencyKey: randomUUID(),
@@ -361,7 +374,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
       .expect(403);
     await request(server)
       .post("/admin/archive/purge/jobs")
-      .set("Authorization", `Bearer ${purgeWithoutDomainToken}`)
+      .set("Cookie", purgeWithoutDomainToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         confirmation: preview.body.rootName,
         idempotencyKey: randomUUID(),
@@ -373,7 +387,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
     const idempotencyKey = randomUUID();
     const allowed = await request(server)
       .post("/admin/archive/purge/jobs")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         confirmation: preview.body.rootName,
         idempotencyKey,
@@ -384,7 +399,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
       .expect(201);
     const duplicate = await request(server)
       .post("/admin/archive/purge/jobs")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         confirmation: preview.body.rootName,
         idempotencyKey,
@@ -401,7 +417,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
     async (format) => {
       const requested = await request(server)
         .post("/admin/reports/export")
-        .set("Authorization", `Bearer ${archiveExporterToken}`)
+        .set("Cookie", archiveExporterToken)
+        .set("x-csrf-token", "test-csrf-token")
         .send({
           filters: { archiveEntityType: "CONSTRUCTION_AREA", companyId },
           format,
@@ -412,14 +429,16 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
       await expect(processor.processPending(100)).resolves.toBeGreaterThanOrEqual(1);
       const job = await request(server)
         .get(`/admin/reports/${requested.body.id}`)
-        .set("Authorization", `Bearer ${archiveExporterToken}`)
+        .set("Cookie", archiveExporterToken)
+        .set("x-csrf-token", "test-csrf-token")
         .expect(200);
       expect(job.body.status).toBe("COMPLETED");
       expect(job.body.exports).toHaveLength(1);
       expect(JSON.stringify(job.body)).not.toContain("storageKey");
       await request(server)
         .get(`/admin/reports/exports/${job.body.exports[0].id}/download`)
-        .set("Authorization", `Bearer ${archiveExporterToken}`)
+        .set("Cookie", archiveExporterToken)
+        .set("x-csrf-token", "test-csrf-token")
         .expect(200);
       await expect(
         prisma.auditLog.count({
@@ -432,7 +451,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
   it("never permits a Company user to request Archive evidence export", async () => {
     await request(server)
       .post("/company/reports/export")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ format: "CSV", reportType: "ARCHIVE_EVIDENCE" })
       .expect(403);
   });
@@ -448,12 +468,14 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
     };
     await request(server)
       .post("/admin/archive/sensor-readings/preview")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send(filters)
       .expect(403);
     const stale = await request(server)
       .post("/admin/archive/sensor-readings/preview")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send(filters)
       .expect(201);
     await prisma.sensorReading.create({
@@ -474,7 +496,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
     });
     await request(server)
       .post("/admin/archive/sensor-readings/jobs")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         ...filters,
         confirmation: stale.body.confirmation,
@@ -484,13 +507,15 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
       .expect(409);
     const fresh = await request(server)
       .post("/admin/archive/sensor-readings/preview")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send(filters)
       .expect(201);
     expect(fresh.body).toMatchObject({ eligible: 2, matched: 2, preservedReferenced: 0 });
     const queued = await request(server)
       .post("/admin/archive/sensor-readings/jobs")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         ...filters,
         confirmation: fresh.body.confirmation,
@@ -502,7 +527,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
     for (let attempt = 0; attempt < 4; attempt += 1) await processor.runOnce();
     const status = await request(server)
       .get(`/admin/archive/purge/jobs/${queued.body.id}`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(status.body).toMatchObject({ status: "COMPLETED" });
     await expect(
@@ -513,7 +539,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
   it("returns a safe deterministic reconciliation report with no unexpected orphan", async () => {
     const report = await request(server)
       .get("/admin/archive/reconciliation/report")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(report.body.unexpectedCount).toBe(0);
     expect(report.body.provenance.ambiguousLegacyAssignments).toBeGreaterThanOrEqual(1);
@@ -523,7 +550,8 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
   it("archives a non-empty Company while retaining its subtree as evidence", async () => {
     await request(server)
       .delete(`/admin/companies/${companyId}`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ reason: "Tenant offboarding" })
       .expect(200);
     expect(await prisma.company.findUnique({ where: { id: companyId } })).toMatchObject({
@@ -532,16 +560,19 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
     });
     await request(server)
       .get(`/admin/companies/${companyId}`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     const companies = await request(server)
       .get("/admin/companies?pageSize=100")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(companies.body.items.some((item: { id: string }) => item.id === companyId)).toBe(false);
     const detail = await request(server)
       .get(`/admin/archive/COMPANY/${companyId}`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(detail.body).toMatchObject({
       root: { id: companyId, name: `Archive Company ${suffix}` },
@@ -551,8 +582,14 @@ describe("two-tier Archive capability, evidence and security e2e", () => {
   async function login(email: string, company = false): Promise<string> {
     const response = await request(baseUrl)
       .post(company ? "/auth/company/login" : "/auth/gss/login")
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email, password: "archive-test-password" })
       .expect(201);
-    return response.body.accessToken as string;
+    const setCookies = response.headers["set-cookie"];
+    const cookieValues = Array.isArray(setCookies) ? setCookies : setCookies ? [setCookies] : [];
+    return ["gss_csrf=test-csrf-token", ...cookieValues.map((cookie) => cookie.split(";")[0])].join(
+      "; ",
+    );
   }
 });

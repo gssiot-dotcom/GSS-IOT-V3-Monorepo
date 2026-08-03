@@ -300,10 +300,11 @@ realtime contracts, RBAC/scope enforcement or alarm semantics.
 
 ## Targeted platform and Company branding contract
 
-- Admin and Company headers render the supplied public
-  `/assets/gss-logos/Gss-logo-blue.svg` as an image with localized accessible alt text and
-  `object-fit: contain`. No generated Activity mark or duplicate wordmark remains. Desktop height
-  is 40–44px and compact/mobile height is 34–38px.
+- Admin and Company headers render one shared platform-brand group with localized accessible image
+  text and the visible localized `Global Smart Solutions` wordmark. Light mode uses
+  `/assets/gss-logos/Gss-logo-blue.svg`; dark mode uses `/assets/gss-logos/GSS-logo.svg`.
+  `object-fit: contain` is preserved, no CSS filter or duplicate hidden logo is used, desktop
+  height is 40–44px and compact/mobile height is 34–38px.
 - Header order is mobile burger, platform brand, divider and translated current-route context.
   Header groups do not wrap or create document-level horizontal overflow.
 - The Admin sidebar renders `/assets/gss-logos/GSS-logo.svg` above `GSS IoT V3` and the localized

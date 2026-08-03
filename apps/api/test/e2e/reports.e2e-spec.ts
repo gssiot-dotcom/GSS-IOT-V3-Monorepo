@@ -243,11 +243,13 @@ describe("Phase 13 report foundation e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     await request(server)
       .get("/company/reports")
-      .set("Authorization", `Bearer ${companyViewToken}`)
+      .set("Cookie", companyViewToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .post("/company/reports/export")
-      .set("Authorization", `Bearer ${companyViewToken}`)
+      .set("Cookie", companyViewToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ reportType: ReportType.COMPANY_SUMMARY, format: ReportFileFormat.CSV })
       .expect(403);
   });
@@ -262,13 +264,15 @@ describe("Phase 13 report foundation e2e", () => {
     ]) {
       await request(server)
         .post("/company/reports/export")
-        .set("Authorization", `Bearer ${companyExportToken}`)
+        .set("Cookie", companyExportToken)
+        .set("x-csrf-token", "test-csrf-token")
         .send({ filters, format: ReportFileFormat.CSV, reportType: ReportType.SENSOR_HISTORY })
         .expect(403);
     }
     await request(server)
       .post("/company/reports/export")
-      .set("Authorization", `Bearer ${companyExportToken}`)
+      .set("Cookie", companyExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         filters: { from: "2026-07-22T00:00:00.000Z", to: "2026-07-21T00:00:00.000Z" },
         format: ReportFileFormat.CSV,
@@ -277,7 +281,8 @@ describe("Phase 13 report foundation e2e", () => {
       .expect(400);
     await request(server)
       .post("/company/reports/export")
-      .set("Authorization", `Bearer ${companyExportToken}`)
+      .set("Cookie", companyExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ format: ReportFileFormat.CSV, reportType: "unsupported" })
       .expect(400);
   });
@@ -286,7 +291,8 @@ describe("Phase 13 report foundation e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const companyResponse = await request(server)
       .post("/company/reports/export")
-      .set("Authorization", `Bearer ${companyExportToken}`)
+      .set("Cookie", companyExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         filters: { buildingId: allowedBuildingId },
         format: ReportFileFormat.CSV,
@@ -303,7 +309,8 @@ describe("Phase 13 report foundation e2e", () => {
 
     const gssResponse = await request(server)
       .post("/admin/reports/export")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         filters: { companyId: companyAId },
         format: ReportFileFormat.XLSX,
@@ -313,11 +320,13 @@ describe("Phase 13 report foundation e2e", () => {
     expect(gssResponse.body.companyId).toBe(companyAId);
     await request(server)
       .get(`/company/reports/${gssResponse.body.id as string}`)
-      .set("Authorization", `Bearer ${companyExportToken}`)
+      .set("Cookie", companyExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/admin/reports/${companyResponse.body.id as string}`)
-      .set("Authorization", `Bearer ${companyExportToken}`)
+      .set("Cookie", companyExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
   });
 
@@ -350,7 +359,8 @@ describe("Phase 13 report foundation e2e", () => {
     for (const item of companyCases) {
       const response = await request(server)
         .post("/company/reports/export")
-        .set("Authorization", `Bearer ${companyExportToken}`)
+        .set("Cookie", companyExportToken)
+        .set("x-csrf-token", "test-csrf-token")
         .send({ filters: item.filters, format: ReportFileFormat.CSV, reportType: item.reportType })
         .expect(201);
       const [first, second] = await Promise.all([
@@ -369,7 +379,8 @@ describe("Phase 13 report foundation e2e", () => {
     for (const reportType of [ReportType.USER_ACTIVITY, ReportType.AUDIT_LOG]) {
       const response = await request(server)
         .post("/admin/reports/export")
-        .set("Authorization", `Bearer ${gssToken}`)
+        .set("Cookie", gssToken)
+        .set("x-csrf-token", "test-csrf-token")
         .send({ format: ReportFileFormat.XLSX, reportType })
         .expect(201);
       const result = await processor.processJob(response.body.id as string);
@@ -408,7 +419,8 @@ describe("Phase 13 report foundation e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const jobResponse = await request(server)
       .post("/company/reports/export")
-      .set("Authorization", `Bearer ${companyExportToken}`)
+      .set("Cookie", companyExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         filters: { buildingId: allowedBuildingId },
         format: ReportFileFormat.CSV,
@@ -433,7 +445,8 @@ describe("Phase 13 report foundation e2e", () => {
 
     const download = await request(server)
       .get(`/company/reports/exports/${reportExport.id}/download`)
-      .set("Authorization", `Bearer ${companyExportToken}`)
+      .set("Cookie", companyExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(download.headers["content-disposition"]).toContain("sensor-report.csv");
     expect(download.text).toContain("node,value");
@@ -449,7 +462,8 @@ describe("Phase 13 report foundation e2e", () => {
     });
     const expired = await request(server)
       .get(`/company/reports/exports/${reportExport.id}/download`)
-      .set("Authorization", `Bearer ${companyExportToken}`)
+      .set("Cookie", companyExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     expect(expired.text).not.toContain("sensor-report.csv");
 
@@ -465,6 +479,8 @@ describe("Phase 13 report foundation e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     await request(server)
       .post("/auth/company/login")
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email: inactiveEmail, password: "test-password" })
       .expect(401);
   });
@@ -473,7 +489,8 @@ describe("Phase 13 report foundation e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const job = await request(server)
       .post("/company/reports/export")
-      .set("Authorization", `Bearer ${companyExportToken}`)
+      .set("Cookie", companyExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         filters: { buildingId: allowedBuildingId },
         format: "CSV",
@@ -490,7 +507,8 @@ describe("Phase 13 report foundation e2e", () => {
     });
     const response = await request(server)
       .get(`/company/reports/exports/${reportExport.id}/download`)
-      .set("Authorization", `Bearer ${foreignExportToken}`)
+      .set("Cookie", foreignExportToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     expect(response.text).not.toContain("private.csv");
   });
@@ -498,8 +516,14 @@ describe("Phase 13 report foundation e2e", () => {
   async function login(path: string, email: string): Promise<string> {
     const response = await request(app.getHttpServer() as Parameters<typeof request>[0])
       .post(path)
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email, password: "test-password" })
       .expect(201);
-    return response.body.accessToken as string;
+    const setCookies = response.headers["set-cookie"];
+    const cookieValues = Array.isArray(setCookies) ? setCookies : setCookies ? [setCookies] : [];
+    return ["gss_csrf=test-csrf-token", ...cookieValues.map((cookie) => cookie.split(";")[0])].join(
+      "; ",
+    );
   }
 });

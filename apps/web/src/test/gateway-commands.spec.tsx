@@ -9,7 +9,6 @@ import { apiRequest } from "../shared/api/api-client";
 const mockAuth = vi.hoisted(() => ({
   logout: vi.fn(),
   session: {
-    accessToken: "token",
     context: "gss-admin",
     user: {
       email: "admin@example.com",

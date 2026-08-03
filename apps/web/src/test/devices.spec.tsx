@@ -9,7 +9,6 @@ import { apiRequest } from "../shared/api/api-client";
 vi.mock("../shared/auth/auth-context", () => ({
   useAuth: () => ({
     session: {
-      accessToken: "token",
       context: "gss-admin",
       user: {
         email: "admin@example.com",

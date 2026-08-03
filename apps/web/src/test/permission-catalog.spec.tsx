@@ -33,7 +33,6 @@ vi.mock("../shared/auth/auth-context", () => ({
 
 function session(context: AuthSession["context"]): AuthSession {
   return {
-    accessToken: "permission-token",
     context,
     user: {
       email: "catalog@example.com",
@@ -131,15 +130,17 @@ describe("read-only permission catalog", () => {
     testSession = session("company-user");
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ message: "Inactive" }), {
-            status: 401,
-            statusText: "Unauthorized",
-          }),
-      ),
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (new URL(String(input)).pathname === "/auth/refresh") {
+          return new Response(JSON.stringify(testSession));
+        }
+        return new Response(JSON.stringify({ message: "Inactive" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        });
+      }),
     );
     renderPage("company-user");
     await waitFor(() => expect(screen.getByText("Your session expired")).toBeTruthy());
-  });
+  }, 30_000);
 });

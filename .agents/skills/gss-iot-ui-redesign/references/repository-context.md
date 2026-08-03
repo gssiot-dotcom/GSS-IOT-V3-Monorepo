@@ -35,20 +35,23 @@ apps/web/src/features/reports/
 apps/web/src/features/settings/
 ```
 
-## Known visual and UX weaknesses in the current implementation
+## Current post-Wave-4 audit hotspots
 
-Use these as audit starting points, not as an exhaustive defect list:
+Use these as audit starting points and verify them against the current branch before editing:
 
-- `CompanyResourcesPage.tsx` stacks Open, Monitoring, and a red Deactivate button vertically inside each table action cell.
-- `AdminCompanyDetailPage.tsx` exposes Deactivate directly in the page header beside Edit.
-- `CompanyUsersPage.tsx` renders full text Edit and Deactivate buttons in every row and exposes Deactivate directly in the position table.
-- `CompaniesPage.tsx` displays raw status strings and a repeated Open button instead of a stronger row hierarchy.
-- `DataTable` is intentionally minimal and lacks a standardized actions column, row navigation, sort/filter affordances, mobile fallback, density options, and complete pagination behavior.
-- Create/edit modals often place a single Save/Create button directly below fields with no consistent footer or Cancel action.
-- Several detail sections are plain stacks of tables with weak grouping and little visual hierarchy.
-- `PortalLayout` is functional but visually close to Mantine defaults, with little product identity.
-- The theme contains useful base tokens but does not yet produce a distinctive, cohesive premium application.
-- Status, destructive actions, disabled reasons, and row interaction patterns are inconsistent across page families.
+- `CompaniesPage.tsx` reads `event.currentTarget.value` inside functional state updaters in the
+  card/table Edit modal. Snapshot input values synchronously before calling `setState`; React may
+  clear `currentTarget` after dispatch.
+- `GssPlatformBrand` always renders the blue SVG. The shared header needs the approved blue asset in
+  light mode, white asset in dark mode, and a responsive `Global Smart Solutions` wordmark before
+  the existing route context.
+- `SensorHistoryPage.tsx` and `ArchivePage.tsx` still use native `datetime-local` fields, while the
+  Node detail Drawer already establishes the Mantine `DatePickerInput` calendar language.
+- `CompanyResourceDetailPages.tsx` puts Buildings/Assigned Users and Assigned Users/Gateways into
+  equal half-width table columns. It also fetches only the first 100 global records and filters them
+  client-side, so relationship counts and lists can be incomplete.
+- Resource detail pages need backend-scoped summary/read models, compact KPI/context cards, and
+  full-width vertical relationship sections with deliberate desktop/tablet/mobile composition.
 
 ## Existing advantages to reuse
 
@@ -58,3 +61,6 @@ Use these as audit starting points, not as an exhaustive defect list:
 - The application already has unit tests and Playwright infrastructure.
 - Legacy node-type image assets already exist.
 - Current pages already define much of the real data and business behavior that must be preserved.
+- Approved public platform logo assets already exist at
+  `apps/web/public/assets/gss-logos/Gss-logo-blue.svg` and
+  `apps/web/public/assets/gss-logos/GSS-logo.svg`; do not generate replacements.

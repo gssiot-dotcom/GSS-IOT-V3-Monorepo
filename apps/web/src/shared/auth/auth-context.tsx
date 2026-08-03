@@ -13,28 +13,20 @@ interface AuthContextValue {
 }
 
 const AuthContextValue = createContext<AuthContextValue | undefined>(undefined);
-const storageKey = "gss-iot-v3-auth-session";
+const storageKey = "gss-iot-v3-auth-context";
 
-interface StoredSession {
-  accessToken: string;
-  context: AuthContext;
-}
-
-function readStoredSession(): StoredSession | undefined {
+function readStoredContext(): AuthContext | undefined {
   if (typeof window === "undefined") return undefined;
+
+  if (window.location.pathname.startsWith("/admin")) return "gss-admin";
+  if (window.location.pathname.startsWith("/company")) return "company-user";
 
   const raw = window.sessionStorage.getItem(storageKey);
   if (!raw) return undefined;
 
   try {
-    const parsed = JSON.parse(raw) as Partial<StoredSession>;
-    if (
-      (parsed.context === "gss-admin" || parsed.context === "company-user") &&
-      typeof parsed.accessToken === "string" &&
-      parsed.accessToken.length > 0
-    ) {
-      return { accessToken: parsed.accessToken, context: parsed.context };
-    }
+    const parsed = JSON.parse(raw) as { context?: unknown };
+    if (parsed.context === "gss-admin" || parsed.context === "company-user") return parsed.context;
   } catch {
     // Ignore malformed client-side state and force a clean login.
   }
@@ -43,48 +35,66 @@ function readStoredSession(): StoredSession | undefined {
   return undefined;
 }
 
-function writeStoredSession(session: AuthSession): void {
-  window.sessionStorage.setItem(
-    storageKey,
-    JSON.stringify({ accessToken: session.accessToken, context: session.context }),
-  );
+function writeStoredContext(context: AuthContext): void {
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ context }));
 }
 
-function clearStoredSession(): void {
+function clearStoredContext(): void {
   window.sessionStorage.removeItem(storageKey);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession>();
   const [status, setStatus] = useState<AuthStatus>(() =>
-    readStoredSession() ? "loading" : "anonymous",
+    readStoredContext() ? "loading" : "anonymous",
   );
 
   useEffect(() => {
-    const stored = readStoredSession();
-    if (!stored) {
+    const context = readStoredContext();
+    if (!context) {
       setStatus("anonymous");
       return;
     }
 
     let cancelled = false;
     authApi
-      .getCurrentSession(stored.context, stored.accessToken)
+      .getCurrentSession(context)
       .then((restoredSession) => {
         if (cancelled) return;
         setSession(restoredSession);
-        writeStoredSession(restoredSession);
+        writeStoredContext(restoredSession.context);
         setStatus("authenticated");
       })
       .catch(() => {
         if (cancelled) return;
-        clearStoredSession();
+        clearStoredContext();
         setSession(undefined);
         setStatus("session-expired");
       });
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshed = (event: Event) => {
+      const nextSession = (event as CustomEvent<AuthSession>).detail;
+      if (!nextSession) return;
+      setSession(nextSession);
+      writeStoredContext(nextSession.context);
+      setStatus("authenticated");
+    };
+    const expired = () => {
+      clearStoredContext();
+      setSession(undefined);
+      setStatus("session-expired");
+    };
+    window.addEventListener(authApi.authSessionRefreshedEvent, refreshed);
+    window.addEventListener(authApi.authSessionExpiredEvent, expired);
+    return () => {
+      window.removeEventListener(authApi.authSessionRefreshedEvent, refreshed);
+      window.removeEventListener(authApi.authSessionExpiredEvent, expired);
     };
   }, []);
 
@@ -95,11 +105,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const nextSession = await authApi.login(context, email, password);
           setSession(nextSession);
-          writeStoredSession(nextSession);
+          writeStoredContext(nextSession.context);
           setStatus("authenticated");
           return nextSession;
         } catch (error) {
-          clearStoredSession();
+          clearStoredContext();
           setStatus("anonymous");
           throw error;
         }
@@ -107,10 +117,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout: async () => {
         try {
           if (session) {
-            await authApi.logout(session.accessToken);
+            await authApi.logout();
           }
         } finally {
-          clearStoredSession();
+          clearStoredContext();
           setSession(undefined);
           setStatus("anonymous");
         }

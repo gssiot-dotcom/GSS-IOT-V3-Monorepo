@@ -48,6 +48,12 @@ const rawApiEnvSchema = z
     ASSET_S3_REGION: z.string().min(1).optional(),
     ASSET_S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
     ASSET_STORAGE_PROVIDER: assetStorageProviderSchema.optional(),
+    AUTH_ACCESS_COOKIE_NAME: z.string().min(1).default("gss_access"),
+    AUTH_COOKIE_DOMAIN: z.string().min(1).optional(),
+    AUTH_COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).default("lax"),
+    AUTH_COOKIE_SECURE: optionalBooleanStringSchema,
+    AUTH_CSRF_COOKIE_NAME: z.string().min(1).default("gss_csrf"),
+    AUTH_REFRESH_COOKIE_NAME: z.string().min(1).default("gss_refresh"),
     CORS_ALLOWED_ORIGINS: z.string().optional(),
     DATABASE_URL: z.string().url(),
     DELETION_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(1_000).default(250),
@@ -57,8 +63,10 @@ const rawApiEnvSchema = z
     DELETION_WORKER_LEASE_MS: z.coerce.number().int().min(5_000).default(30_000),
     GSS_SUPER_ADMIN_EMAIL: z.string().email(),
     GSS_SUPER_ADMIN_PASSWORD: z.string().min(12),
-    JWT_EXPIRES_IN: z.coerce.number().int().positive().default(900),
-    JWT_SECRET: z.string().min(32),
+    JWT_ACCESS_EXPIRES_IN: z.coerce.number().int().positive().default(900),
+    JWT_ACCESS_SECRET: z.string().min(32),
+    JWT_REFRESH_EXPIRES_IN: z.coerce.number().int().positive().default(2_592_000),
+    JWT_REFRESH_SECRET: z.string().min(32),
     MQTT_BROKER_URL: z.string().url(),
     MQTT_CLIENT_ID: z.string().min(1).default("gss-iot-v3-api"),
     MQTT_COMMAND_ACK_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
@@ -100,6 +108,24 @@ const rawApiEnvSchema = z
       .default(10_000),
   })
   .superRefine((env, context) => {
+    const cookieSecure =
+      env.AUTH_COOKIE_SECURE === undefined
+        ? env.NODE_ENV === "production"
+        : env.AUTH_COOKIE_SECURE === "true" || env.AUTH_COOKIE_SECURE === "1";
+    if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
+      context.addIssue({
+        code: "custom",
+        message: "JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different.",
+        path: ["JWT_REFRESH_SECRET"],
+      });
+    }
+    if (env.AUTH_COOKIE_SAME_SITE === "none" && !cookieSecure) {
+      context.addIssue({
+        code: "custom",
+        message: "SameSite=None authentication cookies require AUTH_COOKIE_SECURE=true.",
+        path: ["AUTH_COOKIE_SECURE"],
+      });
+    }
     if (env.DELETION_WORKER_LEASE_MS <= env.DELETION_WORKER_HEARTBEAT_MS * 2) {
       context.addIssue({
         code: "custom",
@@ -176,6 +202,10 @@ export const apiEnvSchema = rawApiEnvSchema.transform((env) => ({
   ASSET_STORAGE_PROVIDER:
     env.ASSET_STORAGE_PROVIDER ??
     (env.NODE_ENV === "production" ? "s3" : env.NODE_ENV === "test" ? "memory" : "local"),
+  AUTH_COOKIE_SECURE:
+    env.AUTH_COOKIE_SECURE === undefined
+      ? env.NODE_ENV === "production"
+      : env.AUTH_COOKIE_SECURE === "true" || env.AUTH_COOKIE_SECURE === "1",
   CORS_ALLOWED_ORIGINS: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS, env.NODE_ENV),
   DELETION_WORKER_ENABLED:
     env.DELETION_WORKER_ENABLED === undefined

@@ -7,7 +7,7 @@ import { App } from "../App";
 import { gssTheme } from "@gss-iot/ui";
 import { cleanReportFilters, dateRangeError } from "../features/reports/ReportsPage";
 
-const storageKey = "gss-iot-v3-auth-session";
+const storageKey = "gss-iot-v3-auth-context";
 const apiBaseUrl = "http://localhost:3000";
 
 const job = (overrides: Partial<ReportJobRecord> = {}): ReportJobRecord => ({
@@ -30,7 +30,6 @@ const job = (overrides: Partial<ReportJobRecord> = {}): ReportJobRecord => ({
 });
 
 const companySession: AuthSession = {
-  accessToken: "company-token",
   context: "company-user",
   user: {
     companyId: "company-1",
@@ -44,7 +43,6 @@ const companySession: AuthSession = {
 };
 
 const adminSession = (permissions: string[]): AuthSession => ({
-  accessToken: "admin-token",
   context: "gss-admin",
   user: {
     email: "admin@example.com",
@@ -70,10 +68,7 @@ function renderApp(
   handler: (url: URL, init: RequestInit) => Response | undefined,
 ) {
   window.history.pushState({}, "", path);
-  window.sessionStorage.setItem(
-    storageKey,
-    JSON.stringify({ accessToken: session.accessToken, context }),
-  );
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ context }));
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {

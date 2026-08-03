@@ -252,9 +252,23 @@ describe("RBAC e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const response = await request(server)
       .post(path)
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email, password: "test-password" })
       .expect(201);
-    return response.body.accessToken as string;
+    return sessionCookies(response);
+  }
+
+  function sessionCookies(response: { headers: Record<string, unknown> }): string {
+    const setCookies = response.headers["set-cookie"];
+    const cookieValues = Array.isArray(setCookies)
+      ? setCookies.filter((value): value is string => typeof value === "string")
+      : typeof setCookies === "string"
+        ? [setCookies]
+        : [];
+    return ["gss_csrf=test-csrf-token", ...cookieValues.map((cookie) => cookie.split(";")[0])].join(
+      "; ",
+    );
   }
 
   it("manages GSS Administrators with separate permissions, safe responses and audited lifecycle", async () => {
@@ -271,16 +285,19 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .get("/admin/gss-users")
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .get("/admin/gss-users")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
 
     const created = await request(server)
       .post("/admin/gss-users")
-      .set("Authorization", `Bearer ${superToken}`)
+      .set("Cookie", superToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         email: "administrator-e2e@example.com",
         name: "Administrator Search Needle",
@@ -299,14 +316,16 @@ describe("RBAC e2e", () => {
 
     const searched = await request(server)
       .get("/admin/gss-users?page=1&pageSize=50&search=Search%20Needle")
-      .set("Authorization", `Bearer ${superToken}`)
+      .set("Cookie", superToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(searched.body).toMatchObject({ page: 1, pageSize: 50, total: 1 });
     expect(searched.body.items[0].id).toBe(created.body.id);
 
     const updated = await request(server)
       .patch(`/admin/gss-users/${created.body.id}`)
-      .set("Authorization", `Bearer ${superToken}`)
+      .set("Cookie", superToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         isActive: false,
         name: "Administrator Updated",
@@ -323,7 +342,8 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .delete(`/admin/gss-users/${created.body.id}`)
-      .set("Authorization", `Bearer ${superToken}`)
+      .set("Cookie", superToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(await prisma.gssAdminUser.findUnique({ where: { id: created.body.id } })).toBeNull();
     const auditActions = await prisma.auditLog.findMany({
@@ -349,17 +369,20 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .patch(`/admin/gss-users/${superUser.id}`)
-      .set("Authorization", `Bearer ${superToken}`)
+      .set("Cookie", superToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ isActive: false })
       .expect(403);
     await request(server)
       .patch(`/admin/gss-users/${superUser.id}`)
-      .set("Authorization", `Bearer ${superToken}`)
+      .set("Cookie", superToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ roleId: ordinaryRole.id })
       .expect(403);
     await request(server)
       .delete(`/admin/gss-users/${superUser.id}`)
-      .set("Authorization", `Bearer ${superToken}`)
+      .set("Cookie", superToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     expect(
       await prisma.gssAdminUser.findUnique({
@@ -396,17 +419,26 @@ describe("RBAC e2e", () => {
     expect(response.headers["access-control-allow-origin"]).toBeUndefined();
   });
 
-  it("adds CORS headers to GSS login and current-user requests without cookies", async () => {
+  it("adds credentialed CORS headers and HttpOnly cookies to GSS auth requests", async () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
 
     const loginResponse = await request(server)
       .post("/auth/gss/login")
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .set("Origin", loopbackOrigin)
       .send({ email: "super@example.com", password: "test-password" })
       .expect(201)
       .expect("Access-Control-Allow-Origin", loopbackOrigin);
 
-    expect(loginResponse.headers["set-cookie"]).toBeUndefined();
+    expect(loginResponse.headers["set-cookie"]).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("gss_access="),
+        expect.stringContaining("gss_refresh="),
+      ]),
+    );
+    expect(loginResponse.headers["access-control-allow-credentials"]).toBe("true");
+    expect(loginResponse.body.accessToken).toBeUndefined();
     expect(loginResponse.body.context).toBe("gss-admin");
     expect(loginResponse.body.user).toMatchObject({
       email: "super@example.com",
@@ -419,7 +451,7 @@ describe("RBAC e2e", () => {
     await request(server)
       .get("/auth/gss/me")
       .set("Origin", loopbackOrigin)
-      .set("Authorization", `Bearer ${loginResponse.body.accessToken as string}`)
+      .set("Cookie", sessionCookies(loginResponse))
       .expect(200)
       .expect("Access-Control-Allow-Origin", loopbackOrigin);
   });
@@ -429,6 +461,8 @@ describe("RBAC e2e", () => {
 
     const loginResponse = await request(server)
       .post("/auth/company/login")
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .set("Origin", loopbackOrigin)
       .send({ email: "scoped@example.com", password: "test-password" })
       .expect(201)
@@ -443,11 +477,12 @@ describe("RBAC e2e", () => {
     });
     expect(loginResponse.body.user.passwordHash).toBeUndefined();
     expect(loginResponse.body.user.tokenVersion).toBeUndefined();
+    expect(loginResponse.body.accessToken).toBeUndefined();
 
     await request(server)
       .get("/auth/company/me")
       .set("Origin", loopbackOrigin)
-      .set("Authorization", `Bearer ${loginResponse.body.accessToken as string}`)
+      .set("Cookie", sessionCookies(loginResponse))
       .expect(200)
       .expect("Access-Control-Allow-Origin", loopbackOrigin);
   });
@@ -457,7 +492,8 @@ describe("RBAC e2e", () => {
     const adminToken = await login("/auth/gss/login", "super@example.com");
     const adminSummary = await request(server)
       .get("/admin/dashboard/summary?range=30d")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
 
     expect(adminSummary.body.range.key).toBe("30d");
@@ -466,13 +502,15 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .get("/admin/dashboard/summary?range=365d")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(400);
 
     const companyToken = await login("/auth/company/login", "scoped@example.com");
     const companySummary = await request(server)
       .get("/company/dashboard/summary?range=7d")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(companySummary.body.kpis.activeBuildings).toBe(1);
     expect(companySummary.body.kpis.activeCompanyUsers).toBe(3);
@@ -480,7 +518,8 @@ describe("RBAC e2e", () => {
     const noPermissionToken = await login("/auth/company/login", "company-none@example.com");
     await request(server)
       .get("/company/dashboard/summary")
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
   });
 
@@ -584,7 +623,8 @@ describe("RBAC e2e", () => {
     const companyToken = await login("/auth/company/login", "catalog-company@example.com");
     const adminCatalog = await request(server)
       .get("/admin/permissions")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       adminCatalog.body.items.some(
@@ -607,7 +647,8 @@ describe("RBAC e2e", () => {
 
     const companyCatalog = await request(server)
       .get("/company/permissions")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       companyCatalog.body.items.some(
@@ -628,20 +669,24 @@ describe("RBAC e2e", () => {
     const noAdminPermissionToken = await login("/auth/gss/login", "gss-none@example.com");
     await request(server)
       .get("/admin/permissions")
-      .set("Authorization", `Bearer ${noAdminPermissionToken}`)
+      .set("Cookie", noAdminPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     const noCompanyPermissionToken = await login("/auth/company/login", "company-none@example.com");
     await request(server)
       .get("/company/permissions")
-      .set("Authorization", `Bearer ${noCompanyPermissionToken}`)
+      .set("Cookie", noCompanyPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .get("/company/permissions")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .get("/admin/permissions")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
 
     await prisma.companyUser.update({
@@ -650,7 +695,8 @@ describe("RBAC e2e", () => {
     });
     await request(server)
       .get("/company/permissions")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(401);
   });
 
@@ -659,7 +705,8 @@ describe("RBAC e2e", () => {
     const adminToken = await login("/auth/gss/login", "super@example.com");
     const roles = await request(server)
       .get("/admin/roles")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       roles.body.items.some((role: { key: string; isSuperAdmin: boolean }) => role.isSuperAdmin),
@@ -667,7 +714,8 @@ describe("RBAC e2e", () => {
 
     const permissions = await request(server)
       .get("/admin/roles/permissions")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       permissions.body.every(
@@ -678,12 +726,14 @@ describe("RBAC e2e", () => {
     const gssOnlyToken = await login("/auth/gss/login", "gss-none@example.com");
     await request(server)
       .get("/admin/roles")
-      .set("Authorization", `Bearer ${gssOnlyToken}`)
+      .set("Cookie", gssOnlyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
 
     await request(server)
       .post("/admin/roles")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         key: "bad-company-role",
         name: "Bad Company Role",
@@ -692,29 +742,34 @@ describe("RBAC e2e", () => {
       .expect(400);
     const customRole = await request(server)
       .post("/admin/roles")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ key: "settings-auditor", name: "Settings Auditor", permissionIds: [] })
       .expect(201);
     await request(server)
       .patch(`/admin/roles/${customRole.body.id}`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Settings Auditor Updated", permissionIds: [] })
       .expect(200);
     await request(server)
       .delete(`/admin/roles/${customRole.body.id}`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
 
     const superRole = roles.body.items.find((role: { isSuperAdmin: boolean }) => role.isSuperAdmin);
     await request(server)
       .patch(`/admin/roles/${superRole.id}`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Unsafe rename" })
       .expect(409);
     const inUseRole = roles.body.items.find((role: { key: string }) => role.key === "none");
     await request(server)
       .delete(`/admin/roles/${inUseRole.id}`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(409);
     expect(
       await prisma.auditLog.count({ where: { entityType: "GssRole" } }),
@@ -722,7 +777,8 @@ describe("RBAC e2e", () => {
 
     const systemSettings = await request(server)
       .get("/admin/settings/system")
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(systemSettings.body.controls.readOnly).toBe(true);
     expect(systemSettings.body.mqtt.brokerHost).toBeUndefined();
@@ -732,19 +788,22 @@ describe("RBAC e2e", () => {
     const companyViewToken = await login("/auth/company/login", "scoped@example.com");
     const companySettings = await request(server)
       .get("/company/settings")
-      .set("Authorization", `Bearer ${companyViewToken}`)
+      .set("Cookie", companyViewToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(companySettings.body.name).toBe("Company A");
     await request(server)
       .patch("/company/settings")
-      .set("Authorization", `Bearer ${companyViewToken}`)
+      .set("Cookie", companyViewToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Tampered", companyId: "foreign" })
       .expect(403);
 
     const companyManageToken = await login("/auth/company/login", "settings-manager@example.com");
     await request(server)
       .patch("/company/settings")
-      .set("Authorization", `Bearer ${companyManageToken}`)
+      .set("Cookie", companyManageToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email: "settings-manager@company-a.example", phone: "+82-2-0000-0000" })
       .expect(200)
       .expect(({ body }) => {
@@ -759,11 +818,13 @@ describe("RBAC e2e", () => {
     const noPermissionCompanyToken = await login("/auth/company/login", "company-none@example.com");
     await request(server)
       .get("/company/branding/logo")
-      .set("Authorization", `Bearer ${noPermissionCompanyToken}`)
+      .set("Cookie", noPermissionCompanyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .put("/company/settings/logo")
-      .set("Authorization", `Bearer ${companyViewToken}`)
+      .set("Cookie", companyViewToken)
+      .set("x-csrf-token", "test-csrf-token")
       .attach("logo", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), {
         filename: "logo.png",
         contentType: "image/png",
@@ -771,7 +832,8 @@ describe("RBAC e2e", () => {
       .expect(403);
     await request(server)
       .put("/company/settings/logo")
-      .set("Authorization", `Bearer ${companyManageToken}`)
+      .set("Cookie", companyManageToken)
+      .set("x-csrf-token", "test-csrf-token")
       .attach("logo", Buffer.from("<svg></svg>"), {
         filename: "logo.svg",
         contentType: "image/svg+xml",
@@ -779,7 +841,8 @@ describe("RBAC e2e", () => {
       .expect(400);
     await request(server)
       .put("/company/settings/logo")
-      .set("Authorization", `Bearer ${companyManageToken}`)
+      .set("Cookie", companyManageToken)
+      .set("x-csrf-token", "test-csrf-token")
       .attach("logo", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]), {
         filename: "logo.png",
         contentType: "text/plain",
@@ -789,19 +852,22 @@ describe("RBAC e2e", () => {
 
     const companyLogo = await request(server)
       .get("/company/branding/logo")
-      .set("Authorization", `Bearer ${noPermissionCompanyToken}`)
+      .set("Cookie", noPermissionCompanyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect("Content-Type", "image/png");
     expect(companyLogo.headers.etag).toMatch(/^"[a-f0-9]{64}"$/);
     expect(companyLogo.headers["cache-control"]).toContain("private");
     await request(server)
       .get("/company/branding/logo")
-      .set("Authorization", `Bearer ${noPermissionCompanyToken}`)
+      .set("Cookie", noPermissionCompanyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .set("If-None-Match", companyLogo.headers.etag as string)
       .expect(304);
     const settingsWithLogo = await request(server)
       .get("/company/settings")
-      .set("Authorization", `Bearer ${companyViewToken}`)
+      .set("Cookie", companyViewToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(settingsWithLogo.body.hasLogo).toBe(true);
     expect(settingsWithLogo.body.logoKey).toBeUndefined();
@@ -810,15 +876,18 @@ describe("RBAC e2e", () => {
     const noAdminPermissionToken = await login("/auth/gss/login", "gss-none@example.com");
     await request(server)
       .get(`/admin/companies/${companyId}/logo`)
-      .set("Authorization", `Bearer ${noAdminPermissionToken}`)
+      .set("Cookie", noAdminPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .get(`/admin/companies/${companyId}/logo`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .put(`/admin/companies/${companyId}/logo`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .attach("logo", Buffer.from("RIFF1234WEBPprivate"), {
         filename: "replacement.webp",
         contentType: "image/webp",
@@ -826,17 +895,20 @@ describe("RBAC e2e", () => {
       .expect(200);
     await request(server)
       .delete(`/admin/companies/${companyId}/logo`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect({ hasLogo: false });
     await request(server)
       .delete(`/admin/companies/${companyId}/logo`)
-      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Cookie", adminToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect({ hasLogo: false });
     await request(server)
       .get("/company/branding/logo")
-      .set("Authorization", `Bearer ${noPermissionCompanyToken}`)
+      .set("Cookie", noPermissionCompanyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     expect(
       await prisma.auditLog.count({ where: { action: { startsWith: "company-logo." } } }),
@@ -849,7 +921,8 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .get("/rbac-probe/admin")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
   });
 
@@ -858,6 +931,8 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .post("/auth/company/login")
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email: "inactive@example.com", password: "test-password" })
       .expect(401);
   });
@@ -868,7 +943,8 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .get(`/rbac-probe/buildings/${sameCompanyOtherBuildingId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
   });
 
@@ -878,11 +954,13 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .get(`/rbac-probe/buildings/${sameCompanyOtherBuildingId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/rbac-probe/buildings/${otherCompanyBuildingId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
   });
 
@@ -892,7 +970,8 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .get(`/rbac-probe/buildings/${sameCompanyOtherBuildingId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
   });
 
@@ -951,7 +1030,8 @@ describe("RBAC e2e", () => {
     const gssToken = await login("/auth/gss/login", "super@example.com");
     const firstCompany = await request(server)
       .post("/admin/companies")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         name: "Phase 3 Company A",
         platformManager: {
@@ -964,7 +1044,8 @@ describe("RBAC e2e", () => {
     expect(firstCompany.body.platformManager.roleId).toBeDefined();
     const firstCompanyRoles = await request(server)
       .get(`/admin/companies/${firstCompany.body.company.id}/roles`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(firstCompanyRoles.body.items.map((role: { key: string }) => role.key).sort()).toEqual(
       [...DEFAULT_COMPANY_ROLE_KEYS].sort(),
@@ -989,7 +1070,8 @@ describe("RBAC e2e", () => {
     });
     const backfilledRoles = await request(server)
       .get(`/admin/companies/${legacyCompany.id}/roles`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(backfilledRoles.body.items.map((role: { key: string }) => role.key).sort()).toEqual(
       [...DEFAULT_COMPANY_ROLE_KEYS].sort(),
@@ -1001,7 +1083,8 @@ describe("RBAC e2e", () => {
     ).toBe(DEFAULT_COMPANY_ROLE_KEYS.length);
     await request(server)
       .get(`/admin/companies/${legacyCompany.id}/roles`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       await prisma.companyRole.count({
@@ -1015,25 +1098,29 @@ describe("RBAC e2e", () => {
     expect(systemViewer).toMatchObject({ isSystem: true, name: "Viewer" });
     await request(server)
       .patch(`/admin/companies/${legacyCompany.id}/roles/${systemViewer.id}/permissions`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ permissionIds: companyPermissions.map(({ id }) => id) })
       .expect(403);
 
     const managerToken = await login("/auth/company/login", "phase3-manager@example.com");
     const companyArea = await request(server)
       .post("/company/areas")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Scoped Area" })
       .expect(201);
     await request(server)
       .post(`/company/areas/${companyArea.body.id}/buildings`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ title: "Scoped Building" })
       .expect(201);
 
     const secondCompany = await request(server)
       .post("/admin/companies")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         name: "Phase 3 Company B",
         platformManager: {
@@ -1045,18 +1132,21 @@ describe("RBAC e2e", () => {
       .expect(201);
     const foreignArea = await request(server)
       .post(`/admin/companies/${secondCompany.body.company.id}/areas`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Foreign Area" })
       .expect(201);
 
     const position = await request(server)
       .post("/company/positions")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ key: "site_manager", name: "Site Manager" })
       .expect(201);
     await request(server)
       .patch(`/company/users/${firstCompany.body.platformManager.id}/positions`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ assignments: [{ areaId: foreignArea.body.id, positionId: position.body.id }] })
       .expect(403);
 
@@ -1065,7 +1155,8 @@ describe("RBAC e2e", () => {
     });
     await request(server)
       .post("/company/users")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         directPermissions: [{ effect: "ALLOW", permissionId: gssOnlyPermission.id }],
         email: "invalid-permission@example.com",
@@ -1076,7 +1167,8 @@ describe("RBAC e2e", () => {
       .expect(403);
     await request(server)
       .delete(`/company/users/${firstCompany.body.platformManager.id}`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
 
     expect(
@@ -1090,7 +1182,8 @@ describe("RBAC e2e", () => {
     const gssToken = await login("/auth/gss/login", "super@example.com");
     const companyResponse = await request(server)
       .post("/admin/companies")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         name: "Phase 10 Company",
         platformManager: {
@@ -1103,7 +1196,8 @@ describe("RBAC e2e", () => {
     const managerToken = await login("/auth/company/login", "phase10-manager@example.com");
     const permissions = await request(server)
       .get("/company/permissions")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     const permissionByKey = new Map(
       (permissions.body.items as Array<{ id: string; key: string }>).map((permission) => [
@@ -1117,7 +1211,8 @@ describe("RBAC e2e", () => {
 
     const customRole = await request(server)
       .post("/company/roles")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         key: "Safety Lead",
         name: "Safety Lead",
@@ -1128,7 +1223,8 @@ describe("RBAC e2e", () => {
 
     const updatedRole = await request(server)
       .patch(`/company/roles/${customRole.body.id}`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         name: "Safety Lead Updated",
         permissionIds: [monitoringPermissionId, reportsPermissionId],
@@ -1146,29 +1242,34 @@ describe("RBAC e2e", () => {
     });
     await request(server)
       .patch(`/company/roles/${customRole.body.id}`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ permissionIds: [gssOnlyPermission.id] })
       .expect(403);
 
     const area = await request(server)
       .post("/company/areas")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Phase 10 Site" })
       .expect(201);
     const building = await request(server)
       .post(`/company/areas/${area.body.id}/buildings`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ title: "Phase 10 Building" })
       .expect(201);
     const position = await request(server)
       .post("/company/positions")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ key: "safety_owner", name: "Safety Owner" })
       .expect(201);
 
     const user = await request(server)
       .post("/company/users")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         areaAccess: [{ accessLevel: "VIEW", areaId: area.body.id }],
         directPermissions: [
@@ -1183,7 +1284,8 @@ describe("RBAC e2e", () => {
       .expect(201);
     await request(server)
       .patch(`/company/users/${user.body.id}/positions`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         assignments: [
           { areaId: area.body.id, buildingId: building.body.id, positionId: position.body.id },
@@ -1192,7 +1294,8 @@ describe("RBAC e2e", () => {
       .expect(200);
     const effectiveAccess = await request(server)
       .get(`/company/users/${user.body.id}/effective-access`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       effectiveAccess.body.effectivePermissions.map(
@@ -1210,27 +1313,32 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .delete(`/company/positions/${position.body.id}`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .patch(`/company/users/${user.body.id}/positions`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ assignments: [{ positionId: position.body.id }] })
       .expect(404);
 
     const archivePosition = await request(server)
       .post("/company/positions")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ key: "historical_position", name: "Historical Position" })
       .expect(201);
     await request(server)
       .patch(`/company/users/${user.body.id}/positions`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ assignments: [{ positionId: archivePosition.body.id }] })
       .expect(200);
     await request(server)
       .delete(`/company/positions/${archivePosition.body.id}`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       await prisma.companyUserPositionAssignment.findFirst({
@@ -1239,7 +1347,8 @@ describe("RBAC e2e", () => {
     ).toMatchObject({ status: "ENDED" });
     const positionsAfterRemoval = await request(server)
       .get("/company/positions?pageSize=100")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       positionsAfterRemoval.body.items.find(
@@ -1251,7 +1360,8 @@ describe("RBAC e2e", () => {
     ).toMatchObject({ isActive: false, deletedAt: expect.any(Date) });
     const archivedPositions = await request(server)
       .get("/company/positions?pageSize=100")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       archivedPositions.body.items.some(
@@ -1261,14 +1371,16 @@ describe("RBAC e2e", () => {
 
     const pristinePosition = await request(server)
       .post("/company/positions")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ key: "pristine_position", name: "Pristine Position" })
       .expect(201);
     await request(server)
       .delete(
         `/admin/companies/${companyResponse.body.company.id}/positions/${pristinePosition.body.id}`,
       )
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       await prisma.companyPosition.findUniqueOrThrow({ where: { id: pristinePosition.body.id } }),
@@ -1276,14 +1388,16 @@ describe("RBAC e2e", () => {
 
     const companyRoles = await request(server)
       .get("/company/roles")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     const noPermissionRole = (companyRoles.body.items as Array<{ id: string; key: string }>).find(
       (role) => role.key === "no_permission",
     )!;
     await request(server)
       .post("/company/users")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         email: "phase10-none@example.com",
         name: "Phase 10 None",
@@ -1294,26 +1408,31 @@ describe("RBAC e2e", () => {
     const noPermissionToken = await login("/auth/company/login", "phase10-none@example.com");
     await request(server)
       .get("/auth/company/me")
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get("/company/buildings")
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
 
     const activeToken = await login("/auth/company/login", "phase10-user@example.com");
     await request(server)
       .delete(`/company/users/${user.body.id}`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get("/auth/company/me")
-      .set("Authorization", `Bearer ${activeToken}`)
+      .set("Cookie", activeToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(401);
 
     const foreignCompany = await request(server)
       .post("/admin/companies")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         name: "Phase 10 Foreign Company",
         platformManager: {
@@ -1325,7 +1444,8 @@ describe("RBAC e2e", () => {
       .expect(201);
     await request(server)
       .patch(`/company/roles/${foreignCompany.body.platformManager.roleId}`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Cross Company Mutation" })
       .expect(404);
 
@@ -1338,7 +1458,8 @@ describe("RBAC e2e", () => {
     const gssToken = await login("/auth/gss/login", "super@example.com");
     const companyResponse = await request(server)
       .post("/admin/companies")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         name: "Phase 10 Maintenance Company",
         platformManager: {
@@ -1354,7 +1475,8 @@ describe("RBAC e2e", () => {
     );
     const permissions = await request(server)
       .get("/company/permissions")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     const permissionByKey = new Map(
       (permissions.body.items as Array<{ id: string; key: string }>).map((permission) => [
@@ -1365,28 +1487,33 @@ describe("RBAC e2e", () => {
 
     const area = await request(server)
       .post("/company/areas")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Phase 10 Maintenance Site" })
       .expect(201);
     const building = await request(server)
       .post(`/company/areas/${area.body.id}/buildings`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ title: "Phase 10 Maintenance Building" })
       .expect(201);
     const siblingArea = await request(server)
       .post("/company/areas")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Phase 10 Maintenance Sibling Site" })
       .expect(201);
     const siblingBuilding = await request(server)
       .post(`/company/areas/${siblingArea.body.id}/buildings`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ title: "Phase 10 Maintenance Sibling Building" })
       .expect(201);
 
     const customRole = await request(server)
       .post("/company/roles")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         key: "Scoped Maintenance Reader",
         name: "Scoped Maintenance Reader",
@@ -1399,7 +1526,8 @@ describe("RBAC e2e", () => {
       .expect(201);
     const scopedUser = await request(server)
       .post("/company/users")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         areaAccess: [{ accessLevel: "VIEW", areaId: area.body.id }],
         directPermissions: [
@@ -1418,7 +1546,8 @@ describe("RBAC e2e", () => {
     );
     const session = await request(server)
       .get("/auth/company/me")
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(session.body.user.permissions).toEqual(
       expect.arrayContaining([
@@ -1431,47 +1560,87 @@ describe("RBAC e2e", () => {
 
     await request(server)
       .get("/company/users")
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get(`/company/users/${scopedUser.body.id}/effective-access`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get("/company/roles")
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get("/company/positions")
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get(`/company/areas/${area.body.id}`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get(`/company/buildings/${building.body.id}`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
+    const areaOverview = await request(server)
+      .get(`/company/areas/${area.body.id}/overview`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(200);
+    expect(areaOverview.body).toMatchObject({
+      buildings: { available: true },
+      metrics: { gateways: null, nodes: null },
+      users: { available: true },
+    });
+    const buildingOverview = await request(server)
+      .get(`/company/buildings/${building.body.id}/overview`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(200);
+    expect(buildingOverview.body).toMatchObject({
+      devices: { available: false, items: [], total: null },
+      nodes: { available: false, items: [], total: null },
+      users: { available: true },
+    });
     await request(server)
       .get(`/company/areas/${siblingArea.body.id}`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/company/buildings/${siblingBuilding.body.id}`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(404);
+    await request(server)
+      .get(`/company/areas/${siblingArea.body.id}/overview`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(404);
+    await request(server)
+      .get(`/company/buildings/${siblingBuilding.body.id}/overview`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
 
     const companyRoles = await request(server)
       .get("/company/roles")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     const siteManagerRole = (companyRoles.body.items as Array<{ id: string; key: string }>).find(
       (role) => role.key === "site_manager",
     )!;
     await request(server)
       .post("/company/users")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         areaAccess: [{ accessLevel: "VIEW", areaId: area.body.id }],
         email: "phase10-maintenance-site-manager@example.com",
@@ -1486,16 +1655,19 @@ describe("RBAC e2e", () => {
     );
     await request(server)
       .get(`/company/areas/${area.body.id}`)
-      .set("Authorization", `Bearer ${siteManagerToken}`)
+      .set("Cookie", siteManagerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get(`/company/buildings/${building.body.id}`)
-      .set("Authorization", `Bearer ${siteManagerToken}`)
+      .set("Cookie", siteManagerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
 
     await request(server)
       .post("/company/users")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         email: "phase10-maintenance-no-scope@example.com",
         name: "Phase 10 Maintenance No Scope",
@@ -1509,11 +1681,23 @@ describe("RBAC e2e", () => {
     );
     await request(server)
       .get(`/company/areas/${area.body.id}`)
-      .set("Authorization", `Bearer ${noScopeToken}`)
+      .set("Cookie", noScopeToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(404);
+    await request(server)
+      .get(`/company/areas/${area.body.id}/overview`)
+      .set("Cookie", noScopeToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(404);
+    await request(server)
+      .get(`/company/buildings/${building.body.id}/overview`)
+      .set("Cookie", noScopeToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/company/buildings/${building.body.id}`)
-      .set("Authorization", `Bearer ${noScopeToken}`)
+      .set("Cookie", noScopeToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
 
     const noPermissionRole = (companyRoles.body.items as Array<{ id: string; key: string }>).find(
@@ -1521,7 +1705,8 @@ describe("RBAC e2e", () => {
     )!;
     await request(server)
       .post("/company/users")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         areaAccess: [{ accessLevel: "VIEW", areaId: area.body.id }],
         email: "phase10-maintenance-no-permission@example.com",
@@ -1536,16 +1721,29 @@ describe("RBAC e2e", () => {
     );
     await request(server)
       .get(`/company/areas/${area.body.id}`)
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(403);
+    await request(server)
+      .get(`/company/areas/${area.body.id}/overview`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(403);
+    await request(server)
+      .get(`/company/buildings/${building.body.id}/overview`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .get(`/company/buildings/${building.body.id}`)
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
 
     const foreignCompany = await request(server)
       .post("/admin/companies")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         name: "Phase 10 Maintenance Foreign Company",
         platformManager: {
@@ -1561,26 +1759,41 @@ describe("RBAC e2e", () => {
     );
     const foreignArea = await request(server)
       .post("/company/areas")
-      .set("Authorization", `Bearer ${foreignManagerToken}`)
+      .set("Cookie", foreignManagerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ name: "Phase 10 Maintenance Foreign Site" })
       .expect(201);
     const foreignBuilding = await request(server)
       .post(`/company/areas/${foreignArea.body.id}/buildings`)
-      .set("Authorization", `Bearer ${foreignManagerToken}`)
+      .set("Cookie", foreignManagerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ title: "Phase 10 Maintenance Foreign Building" })
       .expect(201);
     await request(server)
       .get(`/company/areas/${foreignArea.body.id}`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/company/buildings/${foreignBuilding.body.id}`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(404);
+    await request(server)
+      .get(`/company/areas/${foreignArea.body.id}/overview`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
+      .expect(404);
+    await request(server)
+      .get(`/company/buildings/${foreignBuilding.body.id}/overview`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
 
     await request(server)
       .patch(`/company/users/${companyResponse.body.platformManager.id}`)
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ roleId: customRole.body.id })
       .expect(403);
     expect(foreignCompany.body.company.id).toBeDefined();

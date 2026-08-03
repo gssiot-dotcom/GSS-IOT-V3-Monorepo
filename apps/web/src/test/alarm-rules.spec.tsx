@@ -6,11 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
 
-const storageKey = "gss-iot-v3-auth-session";
+const storageKey = "gss-iot-v3-auth-context";
 const apiBaseUrl = "http://localhost:3000";
 
 const companySession: AuthSession = {
-  accessToken: "company-token",
   context: "company-user",
   user: {
     companyId: "company-1",
@@ -24,7 +23,6 @@ const companySession: AuthSession = {
 };
 
 const adminSession: AuthSession = {
-  accessToken: "admin-token",
   context: "gss-admin",
   user: {
     email: "admin@example.com",
@@ -64,10 +62,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function storeSession(session: AuthSession) {
-  window.sessionStorage.setItem(
-    storageKey,
-    JSON.stringify({ accessToken: session.accessToken, context: session.context }),
-  );
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ context: session.context }));
 }
 
 function renderApp(path: string) {

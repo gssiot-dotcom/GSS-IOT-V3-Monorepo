@@ -37,6 +37,7 @@ import { readWebEnv } from "../../app/env";
 import { LanguageSelector, t, tf } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { refreshSession } from "../../shared/auth/auth-api";
 import {
   CompanyBrandingProvider,
   useCompanyBranding,
@@ -109,15 +110,23 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
         if (!cancelled) setUnreadCount(0);
       });
     const socket = io(readWebEnv().apiBaseUrl, {
-      auth: { token: session.accessToken },
       transports: ["websocket"],
+      withCredentials: true,
     });
+    let refreshAttempted = false;
     socket.on("connect", () => {
       setRealtimeState("connected");
       socket.emit("notifications:join");
     });
     socket.on("disconnect", () => setRealtimeState("offline"));
-    socket.on("connect_error", () => setRealtimeState("offline"));
+    socket.on("connect_error", () => {
+      setRealtimeState("offline");
+      if (refreshAttempted) return;
+      refreshAttempted = true;
+      void refreshSession()
+        .then(() => socket.connect())
+        .catch(() => undefined);
+    });
     socket.io.on("reconnect_attempt", () => setRealtimeState("reconnecting"));
     socket.io.on("reconnect", () => setRealtimeState("connected"));
     socket.on("notifications:update", (event: { unreadCount?: number }) => {
@@ -135,7 +144,7 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
       socket.io.off("reconnect");
       socket.close();
     };
-  }, [canViewNotifications, context, session]);
+  }, [canViewNotifications, context, session?.user.id]);
 
   return (
     <AppShell
@@ -153,12 +162,11 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
               opened={opened}
               size="sm"
             />
-            <Box className="gss-shell-header-brand-full">
-              <GssPlatformBrand label={t("branding.platformName")} />
-            </Box>
-            <Box className="gss-shell-header-brand-compact">
-              <GssPlatformBrand compact label={t("branding.platformName")} />
-            </Box>
+            <GssPlatformBrand
+              colorScheme={computedColorScheme}
+              label={t("branding.platformName")}
+              wordmark={t("branding.platformName")}
+            />
             <Divider orientation="vertical" />
             <Stack gap={0} style={{ minWidth: 0 }}>
               <Text fw={700} lineClamp={1} size="sm">

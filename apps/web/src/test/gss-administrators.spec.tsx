@@ -8,7 +8,6 @@ import { GssAdministratorsPage } from "../features/settings/GssAdministratorsPag
 import { apiRequest } from "../shared/api/api-client";
 
 const session: AuthSession = {
-  accessToken: "token",
   context: "gss-admin",
   user: {
     email: "admin@example.com",

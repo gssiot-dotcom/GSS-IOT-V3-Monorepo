@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
 
-const storageKey = "gss-iot-v3-auth-session";
+const storageKey = "gss-iot-v3-auth-context";
 const role: GssRoleRecord = {
   _count: { users: 0 },
   id: "role-1",
@@ -46,7 +46,6 @@ const systemSettings: SystemSettingsRecord = {
 
 function sessionFor(context: AuthSession["context"], permissions: string[]): AuthSession {
   return {
-    accessToken: "settings-token",
     context,
     user: {
       company: context === "company-user" ? { id: company.id, name: company.name } : null,
@@ -99,10 +98,7 @@ function setupFetch(session: AuthSession) {
     return new Response(null, { status: 404 });
   });
   vi.stubGlobal("fetch", fetchMock);
-  window.sessionStorage.setItem(
-    storageKey,
-    JSON.stringify({ accessToken: session.accessToken, context: session.context }),
-  );
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ context: session.context }));
   return fetchMock;
 }
 
@@ -198,15 +194,12 @@ describe("Task 06 settings pages", () => {
       return new Response(null, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
-    window.sessionStorage.setItem(
-      storageKey,
-      JSON.stringify({ accessToken: session.accessToken, context: session.context }),
-    );
+    window.sessionStorage.setItem(storageKey, JSON.stringify({ context: session.context }));
 
     renderRoute("/company/settings");
     expect(await screen.findByRole("heading", { level: 1, name: "Company settings" })).toBeTruthy();
     expect(await screen.findAllByAltText("Acme Safety logo")).toHaveLength(2);
-    expect(screen.getAllByAltText("Global Smart Solutions")).toHaveLength(2);
+    expect(screen.getAllByAltText("Global Smart Solutions")).toHaveLength(1);
     const logoPlate = document.querySelector(".gss-company-sidebar-logo-plate");
     expect(logoPlate).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Replace logo" }));

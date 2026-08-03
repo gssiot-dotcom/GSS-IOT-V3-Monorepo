@@ -432,39 +432,44 @@ export function CompaniesPage() {
         <Stack>
           <TextInput
             label={t("organizations.name")}
-            onChange={(event) =>
-              setEditForm((value) => ({ ...value, name: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value;
+              setEditForm((current) => ({ ...current, name: nextValue }));
+            }}
             required
             value={editForm.name}
           />
           <TextInput
             label={t("organizations.code")}
-            onChange={(event) =>
-              setEditForm((value) => ({ ...value, code: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value;
+              setEditForm((current) => ({ ...current, code: nextValue }));
+            }}
             value={editForm.code}
           />
           <TextInput
             label={t("organizations.managerEmail")}
-            onChange={(event) =>
-              setEditForm((value) => ({ ...value, email: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value;
+              setEditForm((current) => ({ ...current, email: nextValue }));
+            }}
             type="email"
             value={editForm.email}
           />
           <TextInput
             label={t("organizations.phone")}
-            onChange={(event) =>
-              setEditForm((value) => ({ ...value, phone: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value;
+              setEditForm((current) => ({ ...current, phone: nextValue }));
+            }}
             value={editForm.phone}
           />
           <TextInput
             label={t("organizations.address")}
-            onChange={(event) =>
-              setEditForm((value) => ({ ...value, address: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value;
+              setEditForm((current) => ({ ...current, address: nextValue }));
+            }}
             value={editForm.address}
           />
           <ModalFormFooter

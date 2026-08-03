@@ -6,10 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
 
-const storageKey = "gss-iot-v3-auth-session";
+const storageKey = "gss-iot-v3-auth-context";
 const apiBaseUrl = "http://localhost:3000";
 const session: AuthSession = {
-  accessToken: "dashboard-token",
   context: "company-user",
   user: {
     company: { id: "company-1", name: "Acme Safety" },
@@ -65,10 +64,7 @@ function setupFetch(summary: DashboardSummary = fullSummary) {
     return new Response(null, { status: 404 });
   });
   vi.stubGlobal("fetch", fetchMock);
-  window.sessionStorage.setItem(
-    storageKey,
-    JSON.stringify({ accessToken: session.accessToken, context: session.context }),
-  );
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ context: session.context }));
   return fetchMock;
 }
 
@@ -103,10 +99,7 @@ function setupReportsFetch() {
     return new Response(null, { status: 404 });
   });
   vi.stubGlobal("fetch", fetchMock);
-  window.sessionStorage.setItem(
-    storageKey,
-    JSON.stringify({ accessToken: reportSession.accessToken, context: reportSession.context }),
-  );
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ context: reportSession.context }));
   return fetchMock;
 }
 

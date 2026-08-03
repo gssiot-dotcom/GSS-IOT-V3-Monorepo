@@ -97,7 +97,6 @@ describe("building image viewer", () => {
 
   it("does not request private image metadata without building-plans.view", () => {
     mocks.session = {
-      accessToken: "token",
       context: "company-user",
       user: {
         companyId: "company-1",

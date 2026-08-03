@@ -131,3 +131,22 @@ The checklist remains partially open because report/export scope enforcement, al
       exactly-one receipt, 100k retention and reconciliation are repository-tested.
 - [ ] Approve and verify production S3 version/delete-marker cleanup, backup/legal hold, restore
       authorization and purge SLA before destructive production enablement.
+
+## 2026-08-01 cookie-session and scoped-overview checks
+
+- [x] REST and Socket.IO accept the access JWT from the configured HttpOnly cookie only; Web code
+      and browser storage contain no bearer credential.
+- [x] Access and refresh JWTs use distinct required secrets, audiences and expiries; production
+      cookie defaults are Secure and insecure `SameSite=None` is rejected.
+- [x] Refresh rows store token hashes, rotate once, retain family lineage and revoke the active
+      family on reuse; parallel refresh produces one success and one rejection.
+- [x] Logout increments token version, revokes active refresh sessions and clears access, refresh
+      and CSRF cookies with matching paths/attributes.
+- [x] Every unsafe request, including login/refresh/logout, requires double-submit CSRF and rejects
+      an untrusted Origin/Referer; credentialed CORS does not allow Authorization.
+- [x] A Web 401 uses one shared refresh promise, retries each request at most once and transitions
+      to expired session without a retry loop when refresh fails.
+- [x] Area/Building overview base permission plus scope is enforced in guards; optional Users,
+      Buildings and Devices sections require their own effective view permission.
+- [x] Overview totals are independent database counts, previews are bounded to 100, and one user is
+      deduplicated even when owner, direct-area and direct-building access overlap.

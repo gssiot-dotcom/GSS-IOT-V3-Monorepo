@@ -454,3 +454,22 @@ No new Prisma migration or seed is introduced by this correction. Phase 14 remai
 - [ ] Approve backup retention/legal hold/restore policy (`OPEN_DECISION`).
 - [x] Run storage failure/retry, orphan reconciliation, crash recovery and 100k+ SensorReading
       performance/lock tests before production enablement.
+
+## 2026-08-01 production correctness and session hardening
+
+- [x] Snapshot all five Company edit inputs before React functional state updates and cover the
+      complete PATCH payload regression.
+- [x] Render one light/dark-aware platform header brand with the visible localized wordmark and
+      responsive no-overlap contract.
+- [x] Replace native Sensor History/Archive date-time fields with shared Mantine controls, local to
+      UTC normalization, exact 24-hour default, inclusive date-only Archive `to`, validation and
+      DST-focused tests.
+- [x] Add scope-guarded backend Area/Building overview read models with independent totals,
+      100-row previews, permission-aware optional sections and deduplicated access-source evidence.
+- [x] Move REST and Socket.IO auth to HttpOnly access cookies; add distinct rotating refresh JWTs,
+      hash-only PostgreSQL sessions, reuse-family revocation, CSRF, credentialed CORS and one-shot
+      frontend retry.
+- [x] Add forward migration and production environment, deployment and rollback documentation.
+- [x] Complete the repository lint, typecheck, unit, build, API E2E and browser verification gates.
+
+Phase 14 remains not started by this correction.

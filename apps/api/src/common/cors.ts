@@ -5,8 +5,8 @@ export function createCorsOptions(env: Pick<ApiEnv, "CORS_ALLOWED_ORIGINS">): Co
   const allowedOrigins = new Set(env.CORS_ALLOWED_ORIGINS);
 
   return {
-    allowedHeaders: ["authorization", "content-type"],
-    credentials: false,
+    allowedHeaders: ["accept-language", "content-type", "x-csrf-token"],
+    credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     origin: (origin, callback) => {
       if (!origin) {

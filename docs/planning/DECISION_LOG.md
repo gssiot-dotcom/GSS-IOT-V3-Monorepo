@@ -1270,3 +1270,60 @@ values and filename without changing the public DTO or report routes.
 Center remains 보관함 and physical purge remains 영구 삭제. No RBAC, company scope, MQTT, alarm
 counter, retention, archive or purge rule changes. `pnpm i18n:audit` blocks catalog drift, placeholder
 drift, implicit browser-locale formatting and new direct visible JSX literals.
+
+## DEC-2026-08-01-01 — Theme-aware platform header identity (ACCEPTED)
+
+**Decision:** The authenticated Admin and Company headers render a single shared platform brand
+before the divider and current-route context. Light mode uses
+`/assets/gss-logos/Gss-logo-blue.svg`; dark mode uses `/assets/gss-logos/GSS-logo.svg`. The visible
+localized `Global Smart Solutions` wordmark remains part of that same brand group at desktop and
+mobile widths, while lower-priority route context may still be hidden on narrow screens. The image
+keeps one localized accessible name and the adjacent visible wordmark is hidden from the
+accessibility tree to avoid duplicate announcement.
+
+**Supersedes/clarifies:** The older `DESIGN_SYSTEM.md`, `UI_UX_SPEC.md` and `PAGE_INVENTORY.md`
+wording that prescribed the blue asset for every theme and repeated a separate compact header
+brand is superseded. Company-owned sidebar branding and all permission, routing, notification,
+realtime and theme persistence behavior remain unchanged.
+
+**Consequences:** Brand selection is driven by Mantine's computed color scheme, not CSS filters or
+duplicated hidden images. Responsive QA must prove the logo, wordmark, divider, route context and
+existing controls do not overlap or introduce document-level horizontal overflow.
+
+## DEC-2026-08-01-02 — HttpOnly access and rotating refresh sessions (ACCEPTED)
+
+**Decision:** Supersede the Phase 1/7 browser bearer-session foundation. Browser REST and Socket.IO
+authentication accepts only a short-lived access JWT in an HttpOnly cookie. A separate HttpOnly
+refresh JWT uses a distinct secret/audience, a narrow `/auth` cookie path and a one-time rotating
+PostgreSQL `RefreshSession` whose raw token is never stored. Rotation records lineage; reuse revokes
+the still-active family. The browser stores only auth context, uses double-submit CSRF for every
+unsafe request and performs one shared refresh plus one retry after a 401. Replacement refresh
+credentials inherit the family's original absolute expiry instead of sliding the lifetime forward;
+each Socket.IO connection cycle likewise attempts refresh/reconnect only once until it connects.
+
+**Supersedes/clarifies:** DEC-2026-002 and DEC-2026-007 remain authoritative for separate auth
+contexts, active-user checks and token-version invalidation, but their bearer delivery and deferred
+refresh statements are superseded. DEC-2026-010's audience fix remains valid for both token types.
+DEC-2026-025's route restoration remains valid, but no credential is persisted in Web storage.
+
+**Consequences:** Login/refresh bodies expose only the public session. CORS is credentialed and
+allowlisted; Authorization is not an allowed browser header. Logout revokes refresh sessions and
+increments token version. Migration `20260801090000_http_only_rotating_auth` deploys before the API,
+existing browser sessions log in again, and production requires two distinct secrets plus HTTPS
+cookie settings. Detailed rollout/rollback is in `HTTP_ONLY_AUTH_SESSION_SECURITY.md`.
+
+## DEC-2026-08-01-03 — Backend-composed scoped overviews and local date/time boundaries (ACCEPTED)
+
+**Decision:** Company Area/Building overview pages consume dedicated backend-composed read models.
+The base endpoint repeats permission plus scope enforcement; each optional section has its own view
+permission, database total and at-most-100 preview. Access-source evidence is deduplicated per user.
+The browser does not aggregate totals from paginated collection responses.
+
+Sensor History and Archive use shared Mantine local date/optional-time controls and normalize once
+to UTC request values. History is an exact 24-hour default with exclusive `to`; Archive date-only
+`to` includes the last local millisecond. Invalid, partial, reversed and over-31-day ranges are
+blocked before network calls, and runtime timezone rules supply DST offsets.
+
+**Consequences:** Scope/RBAC remain backend boundaries, overview response size is bounded, and list
+pagination no longer changes KPI truth. List/export paths receive the same normalized Archive
+filters. No alarm, retention, MQTT or stored UTC semantics change.

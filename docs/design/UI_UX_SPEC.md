@@ -310,9 +310,9 @@ a logo error does not prevent a valid name/code save, and a name/code error does
 already committed logo operation.
 
 Responsive acceptance covers 1440x900, 1280x800, 768x1024, 390x844 and 375x812 in light and dark
-themes. Mobile keeps the supplied blue SVG logo and burger visible, hides lower-priority route context when necessary, and shows the
-Company tenant brand when the drawer opens. No viewport may introduce document-level horizontal
-overflow.
+themes. Mobile keeps the theme-selected SVG, visible localized wordmark and burger available,
+hides lower-priority route context when necessary, and shows the Company tenant brand when the
+drawer opens. No viewport may introduce document-level horizontal overflow.
 
 Admin Company Detail is full-width beneath a route-derived `WorkspaceTabs` bar. Overview, Sites,
 Buildings, Users and Devices preserve their nested URLs and refresh/deep-link selection. Admin

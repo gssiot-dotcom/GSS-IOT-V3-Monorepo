@@ -1,6 +1,7 @@
 import type { AddressInfo } from "node:net";
 
 import type { INestApplication } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import { loadApiEnv } from "@gss-iot/config";
 import { hash } from "bcrypt";
@@ -18,6 +19,7 @@ describe("Phase 6 monitoring and realtime e2e", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let monitoring: MonitoringService;
+  let jwt: JwtService;
   let serverUrl: string;
   let allowedBuildingId: string;
   let otherBuildingId: string;
@@ -43,6 +45,7 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     serverUrl = `http://127.0.0.1:${address.port}`;
     prisma = app.get(PrismaService);
     monitoring = app.get(MonitoringService);
+    jwt = app.get(JwtService);
 
     await prisma.reportExport.deleteMany();
     await prisma.reportJob.deleteMany();
@@ -322,9 +325,15 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const response = await request(server)
       .post(path)
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email, password: "test-password" })
       .expect(201);
-    return response.body.accessToken as string;
+    const setCookies = response.headers["set-cookie"];
+    const cookieValues = Array.isArray(setCookies) ? setCookies : setCookies ? [setCookies] : [];
+    return ["gss_csrf=test-csrf-token", ...cookieValues.map((cookie) => cookie.split(";")[0])].join(
+      "; ",
+    );
   }
 
   async function waitForCount(model: "latestNodeState" | "sensorReading", count: number) {
@@ -380,7 +389,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     await request(server)
       .get("/admin/monitoring/options")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(body.companies).toHaveLength(2);
@@ -391,7 +401,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
       .get(
         `/admin/monitoring/summary?companyId=${(await prisma.company.findFirstOrThrow({ where: { name: "Phase 6 Company A" } })).id}`,
       )
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(body.gateways.total).toBeGreaterThanOrEqual(2);
@@ -407,7 +418,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
       });
     await request(server)
       .get("/admin/monitoring/options")
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
   });
 
@@ -528,7 +540,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
 
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/monitoring`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(
@@ -540,7 +553,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
 
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/monitoring/door_node`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(body.states).toHaveLength(1);
@@ -549,7 +563,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
 
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/monitoring/angle_node`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(body.states).toHaveLength(1);
@@ -558,7 +573,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
 
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/monitoring/gangform_node`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(body.states[0].node.id).toBe(gangformNodeId);
@@ -568,7 +584,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
       .get(
         `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history?page=1&pageSize=50&${range}`,
       )
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(body.items).toHaveLength(2);
@@ -579,7 +596,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
       .get(
         `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history/chart?${range}`,
       )
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(body.items.length).toBeGreaterThanOrEqual(2);
@@ -604,7 +622,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
       .get(
         `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history?page=1&pageSize=50&from=${encodeURIComponent(boundaryFrom)}&to=${encodeURIComponent(boundaryTo)}`,
       )
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(body.items.map((item: { id: string }) => item.id)).toContain(
@@ -618,36 +637,43 @@ describe("Phase 6 monitoring and realtime e2e", () => {
       .get(
         `/admin/monitoring/buildings/${allowedBuildingId}/node-types/door_node/nodes/${doorNodeId}/history/chart?${range}`,
       )
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get(
         `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history?page=1&pageSize=25&${range}`,
       )
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(400);
     await request(server)
       .get(
         `/company/buildings/${allowedBuildingId}/monitoring/door_node/nodes/${doorNodeId}/history?page=1&pageSize=50&from=2026-07-01T00%3A00%3A00.000Z&to=2026-07-03T00%3A00%3A00.000Z`,
       )
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(400);
 
     await request(server)
       .get(`/company/buildings/${otherBuildingId}/monitoring/door_node`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/monitoring/door_node`)
-      .set("Authorization", `Bearer ${noScopeToken}`)
+      .set("Cookie", noScopeToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/monitoring/door_node`)
-      .set("Authorization", `Bearer ${foreignToken}`)
+      .set("Cookie", foreignToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/admin/monitoring/buildings/${allowedBuildingId}/node-types/door_node`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(foreignBuildingId).toBeDefined();
   });
@@ -659,7 +685,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     });
     const adminOptions = await request(server)
       .get("/admin/monitoring/history/options")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       adminOptions.body.buildings.some((item: { id: string }) => item.id === allowedBuildingId),
@@ -669,7 +696,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     );
     const companyOptions = await request(server)
       .get("/company/monitoring/history/options")
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(companyOptions.body.companies).toEqual([]);
     expect(companyOptions.body.buildings.map((item: { id: string }) => item.id)).toEqual([
@@ -680,7 +708,8 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     const baseQuery = `from=${from}&to=${to}&buildingId=${allowedBuildingId}&page=1&pageSize=50`;
     const admin = await request(server)
       .get(`/admin/monitoring/history?${baseQuery}&companyId=${building.companyId}`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(admin.body).toMatchObject({ page: 1, pageSize: 50 });
     expect(admin.body.items.length).toBeGreaterThan(0);
@@ -692,28 +721,32 @@ describe("Phase 6 monitoring and realtime e2e", () => {
 
     const chart = await request(server)
       .get(`/admin/monitoring/history/chart?${baseQuery}`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(chart.body).toMatchObject({ sampleLimit: 500, sampled: false });
     expect(chart.body.returnedPointCount).toBe(chart.body.items.length);
 
     const company = await request(server)
       .get(`/company/monitoring/history?${baseQuery}`)
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(company.body.items.length).toBeGreaterThan(0);
     await request(server)
       .get(
         `/company/monitoring/history?from=${from}&to=${to}&buildingId=${otherBuildingId}&page=1&pageSize=50`,
       )
-      .set("Authorization", `Bearer ${scopedToken}`)
+      .set("Cookie", scopedToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     const overLimitFrom = encodeURIComponent(
       new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000).toISOString(),
     );
     await request(server)
       .get(`/admin/monitoring/history?from=${overLimitFrom}&to=${to}&page=1&pageSize=50`)
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(400);
   });
 
@@ -761,11 +794,55 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     wrongRoom.disconnect();
   });
 
+  it("rejects wrong-context, expired and revoked access cookies on Socket.IO joins", async () => {
+    const env = loadApiEnv();
+    const user = await prisma.companyUser.findUniqueOrThrow({
+      where: { email: "p6-scoped@example.com" },
+    });
+    const basePayload = {
+      context: "company-user",
+      sub: user.id,
+      tokenVersion: user.tokenVersion,
+      typ: "access",
+    } as const;
+    const [wrongContext, expired, revoked] = await Promise.all([
+      jwt.signAsync(basePayload, {
+        audience: "gss-admin",
+        expiresIn: 900,
+        secret: env.JWT_ACCESS_SECRET,
+      }),
+      jwt.signAsync(basePayload, {
+        audience: "company-user",
+        expiresIn: -1,
+        secret: env.JWT_ACCESS_SECRET,
+      }),
+      jwt.signAsync(
+        { ...basePayload, tokenVersion: user.tokenVersion - 1 },
+        {
+          audience: "company-user",
+          expiresIn: 900,
+          secret: env.JWT_ACCESS_SECRET,
+        },
+      ),
+    ]);
+
+    for (const token of [wrongContext, expired, revoked]) {
+      const socket = await connect(`gss_access=${token}`);
+      const ack = await emitAck(socket, "monitoring:join", {
+        buildingId: allowedBuildingId,
+        nodeType: "door_node",
+      });
+      expect(ack.ok).toBe(false);
+      socket.disconnect();
+    }
+  });
+
   async function connect(token: string): Promise<Socket> {
     const socket = connectSocket(serverUrl, {
-      auth: { token },
+      extraHeaders: { cookie: token },
       forceNew: true,
       transports: ["websocket"],
+      withCredentials: true,
     });
     await onceConnect(socket);
     return socket;

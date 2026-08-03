@@ -27,6 +27,11 @@ import {
 import { formatDateTime, nodeTypeLabel, t, tf, tx } from "../../app/i18n";
 import { ApiError, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { LocalDateTimeInput } from "../../shared/date-time/LocalDateTimeInput";
+import {
+  localDateTimeValue,
+  normalizeRequiredDateTimeRange,
+} from "../../shared/date-time/local-date-time-range";
 import { hasPermission } from "../../shared/rbac/has-permission";
 import { NodeHistoryChart } from "./components/NodeHistoryChart";
 
@@ -81,10 +86,13 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
   const [nodeTypeId, setNodeTypeId] = useState("");
   const [nodeId, setNodeId] = useState("");
   const [faultFiltered, setFaultFiltered] = useState("");
-  const [from, setFrom] = useState(() =>
-    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
-  );
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 16));
+  const [dateRange, setDateRange] = useState(() => {
+    const to = new Date();
+    return {
+      from: localDateTimeValue(new Date(to.getTime() - 24 * 60 * 60 * 1000)),
+      to: localDateTimeValue(to),
+    };
+  });
   const [data, setData] = useState<HistoryResponse>();
   const [chart, setChart] = useState<HistoryChartResponse>();
   const [options, setOptions] = useState<HistoryOptions>();
@@ -95,13 +103,33 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
   const [purgeJob, setPurgeJob] = useState<DeletionJob>();
   const [purgeError, setPurgeError] = useState("");
   const base = context === "admin" ? "/admin" : "/company";
+  const normalizedRange = useMemo(
+    () =>
+      normalizeRequiredDateTimeRange(dateRange.from, dateRange.to, {
+        maxRangeMs: 31 * 24 * 60 * 60 * 1000,
+        toBoundary: "exclusive",
+      }),
+    [dateRange],
+  );
+  const rangeError = normalizedRange.error
+    ? t(
+        normalizedRange.error === "required"
+          ? "common.timeRangeRequired"
+          : normalizedRange.error === "reversed"
+            ? "common.timeRangeReversed"
+            : normalizedRange.error === "max-range"
+              ? "common.timeRangeMax31Days"
+              : "common.timeRangeInvalid",
+      )
+    : undefined;
 
   const filters = useCallback(() => {
+    if (!normalizedRange.value) return null;
     const query = new URLSearchParams({
-      from: new Date(from).toISOString(),
+      from: normalizedRange.value.from,
       page: String(page),
       pageSize: String(pageSize),
-      to: new Date(to).toISOString(),
+      to: normalizedRange.value.to,
     });
     if (status) query.set("status", status);
     if (companyId) query.set("companyId", companyId);
@@ -116,21 +144,26 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
     buildingId,
     companyId,
     faultFiltered,
-    from,
     nodeId,
     nodeTypeId,
+    normalizedRange,
     page,
     pageSize,
     status,
-    to,
   ]);
 
   const load = useCallback(async () => {
     if (!session) return;
     setLoading(true);
     setError(false);
+    const query = filters();
+    if (!query) {
+      setData(undefined);
+      setChart(undefined);
+      setLoading(false);
+      return;
+    }
     try {
-      const query = filters();
       const chartQuery = new URLSearchParams(query);
       chartQuery.delete("page");
       chartQuery.delete("pageSize");
@@ -202,25 +235,30 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
     return () => window.clearInterval(timer);
   }, [purgeJob, session]);
 
-  const filterBody = () => ({
-    ...(context === "admin" && companyId ? { companyId } : {}),
-    ...(areaId ? { areaId } : {}),
-    ...(buildingId ? { buildingId } : {}),
-    ...(nodeTypeId ? { nodeTypeId } : {}),
-    ...(nodeId ? { nodeId } : {}),
-    ...(status ? { status } : {}),
-    ...(faultFiltered ? { faultFiltered: faultFiltered === "true" } : {}),
-    from: new Date(from).toISOString(),
-    to: new Date(to).toISOString(),
-  });
+  const filterBody = () =>
+    normalizedRange.value
+      ? {
+          ...(context === "admin" && companyId ? { companyId } : {}),
+          ...(areaId ? { areaId } : {}),
+          ...(buildingId ? { buildingId } : {}),
+          ...(nodeTypeId ? { nodeTypeId } : {}),
+          ...(nodeId ? { nodeId } : {}),
+          ...(status ? { status } : {}),
+          ...(faultFiltered ? { faultFiltered: faultFiltered === "true" } : {}),
+          from: normalizedRange.value.from,
+          to: normalizedRange.value.to,
+        }
+      : null;
 
   const exportData = async () => {
     if (!session) return;
+    const bodyFilters = filterBody();
+    if (!bodyFilters) return;
     await apiRequest(session, `${base}/reports/export`, {
       body: JSON.stringify({
         format: "CSV",
         reportType: "SENSOR_HISTORY",
-        filters: filterBody(),
+        filters: bodyFilters,
       }),
       method: "POST",
     });
@@ -228,11 +266,13 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
 
   const previewPurge = async () => {
     if (!session || context !== "admin") return;
+    const bodyFilters = filterBody();
+    if (!bodyFilters) return;
     setPurgeError("");
     try {
       setPurgePreview(
         await apiRequest<PurgePreview>(session, "/admin/archive/sensor-readings/preview", {
-          body: JSON.stringify(filterBody()),
+          body: JSON.stringify(bodyFilters),
           method: "POST",
         }),
       );
@@ -247,12 +287,14 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
 
   const enqueuePurge = async () => {
     if (!session || !purgePreview) return;
+    const bodyFilters = filterBody();
+    if (!bodyFilters) return;
     setPurgeError("");
     try {
       setPurgeJob(
         await apiRequest<DeletionJob>(session, "/admin/archive/sensor-readings/jobs", {
           body: JSON.stringify({
-            ...filterBody(),
+            ...bodyFilters,
             confirmation: purgeConfirmation,
             idempotencyKey: crypto.randomUUID(),
             previewHash: purgePreview.previewHash,
@@ -315,17 +357,21 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
       />
       <Paper p="md" withBorder>
         <Group align="end" grow>
-          <TextInput
+          <LocalDateTimeInput
             label={t("history.from")}
-            type="datetime-local"
-            value={from}
-            onChange={(event) => setFrom(event.currentTarget.value)}
+            onChange={(value) => {
+              setPage(1);
+              setDateRange((current) => ({ ...current, from: value }));
+            }}
+            value={dateRange.from}
           />
-          <TextInput
+          <LocalDateTimeInput
             label={t("history.to")}
-            type="datetime-local"
-            value={to}
-            onChange={(event) => setTo(event.currentTarget.value)}
+            onChange={(value) => {
+              setPage(1);
+              setDateRange((current) => ({ ...current, to: value }));
+            }}
+            value={dateRange.to}
           />
           <NativeSelect
             label={t("history.status")}
@@ -340,6 +386,11 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
             ]}
           />
         </Group>
+        {rangeError ? (
+          <Alert color="red" mt="sm">
+            {rangeError}
+          </Alert>
+        ) : null}
         <Group align="end" grow mt="sm">
           {context === "admin" ? (
             <NativeSelect

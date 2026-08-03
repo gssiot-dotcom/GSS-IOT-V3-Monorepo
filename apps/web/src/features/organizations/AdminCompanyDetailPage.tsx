@@ -246,11 +246,11 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
   ]);
 
   useEffect(() => {
-    const loadKey = `${session?.accessToken ?? ""}:${companyId}`;
+    const loadKey = `${session?.user.id ?? ""}:${companyId}`;
     if (!loadKey || initialLoadKeyRef.current === loadKey) return;
     initialLoadKeyRef.current = loadKey;
     void load();
-  }, [companyId, load, session?.accessToken]);
+  }, [companyId, load, session?.user.id]);
 
   const roleOptions = useMemo(
     () => detail.roles.map((role) => ({ label: role.name, value: role.id })),

@@ -12,13 +12,25 @@ export interface AuthTokenPayload {
   context: AuthContext;
   sub: string;
   tokenVersion: number;
+  typ?: "access";
+}
+
+export interface RefreshTokenPayload {
+  aud?: string;
+  context: AuthContext;
+  familyId: string;
+  jti: string;
+  sessionId: string;
+  sub: string;
+  tokenVersion: number;
+  typ: "refresh";
 }
 
 export type ActiveUser = GssAdminUser | CompanyUser;
 
 export interface AuthenticatedRequest {
   headers: {
-    authorization?: string;
+    cookie?: string;
   };
   params: Record<string, string | undefined>;
   auth?: {

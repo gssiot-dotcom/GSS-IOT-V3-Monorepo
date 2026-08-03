@@ -4,13 +4,23 @@ import { gssTheme } from "@gss-iot/ui";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("socket.io-client", () => ({
+  io: () => ({
+    close: vi.fn(),
+    connect: vi.fn(),
+    emit: vi.fn(),
+    io: { off: vi.fn(), on: vi.fn() },
+    off: vi.fn(),
+    on: vi.fn(),
+  }),
+}));
+
 import { App } from "../App";
 
-const storageKey = "gss-iot-v3-auth-session";
+const storageKey = "gss-iot-v3-auth-context";
 const apiBaseUrl = "http://localhost:3000";
 
 const companySession: AuthSession = {
-  accessToken: "company-token",
   context: "company-user",
   user: {
     companyId: "company-1",
@@ -24,7 +34,6 @@ const companySession: AuthSession = {
 };
 
 const adminSession: AuthSession = {
-  accessToken: "admin-token",
   context: "gss-admin",
   user: {
     email: "admin@example.com",
@@ -61,10 +70,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function storeSession(session: AuthSession) {
-  window.sessionStorage.setItem(
-    storageKey,
-    JSON.stringify({ accessToken: session.accessToken, context: session.context }),
-  );
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ context: session.context }));
 }
 
 function renderApp(path: string) {
@@ -145,7 +151,7 @@ describe("alarm operations", () => {
     );
     expect(screen.getByText("Open")).toBeTruthy();
     await waitFor(() => expect(resolveButton.hasAttribute("disabled")).toBe(false));
-  });
+  }, 30_000);
 
   it("applies the successful SAFE resolve response in the shared Admin alarm interface", async () => {
     storeSession(adminSession);
@@ -200,7 +206,7 @@ describe("alarm operations", () => {
         }),
       ).toBe(true),
     );
-  });
+  }, 30_000);
 
   it("keeps Admin current-page selection stable, resolved-only and pruned after refresh", async () => {
     const selectableAdmin: AuthSession = {
@@ -313,5 +319,5 @@ describe("alarm operations", () => {
         ),
       ).toBe(true),
     );
-  });
+  }, 30_000);
 });

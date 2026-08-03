@@ -1420,6 +1420,8 @@ Company user request:
 | GET    | `/auth/gss/me`        | authenticated active admin        | -       |
 | POST   | `/auth/company/login` | public                            | -       |
 | GET    | `/auth/company/me`    | authenticated active company user | company |
+| GET    | `/auth/csrf`          | public CSRF bootstrap             | -       |
+| POST   | `/auth/refresh`       | valid rotating refresh session    | context |
 | POST   | `/auth/logout`        | authenticated                     | -       |
 
 ### 9.2 GSS Admin endpoints
@@ -1494,11 +1496,13 @@ Company user request:
 | GET    | `/company/areas`                                      | `areas.view`             | company/area filtered |
 | POST   | `/company/areas`                                      | `areas.create`           | company               |
 | GET    | `/company/areas/:areaId`                              | `areas.view`             | area                  |
+| GET    | `/company/areas/:areaId/overview`                     | `areas.view`             | area                  |
 | PATCH  | `/company/areas/:areaId`                              | `areas.update`           | area manage           |
 | DELETE | `/company/areas/:areaId`                              | `areas.delete`           | area manage           |
 | GET    | `/company/buildings`                                  | `buildings.view`         | scoped buildings      |
 | POST   | `/company/areas/:areaId/buildings`                    | `buildings.create`       | area manage           |
 | GET    | `/company/buildings/:buildingId`                      | `buildings.view`         | building              |
+| GET    | `/company/buildings/:buildingId/overview`             | `buildings.view`         | building              |
 | PATCH  | `/company/buildings/:buildingId`                      | `buildings.update`       | building manage       |
 | DELETE | `/company/buildings/:buildingId`                      | `buildings.delete`       | building manage       |
 | GET    | `/company/buildings/:buildingId/plan`                 | `building-plans.view`    | building              |
@@ -2190,3 +2194,25 @@ the Archive report type. Filtered SensorReading purge requires both `archive.pur
 `sensor-readings.purge` and persists a typed backend filter snapshot rather than browser-collected
 IDs. All earlier permission-plus-scope, separate-auth-context and backend-boundary invariants remain
 authoritative.
+
+## 21. HttpOnly session, local-time range and scoped-overview addendum (2026-08-01)
+
+Browser authentication uses separate short-lived access and long-lived rotating refresh JWTs in
+HttpOnly cookies. Only the non-sensitive auth context is retained in `sessionStorage`. GSS Admin and
+Company User audiences, token versions and active-principal checks remain separate. Unsafe HTTP
+requests require a readable CSRF cookie plus matching `X-CSRF-Token`, and an Origin/Referer in the
+configured CORS allowlist when either header is present. REST and Socket.IO read the access token
+from the cookie only; bearer-header fallback is intentionally absent. The complete contract,
+deployment order and rollback notes are in `HTTP_ONLY_AUTH_SESSION_SECURITY.md`.
+
+Company Area and Building overview endpoints are backend-composed, scope-guarded read models.
+Base-resource permission and scope are mandatory. Optional Buildings, Users or Devices sections
+are emitted only when the caller has the corresponding view permission. Each section has an
+independent database total and a bounded 100-row preview; the browser never derives totals or
+access-source badges from a first page.
+
+Sensor History and Archive date/time controls are local presentation inputs normalized to UTC at
+the API boundary. History defaults to an exact 24-hour instant range, uses an exclusive `to`, and
+rejects partial, invalid, reversed or greater-than-31-day ranges before requesting data. Archive
+times are optional; a date-only `to` means the final local millisecond of that date. DST offset
+changes are determined by the browser runtime, not by fixed-offset arithmetic.

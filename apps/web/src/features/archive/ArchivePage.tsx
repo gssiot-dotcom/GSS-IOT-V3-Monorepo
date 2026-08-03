@@ -23,7 +23,7 @@ import {
   IconRefresh,
   IconTrash,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import {
   CollectionPagination,
   EmptyState,
@@ -35,6 +35,8 @@ import {
 import { formatDateTime, t, tf, tx } from "../../app/i18n";
 import { ApiError, apiDownload, apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { LocalDateTimeInput } from "../../shared/date-time/LocalDateTimeInput";
+import { normalizeOptionalDateTimeRange } from "../../shared/date-time/local-date-time-range";
 import { hasPermission } from "../../shared/rbac/has-permission";
 
 const entityTypes = [
@@ -113,8 +115,10 @@ export function ArchivePage(): ReactElement {
   const [areaId, setAreaId] = useState("");
   const [buildingId, setBuildingId] = useState("");
   const [archivedBy, setArchivedBy] = useState("");
-  const [archivedFrom, setArchivedFrom] = useState("");
-  const [archivedTo, setArchivedTo] = useState("");
+  const [archivedRange, setArchivedRange] = useState({
+    from: { date: null as string | null, time: "" },
+    to: { date: null as string | null, time: "" },
+  });
   const [data, setData] = useState<ArchiveResponse>();
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -133,11 +137,30 @@ export function ArchivePage(): ReactElement {
     hasPermission(session, domainPermission[type]),
   );
   const canExport = Boolean(session && hasPermission(session, "reports.export"));
+  const normalizedRange = useMemo(
+    () =>
+      normalizeOptionalDateTimeRange(archivedRange.from, archivedRange.to, {
+        toBoundary: "inclusive",
+      }),
+    [archivedRange],
+  );
+  const rangeError = normalizedRange.error
+    ? t(
+        normalizedRange.error === "reversed"
+          ? "common.timeRangeReversed"
+          : "common.timeRangeInvalid",
+      )
+    : undefined;
 
   const load = useCallback(async () => {
     if (!session) return;
     setLoading(true);
     setError(false);
+    if (normalizedRange.error) {
+      setData(undefined);
+      setLoading(false);
+      return;
+    }
     const query = new URLSearchParams({
       entityType: type,
       page: String(page),
@@ -148,8 +171,8 @@ export function ArchivePage(): ReactElement {
     if (areaId.trim()) query.set("areaId", areaId.trim());
     if (buildingId.trim()) query.set("buildingId", buildingId.trim());
     if (archivedBy.trim()) query.set("archivedBy", archivedBy.trim());
-    if (archivedFrom) query.set("archivedFrom", new Date(archivedFrom).toISOString());
-    if (archivedTo) query.set("archivedTo", new Date(archivedTo).toISOString());
+    if (normalizedRange.value.from) query.set("archivedFrom", normalizedRange.value.from);
+    if (normalizedRange.value.to) query.set("archivedTo", normalizedRange.value.to);
     try {
       setData(await apiRequest<ArchiveResponse>(session, `/admin/archive?${query}`));
     } catch {
@@ -159,8 +182,7 @@ export function ArchivePage(): ReactElement {
     }
   }, [
     archivedBy,
-    archivedFrom,
-    archivedTo,
+    normalizedRange,
     areaId,
     buildingId,
     companyId,
@@ -206,16 +228,19 @@ export function ArchivePage(): ReactElement {
     return () => window.clearInterval(timer);
   }, [exportJob, session]);
 
-  const archiveFilters = () => ({
-    ...(companyId.trim() ? { companyId: companyId.trim() } : {}),
-    ...(areaId.trim() ? { areaId: areaId.trim() } : {}),
-    ...(buildingId.trim() ? { buildingId: buildingId.trim() } : {}),
-    ...(archivedBy.trim() ? { archivedBy: archivedBy.trim() } : {}),
-    ...(archivedFrom ? { archivedFrom: new Date(archivedFrom).toISOString() } : {}),
-    ...(archivedTo ? { archivedTo: new Date(archivedTo).toISOString() } : {}),
-    ...(search.trim() ? { search: search.trim() } : {}),
-    archiveEntityType: type,
-  });
+  const archiveFilters = () =>
+    normalizedRange.error
+      ? null
+      : {
+          ...(companyId.trim() ? { companyId: companyId.trim() } : {}),
+          ...(areaId.trim() ? { areaId: areaId.trim() } : {}),
+          ...(buildingId.trim() ? { buildingId: buildingId.trim() } : {}),
+          ...(archivedBy.trim() ? { archivedBy: archivedBy.trim() } : {}),
+          ...(normalizedRange.value.from ? { archivedFrom: normalizedRange.value.from } : {}),
+          ...(normalizedRange.value.to ? { archivedTo: normalizedRange.value.to } : {}),
+          ...(search.trim() ? { search: search.trim() } : {}),
+          archiveEntityType: type,
+        };
 
   const openDetail = async (row: ArchiveRow) => {
     if (!session) return;
@@ -283,12 +308,14 @@ export function ArchivePage(): ReactElement {
 
   const requestExport = async () => {
     if (!session || !canExport) return;
+    const filters = archiveFilters();
+    if (!filters) return;
     setExportError("");
     try {
       setExportJob(
         await apiRequest<ReportJobRecord>(session, "/admin/reports/export", {
           body: JSON.stringify({
-            filters: archiveFilters(),
+            filters,
             format: exportFormat,
             reportType: "ARCHIVE_EVIDENCE",
           }),
@@ -406,25 +433,28 @@ export function ArchivePage(): ReactElement {
           />
         </Group>
         <Group align="end" grow mt="sm">
-          <TextInput
-            type="datetime-local"
+          <LocalDateTimeInput
             label={t("archive.archivedFrom")}
-            value={archivedFrom}
-            onChange={(event) => {
+            value={archivedRange.from}
+            onChange={(value) => {
               setPage(1);
-              setArchivedFrom(event.currentTarget.value);
+              setArchivedRange((current) => ({ ...current, from: value }));
             }}
           />
-          <TextInput
-            type="datetime-local"
+          <LocalDateTimeInput
             label={t("archive.archivedTo")}
-            value={archivedTo}
-            onChange={(event) => {
+            value={archivedRange.to}
+            onChange={(value) => {
               setPage(1);
-              setArchivedTo(event.currentTarget.value);
+              setArchivedRange((current) => ({ ...current, to: value }));
             }}
           />
         </Group>
+        {rangeError ? (
+          <Alert color="red" mt="sm">
+            {rangeError}
+          </Alert>
+        ) : null}
       </Paper>
       {exportError ? <Alert color="red">{exportError}</Alert> : null}
       {exportJob ? (

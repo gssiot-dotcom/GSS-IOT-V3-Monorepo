@@ -227,9 +227,15 @@ describe("Phase 5 gateway command outbox e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const response = await request(server)
       .post("/auth/gss/login")
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email, password: "test-password" })
       .expect(201);
-    return response.body.accessToken as string;
+    const setCookies = response.headers["set-cookie"];
+    const cookieValues = Array.isArray(setCookies) ? setCookies : setCookies ? [setCookies] : [];
+    return ["gss_csrf=test-csrf-token", ...cookieValues.map((cookie) => cookie.split(";")[0])].join(
+      "; ",
+    );
   }
 
   async function waitForStatus(commandId: string, status: string): Promise<void> {
@@ -314,13 +320,15 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const emptyList = await request(server)
       .get("/admin/gateway-commands")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(emptyList.body).toEqual({ items: [], page: 1, pageSize: 50, total: 0 });
 
     const created = await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ buildingId, gatewayId, mode: "REPLACE", nodeIds: [nodeId], nodeTypeId })
       .expect(201);
     expect(created.body.commandNumber).toBe(2);
@@ -340,11 +348,13 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     await request(server)
       .get("/admin/gateway-commands")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     const detail = await request(server)
       .get(`/admin/gateway-commands/${created.body.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(detail.body.status).toBe("ACKNOWLEDGED");
     expect(
@@ -353,7 +363,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const wakeSecurity = await request(server)
       .post("/admin/gateway-commands/wake-security")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ alarmActive: true, alertLevel: 1, gatewayId })
       .expect(201);
     expect(wakeSecurity.body.payload).toMatchObject({
@@ -364,7 +375,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const alarmLevels = await request(server)
       .post("/admin/gateway-commands/alarm-levels")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ alarmEnabled: true, enabled: true, gatewayId, nodeTypeId })
       .expect(201);
     expect(alarmLevels.body.payload).toMatchObject({
@@ -375,7 +387,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const faultFilter = await request(server)
       .post("/admin/gateway-commands/fault-filter")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayId, nodeIds: [nodeId], nodeTypeId })
       .expect(201);
     expect(faultFilter.body.commandNumber).toBe(5);
@@ -401,13 +414,15 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     await request(server)
       .patch(`/admin/buildings/${buildingId}/alarm-levels/node-types/${angleNodeTypeId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ cautionThreshold: 0, dangerThreshold: 4, enabled: true, warningThreshold: 2 })
       .expect(400);
 
     const alarmResponse = await request(server)
       .patch(`/admin/buildings/${buildingId}/alarm-levels/node-types/${angleNodeTypeId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ cautionThreshold: 1, dangerThreshold: 4, enabled: true, warningThreshold: 2 })
       .expect(200);
     const application = alarmResponse.body.gatewayApplications.find(
@@ -444,7 +459,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const disabledResponse = await request(server)
       .patch(`/admin/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ enabled: false, nodeType: "angle_node" })
       .expect(200);
     const disabledApplication = disabledResponse.body.gatewayApplications.find(
@@ -493,7 +509,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const reenabledResponse = await request(server)
       .patch(`/admin/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ enabled: true, nodeType: "angle_node" })
       .expect(200);
     const reenabledApplication = reenabledResponse.body.gatewayApplications.find(
@@ -522,7 +539,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const doorSaveResponse = await request(server)
       .patch(`/admin/buildings/${buildingId}/alarm-levels/node-types/${nodeTypeId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ enabled: true })
       .expect(200);
     const doorSaveApplication = doorSaveResponse.body.gatewayApplications.find(
@@ -532,7 +550,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
     await waitForStatus(doorSaveApplication.desiredCommandId, "ACKNOWLEDGED");
     const doorDisableResponse = await request(server)
       .patch(`/admin/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ enabled: false, nodeType: "door_node" })
       .expect(200);
     const doorApplication = doorDisableResponse.body.gatewayApplications.find(
@@ -553,13 +572,15 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     await request(server)
       .patch(`/admin/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ enabled: false, nodeType: "not_a_node" })
       .expect(400);
 
     const filterResponse = await request(server)
       .patch(`/admin/buildings/${buildingId}/alarm-levels/fault-filters`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayId, nodeIds: [nodeId], nodeTypeId })
       .expect(200);
     const desired = filterResponse.body.gateways
@@ -651,7 +672,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const response = await request(server)
       .patch(`/admin/buildings/${buildingId}/alarm-levels/node-types/${angleNodeTypeId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ cautionThreshold: 1.5, dangerThreshold: 5, enabled: true, warningThreshold: 3 })
       .expect(200);
     const blockedApplication = response.body.gatewayApplications.find(
@@ -682,39 +704,47 @@ describe("Phase 5 gateway command outbox e2e", () => {
     const noneToken = await login("p5-none@example.com");
     await request(server)
       .get("/admin/gateway-commands")
-      .set("Authorization", `Bearer ${noneToken}`)
+      .set("Cookie", noneToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
 
     const viewToken = await login("p5-view@example.com");
     await request(server)
       .post("/admin/gateway-commands/wake-security")
-      .set("Authorization", `Bearer ${viewToken}`)
+      .set("Cookie", viewToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ alarmActive: true, alertLevel: 1, gatewayId })
       .expect(403);
 
     const denyToken = await login("p5-deny@example.com");
     await request(server)
       .get("/admin/gateway-commands")
-      .set("Authorization", `Bearer ${denyToken}`)
+      .set("Cookie", denyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .get("/admin/gateway-commands/mqtt-status")
-      .set("Authorization", `Bearer ${denyToken}`)
+      .set("Cookie", denyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .post("/auth/gss/login")
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email: "p5-inactive@example.com", password: "test-password" })
       .expect(401);
 
     const managerToken = await login("p5-manager@example.com");
     await request(server)
       .post("/admin/gateway-commands/wake-security")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ alarmActive: true, alertLevel: 1, gatewayId: "00000000-0000-0000-0000-000000000000" })
       .expect(404);
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${managerToken}`)
+      .set("Cookie", managerToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ buildingId, gatewayId, mode: "REPLACE", nodeIds: [], nodeTypeId })
       .expect(400);
   });
@@ -725,7 +755,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const status = await request(server)
       .get("/admin/gateway-commands/mqtt-status")
-      .set("Authorization", `Bearer ${viewToken}`)
+      .set("Cookie", viewToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
 
     expect(status.body).toMatchObject({
@@ -760,7 +791,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
     });
     await request(server)
       .post(`/admin/gateway-commands/${failed.id}/retry`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(201);
     await waitForStatus(failed.id, "ACKNOWLEDGED");
     const retried = await prisma.gatewayCommand.findUniqueOrThrow({ where: { id: failed.id } });
@@ -781,7 +813,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
     });
     await request(server)
       .post(`/admin/gateway-commands/${pending.id}/cancel`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(201)
       .expect(({ body }) => expect(body.status).toBe("CANCELLED"));
 
@@ -801,14 +834,16 @@ describe("Phase 5 gateway command outbox e2e", () => {
     });
     await request(server)
       .post("/admin/gateway-commands/process-expired")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(201)
       .expect(({ body }) => expect(body.expired).toBeGreaterThanOrEqual(1));
 
     const superToken = await login("p5-super@example.com");
     await request(server)
       .get("/admin/gateway-commands")
-      .set("Authorization", `Bearer ${superToken}`)
+      .set("Cookie", superToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
   });
 
@@ -987,7 +1022,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     await request(server)
       .post("/admin/gateway-commands/process-expired")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(201);
     expect(await prisma.nodeGatewayAssignment.count({ where: { nodeId: expired.node.id } })).toBe(
       0,
@@ -1003,7 +1039,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
     const cancelled = await createProvisioningFixture("CANCELLED", "PENDING");
     await request(server)
       .post(`/admin/gateway-commands/${cancelled.command.id}/cancel`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(201);
     await responseHandler.handleRawResponse(
       `${process.env.MQTT_TOPIC_BASE}/GATE_RES/GRM22JU22P${cancelled.serialNumber}`,
@@ -1039,7 +1076,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     await request(server)
       .post(`/admin/gateway-commands/${fixture.command.id}/retry`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(201);
     await waitForStatus(fixture.command.id, "ACKNOWLEDGED");
     expect(
@@ -1079,7 +1117,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         buildingId,
         gatewayId: gateway.id,
@@ -1090,7 +1129,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .expect(400);
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         buildingId: otherBuildingId,
         gatewayId: gateway.id,
@@ -1101,7 +1141,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .expect(400);
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         buildingId,
         gatewayId: gateway.id,
@@ -1112,7 +1153,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
       .expect(400);
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         buildingId,
         gatewayId: gateway.id,
@@ -1147,7 +1189,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
     const beforeCount = await prisma.gatewayCommand.count();
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         buildingId,
         gatewayId: gateway.id,
@@ -1160,7 +1203,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         buildingId,
         gatewayId: gateway.id,
@@ -1207,7 +1251,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const append = await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         buildingId,
         gatewayId: appendGateway.id,
@@ -1230,7 +1275,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
 
     const replace = await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         buildingId,
         gatewayId: appendGateway.id,
@@ -1304,7 +1350,8 @@ describe("Phase 5 gateway command outbox e2e", () => {
     expect(pendingRequest.id).toBeDefined();
     await request(server)
       .post("/admin/gateway-commands/register-nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         buildingId,
         gatewayId: activeGateway.id,

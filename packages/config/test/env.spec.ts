@@ -8,8 +8,9 @@ describe("loadApiEnv", () => {
       DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
       GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
       GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
-      JWT_EXPIRES_IN: "900",
-      JWT_SECRET: "test-only-jwt-secret-that-is-at-least-32-characters",
+      JWT_ACCESS_EXPIRES_IN: "900",
+      JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+      JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
       MQTT_BROKER_URL: "mqtt://localhost:1883",
       MQTT_TOPIC_BASE: "GSSIOT/01030369081",
       NODE_ENV: "test",
@@ -26,6 +27,30 @@ describe("loadApiEnv", () => {
     expect(env.SENSOR_RETENTION_DRY_RUN).toBe(true);
     expect(env.SENSOR_RETENTION_ENABLED).toBe(false);
     expect(env.CORS_ALLOWED_ORIGINS).toEqual(["http://localhost:5173", "http://127.0.0.1:5173"]);
+    expect(env.AUTH_COOKIE_SECURE).toBe(false);
+    expect(env.JWT_REFRESH_EXPIRES_IN).toBe(2_592_000);
+  });
+
+  it("rejects shared auth secrets and insecure SameSite=None cookies", () => {
+    const base = {
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
+      GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
+      GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
+      JWT_ACCESS_SECRET: "same-test-secret-that-is-at-least-32-characters",
+      JWT_REFRESH_SECRET: "same-test-secret-that-is-at-least-32-characters",
+      MQTT_BROKER_URL: "mqtt://localhost:1883",
+      MQTT_TOPIC_BASE: "GSSIOT/test",
+      NODE_ENV: "test",
+      REDIS_URL: "redis://localhost:6379",
+    };
+    expect(() => loadApiEnv(base)).toThrow("must be different");
+    expect(() =>
+      loadApiEnv({
+        ...base,
+        AUTH_COOKIE_SAME_SITE: "none",
+        JWT_REFRESH_SECRET: "different-refresh-secret-at-least-32-characters",
+      }),
+    ).toThrow("SameSite=None");
   });
 
   it("rejects a retention cycle cap smaller than its batch size", () => {
@@ -34,7 +59,8 @@ describe("loadApiEnv", () => {
         DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
         GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
         GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
-        JWT_SECRET: "test-only-jwt-secret-that-is-at-least-32-characters",
+        JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+        JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
         MQTT_BROKER_URL: "mqtt://localhost:1883",
         MQTT_TOPIC_BASE: "GSSIOT/test",
         NODE_ENV: "test",
@@ -53,7 +79,8 @@ describe("loadApiEnv", () => {
         DELETION_WORKER_LEASE_MS: "10000",
         GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
         GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
-        JWT_SECRET: "test-only-jwt-secret-that-is-at-least-32-characters",
+        JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+        JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
         MQTT_BROKER_URL: "mqtt://localhost:1883",
         MQTT_TOPIC_BASE: "GSSIOT/test",
         NODE_ENV: "test",
@@ -68,7 +95,8 @@ describe("loadApiEnv", () => {
       DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
       GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
       GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
-      JWT_SECRET: "test-only-jwt-secret-that-is-at-least-32-characters",
+      JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+      JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
       MQTT_BROKER_URL: "mqtt://localhost:1883",
       MQTT_TOPIC_BASE: "GSSIOT/01030369081",
       NODE_ENV: "development",
@@ -87,7 +115,8 @@ describe("loadApiEnv", () => {
       DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
       GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
       GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
-      JWT_SECRET: "test-only-jwt-secret-that-is-at-least-32-characters",
+      JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+      JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
       MQTT_BROKER_URL: "mqtt://localhost:1883",
       MQTT_TOPIC_BASE: "GSSIOT/01030369081",
       NODE_ENV: "production",
@@ -99,6 +128,7 @@ describe("loadApiEnv", () => {
     });
 
     expect(env.CORS_ALLOWED_ORIGINS).toEqual([]);
+    expect(env.AUTH_COOKIE_SECURE).toBe(true);
     expect(env.ASSET_STORAGE_PROVIDER).toBe("s3");
     expect(env.REPORT_STORAGE_PROVIDER).toBe("s3");
   });
@@ -113,7 +143,8 @@ describe("loadApiEnv", () => {
         ASSET_S3_SECRET_ACCESS_KEY: "secret-key",
         GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
         GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
-        JWT_SECRET: "test-only-jwt-secret-that-is-at-least-32-characters",
+        JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+        JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
         MQTT_BROKER_URL: "mqtt://localhost:1883",
         MQTT_TOPIC_BASE: "GSSIOT/01030369081",
         NODE_ENV: "production",
@@ -128,7 +159,8 @@ describe("loadApiEnv", () => {
         DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
         GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
         GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
-        JWT_SECRET: "test-only-jwt-secret-that-is-at-least-32-characters",
+        JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+        JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
         MQTT_BROKER_URL: "mqtt://localhost:1883",
         MQTT_TOPIC_BASE: "GSSIOT/01030369081",
         NODE_ENV: "production",
@@ -148,7 +180,8 @@ describe("loadApiEnv", () => {
         DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
         GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
         GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
-        JWT_SECRET: "test-only-jwt-secret-that-is-at-least-32-characters",
+        JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+        JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
         MQTT_BROKER_URL: "mqtt://localhost:1883",
         MQTT_TOPIC_BASE: "GSSIOT/01030369081",
         NODE_ENV: "development",

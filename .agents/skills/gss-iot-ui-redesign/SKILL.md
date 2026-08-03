@@ -46,9 +46,21 @@ Use code-first design rather than requiring Figma:
 - Never expose a red Deactivate/Delete button as the dominant card or table action.
 - Show status through semantic badges, not raw enum text or color alone.
 - Keep cards compact and information-led. Avoid large empty areas and oversized KPI cards.
+- On resource-detail pages, lead with backend-derived relationship summaries and then place
+  substantial collections in full-width vertical sections. Do not squeeze two operational tables
+  into equal half-width columns merely to fill a desktop row.
+- Never calculate relationship totals by fetching the first page of a global collection and
+  filtering it in the browser. Add a scoped, permission-aware aggregate/read model when accurate
+  counts or child summaries are part of the design.
 - Keep modal and drawer footers consistent: secondary Cancel, primary Save, destructive confirmation separated.
 - Design loading, empty, error, forbidden, session-expired, offline, reconnecting, and permission-limited states.
 - Verify keyboard access, focus visibility, contrast, responsive overflow, and touch targets.
+- Platform branding must be legible in both color schemes: use the approved blue mark on light
+  surfaces and the approved white mark on dark surfaces, while keeping the wordmark/context order
+  responsive and accessible.
+- Date and date-time filters must use the shared Mantine Dates visual language. Preserve local-date
+  and UTC API semantics explicitly, and make time optional only through deterministic, tested
+  normalization rather than native browser-dependent controls.
 
 ## Finish every task
 

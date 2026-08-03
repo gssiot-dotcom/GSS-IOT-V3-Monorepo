@@ -1,16 +1,15 @@
 import type { AuthContext, AuthSession } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
 
-const storageKey = "gss-iot-v3-auth-session";
+const storageKey = "gss-iot-v3-auth-context";
 const apiBaseUrl = "http://localhost:3000";
 
 const adminSession: AuthSession = {
-  accessToken: "admin-token",
   context: "gss-admin",
   user: {
     email: "admin@example.com",
@@ -40,7 +39,6 @@ const adminSession: AuthSession = {
 };
 
 const companySession: AuthSession = {
-  accessToken: "company-token",
   context: "company-user",
   user: {
     companyId: "company-1",
@@ -73,8 +71,8 @@ function renderApp(path: string) {
   );
 }
 
-function storeSession(context: AuthContext, accessToken: string) {
-  window.sessionStorage.setItem(storageKey, JSON.stringify({ accessToken, context }));
+function storeSession(context: AuthContext) {
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ context }));
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -218,9 +216,7 @@ describe("auth routing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     fireEvent.click(await screen.findByRole("link", { name: "Companies" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Open company: Acme Safety" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Open company: Acme Safety" }));
 
     expect(
       await screen.findByText("Company setup, resources, users, and assigned devices."),
@@ -231,7 +227,7 @@ describe("auth routing", () => {
   });
 
   it("restores an authenticated deep link from session storage", async () => {
-    storeSession("gss-admin", "admin-token");
+    storeSession("gss-admin");
     mockFetch();
     renderApp("/admin/companies/company-1");
 
@@ -240,7 +236,7 @@ describe("auth routing", () => {
   });
 
   it("keeps company fields savable when a separate admin logo upload fails", async () => {
-    storeSession("gss-admin", "admin-token");
+    storeSession("gss-admin");
     const fetchMock = mockFetch((url, init) => {
       if (url.href === `${apiBaseUrl}/admin/companies/company-1/logo` && init.method === "PUT") {
         return jsonResponse({ message: "storage unavailable" }, 500);
@@ -281,8 +277,83 @@ describe("auth routing", () => {
     ).toBe(true);
   });
 
+  it("edits every company card field and submits the current form values", async () => {
+    storeSession("gss-admin");
+    const fetchMock = mockFetch((url, init) => {
+      if (url.href === `${apiBaseUrl}/admin/companies/company-1` && init.method === "PATCH") {
+        return jsonResponse({
+          ...company,
+          address: "Seoul",
+          code: "GSS-01",
+          email: "new@example.com",
+          name: "Global Safety",
+          phone: "+82-2-1234-5678",
+        });
+      }
+      return undefined;
+    });
+    renderApp("/admin/companies");
+
+    fireEvent.click(await screen.findByRole("button", { name: "More actions: Acme Safety" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit company" });
+
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), {
+      target: { value: "Global Safety" },
+    });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Code" }), {
+      target: { value: "GSS-01" },
+    });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Platform manager email" }), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Phone" }), {
+      target: { value: "+82-2-1234-5678" },
+    });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Address" }), {
+      target: { value: "Seoul" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const patchCall = fetchMock.mock.calls.find(
+        ([input, init]) =>
+          String(input) === `${apiBaseUrl}/admin/companies/company-1` && init?.method === "PATCH",
+      );
+      expect(patchCall).toBeTruthy();
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({
+        address: "Seoul",
+        code: "GSS-01",
+        email: "new@example.com",
+        name: "Global Safety",
+        phone: "+82-2-1234-5678",
+      });
+    });
+
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input, init]) =>
+          String(input) === `${apiBaseUrl}/admin/companies/company-1` && init?.method === "PATCH",
+      ),
+    ).toHaveLength(1);
+  }, 30_000);
+
+  it("closes company card editing without submitting when Cancel is selected", async () => {
+    storeSession("gss-admin");
+    const fetchMock = mockFetch();
+    renderApp("/admin/companies");
+
+    fireEvent.click(await screen.findByRole("button", { name: "More actions: Acme Safety" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit company" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit company" })).toBeNull());
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
+  });
+
   it("keeps the Admin company workspace mounted while child sections change", async () => {
-    storeSession("gss-admin", "admin-token");
+    storeSession("gss-admin");
     const fetchMock = mockFetch();
     renderApp("/admin/companies/company-1");
 
@@ -302,7 +373,7 @@ describe("auth routing", () => {
   });
 
   it("renders company-owned roles in the GSS Admin company-user create form", async () => {
-    storeSession("gss-admin", "admin-token");
+    storeSession("gss-admin");
     const fetchMock = mockFetch();
     renderApp("/admin/companies/company-1/users");
 
@@ -323,7 +394,7 @@ describe("auth routing", () => {
   });
 
   it("clears an expired stored session and redirects to login", async () => {
-    storeSession("gss-admin", "expired-token");
+    storeSession("gss-admin");
     mockFetch((url) => (url.href === `${apiBaseUrl}/auth/gss/me` ? emptyResponse(401) : undefined));
     renderApp("/admin/companies/company-1");
 
@@ -331,7 +402,7 @@ describe("auth routing", () => {
   });
 
   it("shows not found for an unknown authenticated admin route", async () => {
-    storeSession("gss-admin", "admin-token");
+    storeSession("gss-admin");
     mockFetch();
     renderApp("/admin/not-a-real-route");
 
@@ -340,7 +411,7 @@ describe("auth routing", () => {
   });
 
   it("shows forbidden when the route permission is missing", async () => {
-    storeSession("gss-admin", "limited-token");
+    storeSession("gss-admin");
     mockFetch((url) =>
       url.href === `${apiBaseUrl}/auth/gss/me`
         ? jsonResponse({ ...adminSession, user: { ...adminSession.user, permissions: [] } })
@@ -352,7 +423,7 @@ describe("auth routing", () => {
   });
 
   it("does not render or request the Admin permission catalog without permissions.view", async () => {
-    storeSession("gss-admin", "limited-token");
+    storeSession("gss-admin");
     const fetchMock = mockFetch((url) =>
       url.href === `${apiBaseUrl}/auth/gss/me`
         ? jsonResponse({ ...adminSession, user: { ...adminSession.user, permissions: [] } })
@@ -366,19 +437,21 @@ describe("auth routing", () => {
     ).toBe(false);
   });
 
-  it("does not allow auth sessions across portal contexts", async () => {
-    storeSession("company-user", "company-token");
-    mockFetch();
+  it("returns to login when the cookie session does not match the requested portal", async () => {
+    storeSession("company-user");
+    mockFetch((url) => (url.href === `${apiBaseUrl}/auth/gss/me` ? emptyResponse(403) : undefined));
     const firstRender = renderApp("/admin/dashboard");
 
-    expect(await screen.findByText("You do not have access to this page.")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
 
     firstRender.unmount();
     window.sessionStorage.clear();
-    storeSession("gss-admin", "admin-token");
-    mockFetch();
+    storeSession("gss-admin");
+    mockFetch((url) =>
+      url.href === `${apiBaseUrl}/auth/company/me` ? emptyResponse(403) : undefined,
+    );
     renderApp("/company/dashboard");
 
-    expect(await screen.findByText("You do not have access to this page.")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
   });
 });

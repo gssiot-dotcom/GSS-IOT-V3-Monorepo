@@ -13,7 +13,6 @@ vi.mock("../shared/auth/auth-context", () => ({
   useAuth: () => ({
     logout: vi.fn(),
     session: {
-      accessToken: "theme-token",
       context: "gss-admin",
       user: {
         email: "operator@example.com",
@@ -66,12 +65,15 @@ describe("production shell theme control", () => {
     renderShell();
 
     const toggle = screen.getByTestId("theme-toggle");
+    const brandLogo = document.querySelector<HTMLImageElement>(".gss-platform-logo")!;
     expect(toggle.getAttribute("aria-label")).toBe("Switch to dark mode");
+    expect(brandLogo.src.endsWith("/assets/gss-logos/Gss-logo-blue.svg")).toBe(true);
     fireEvent.click(toggle);
 
     expect(document.documentElement.getAttribute("data-mantine-color-scheme")).toBe("dark");
     expect(window.localStorage.getItem("mantine-color-scheme-value")).toBe("dark");
     expect(toggle.getAttribute("aria-label")).toBe("Switch to light mode");
+    expect(brandLogo.src.endsWith("/assets/gss-logos/GSS-logo.svg")).toBe(true);
   });
 
   it("uses the system dark preference when no explicit preference exists", () => {
@@ -92,6 +94,11 @@ describe("production shell theme control", () => {
     expect(screen.getByTestId("theme-toggle").getAttribute("aria-label")).toBe(
       "Switch to light mode",
     );
+    expect(
+      document
+        .querySelector<HTMLImageElement>(".gss-platform-logo")
+        ?.src.endsWith("/assets/gss-logos/GSS-logo.svg"),
+    ).toBe(true);
     expect(window.localStorage.getItem("mantine-color-scheme-value")).toBeNull();
   });
 });

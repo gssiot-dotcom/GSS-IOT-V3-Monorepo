@@ -68,7 +68,7 @@ export function BuildingImageManager({
 
   useEffect(() => {
     void load();
-  }, [basePath, buildingId, session?.accessToken]);
+  }, [basePath, buildingId, session?.user.id]);
 
   const current = useMemo(
     () => (images ?? []).filter((image) => image.kind === kind),
@@ -310,7 +310,7 @@ function PrivateBuildingImage({ image }: { image: BuildingPlanImageRecord }) {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       setUrl(undefined);
     };
-  }, [image.contentPath, session?.accessToken]);
+  }, [image.contentPath, session?.user.id]);
 
   if (failed)
     return (

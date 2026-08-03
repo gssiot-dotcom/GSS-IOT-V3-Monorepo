@@ -6,7 +6,6 @@ import { hasPermission } from "../shared/rbac/has-permission";
 import { adminNavItems, companyNavItems } from "../features/shell/navigation";
 
 const session: AuthSession = {
-  accessToken: "token",
   context: "company-user",
   user: {
     email: "viewer@example.com",

@@ -269,9 +269,15 @@ describe("Phase 4 device inventory e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const response = await request(server)
       .post(path)
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email, password: "test-password" })
       .expect(201);
-    return response.body.accessToken as string;
+    const setCookies = response.headers["set-cookie"];
+    const cookieValues = Array.isArray(setCookies) ? setCookies : setCookies ? [setCookies] : [];
+    return ["gss_csrf=test-csrf-token", ...cookieValues.map((cookie) => cookie.split(";")[0])].join(
+      "; ",
+    );
   }
 
   it("allows an authorized GSS device manager to create and assign inventory", async () => {
@@ -280,41 +286,48 @@ describe("Phase 4 device inventory e2e", () => {
 
     const nodeTypes = await request(server)
       .get("/admin/devices/node-types")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(nodeTypes.body[0].key).toBe("door_node");
 
     const gateway = await request(server)
       .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-001" })
       .expect(201);
     const node = await request(server)
       .post("/admin/devices/nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ nodeTypeId: doorNodeTypeId, number: "NODE-P4-001" })
       .expect(201);
 
     await request(server)
       .post(`/admin/devices/gateways/${gateway.body.id}/company-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ companyId: companyAId })
       .expect(201);
     const assignedGateway = await request(server)
       .post(`/admin/devices/gateways/${gateway.body.id}/building-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ buildingId: allowedBuildingId })
       .expect(201);
     expect(assignedGateway.body.buildingAssignments[0].buildingId).toBe(allowedBuildingId);
 
     await request(server)
       .post(`/admin/devices/nodes/${node.body.id}/company-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ companyId: companyAId })
       .expect(201);
     await request(server)
       .post(`/admin/devices/nodes/${node.body.id}/gateway-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayId: gateway.body.id })
       .expect(400);
     expect(
@@ -338,12 +351,14 @@ describe("Phase 4 device inventory e2e", () => {
 
     await request(server)
       .post(`/admin/devices/gateways/${gateway.id}/building-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ buildingId: sameCompanyOtherBuildingId })
       .expect(201);
     await request(server)
       .delete(`/admin/devices/nodes/${node.id}/gateway-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
 
     expect(
@@ -369,22 +384,27 @@ describe("Phase 4 device inventory e2e", () => {
     const gssNoneToken = await login("/auth/gss/login", "phase4-none@example.com");
     await request(server)
       .get("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${gssNoneToken}`)
+      .set("Cookie", gssNoneToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
 
     const companyNoneToken = await login("/auth/company/login", "phase4-company-none@example.com");
     await request(server)
       .get("/company/devices")
-      .set("Authorization", `Bearer ${companyNoneToken}`)
+      .set("Cookie", companyNoneToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
 
     const denyToken = await login("/auth/company/login", "phase4-deny@example.com");
     await request(server)
       .get("/company/devices")
-      .set("Authorization", `Bearer ${denyToken}`)
+      .set("Cookie", denyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .post("/auth/company/login")
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email: "phase4-inactive@example.com", password: "test-password" })
       .expect(401);
   });
@@ -395,27 +415,33 @@ describe("Phase 4 device inventory e2e", () => {
 
     await request(server)
       .get("/company/devices")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get(`/company/areas/${allowedAreaId}/devices`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get(`/company/buildings/${allowedBuildingId}/devices`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .get(`/company/areas/${sameCompanyOtherAreaId}/devices`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/company/buildings/${sameCompanyOtherBuildingId}/devices`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
     await request(server)
       .get(`/company/buildings/${foreignBuildingId}/gateway-node-connections`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(404);
   });
 
@@ -425,34 +451,40 @@ describe("Phase 4 device inventory e2e", () => {
 
     await request(server)
       .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayType: "bad", serialNumber: "GW-P4-BAD" })
       .expect(400);
 
     const unassignedGateway = await request(server)
       .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-UNASSIGNED" })
       .expect(201);
     await request(server)
       .post(`/admin/devices/gateways/${unassignedGateway.body.id}/building-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ buildingId: allowedBuildingId })
       .expect(409);
 
     const foreignGateway = await request(server)
       .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-FOREIGN" })
       .expect(201);
     await request(server)
       .post(`/admin/devices/gateways/${foreignGateway.body.id}/company-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ companyId: companyBId })
       .expect(201);
     await request(server)
       .post(`/admin/devices/gateways/${foreignGateway.body.id}/building-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ buildingId: allowedBuildingId })
       .expect(403);
   });
@@ -463,7 +495,8 @@ describe("Phase 4 device inventory e2e", () => {
 
     await request(server)
       .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayType: "SECURITY_OFFICE_GATEWAY", serialNumber: "GW-P4-SUPER" })
       .expect(201);
   });
@@ -474,17 +507,20 @@ describe("Phase 4 device inventory e2e", () => {
 
     const pristineGateway = await request(server)
       .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-DELETE" })
       .expect(201);
     const pristineNode = await request(server)
       .post("/admin/devices/nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ nodeTypeId: doorNodeTypeId, number: "NODE-P4-DELETE" })
       .expect(201);
     const inventory = await request(server)
       .get("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       inventory.body.items.find((item: { id: string }) => item.id === pristineGateway.body.id)
@@ -499,12 +535,14 @@ describe("Phase 4 device inventory e2e", () => {
     );
     await request(server)
       .delete(`/admin/devices/gateways/${pristineGateway.body.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.mode).toBe("HARD_DELETE"));
     await request(server)
       .delete(`/admin/devices/nodes/${pristineNode.body.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.mode).toBe("HARD_DELETE"));
     expect(
@@ -519,7 +557,8 @@ describe("Phase 4 device inventory e2e", () => {
     });
     await request(server)
       .delete(`/admin/devices/gateways/${currentlyAssignedGateway.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(409)
       .expect(({ body }) => {
         expect(body.code).toBe("GATEWAY_ACTIVE_COMPANY_ASSIGNMENT");
@@ -528,7 +567,8 @@ describe("Phase 4 device inventory e2e", () => {
       });
     await request(server)
       .delete(`/admin/devices/nodes/${currentlyAssignedNode.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(409)
       .expect(({ body }) => {
         expect(body.code).toBe("NODE_ACTIVE_COMPANY_ASSIGNMENT");
@@ -537,35 +577,42 @@ describe("Phase 4 device inventory e2e", () => {
 
     const historicalGateway = await request(server)
       .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-HISTORY" })
       .expect(201);
     const historicalNode = await request(server)
       .post("/admin/devices/nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ nodeTypeId: doorNodeTypeId, number: "NODE-P4-HISTORY" })
       .expect(201);
     await request(server)
       .post(`/admin/devices/gateways/${historicalGateway.body.id}/company-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ companyId: companyAId })
       .expect(201);
     await request(server)
       .delete(`/admin/devices/gateways/${historicalGateway.body.id}/company-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .post(`/admin/devices/nodes/${historicalNode.body.id}/company-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ companyId: companyAId })
       .expect(201);
     await request(server)
       .delete(`/admin/devices/nodes/${historicalNode.body.id}/company-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     await request(server)
       .delete(`/admin/devices/gateways/${historicalGateway.body.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => {
         expect(body.mode).toBe("SOFT_DELETE");
@@ -573,7 +620,8 @@ describe("Phase 4 device inventory e2e", () => {
       });
     await request(server)
       .delete(`/admin/devices/nodes/${historicalNode.body.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.mode).toBe("SOFT_DELETE"));
     expect(
@@ -584,7 +632,8 @@ describe("Phase 4 device inventory e2e", () => {
     });
     const retiredInventory = await request(server)
       .get("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       retiredInventory.body.items.some(
@@ -593,12 +642,14 @@ describe("Phase 4 device inventory e2e", () => {
     ).toBe(false);
     await request(server)
       .post(`/admin/devices/gateways/${historicalGateway.body.id}/company-assignment`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ companyId: companyAId })
       .expect(409);
     await request(server)
       .patch(`/admin/devices/nodes/${historicalNode.body.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ status: "ACTIVE" })
       .expect(409);
     expect(
@@ -607,12 +658,14 @@ describe("Phase 4 device inventory e2e", () => {
 
     const referencedGateway = await request(server)
       .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-REFERENCED" })
       .expect(201);
     const referencedNode = await request(server)
       .post("/admin/devices/nodes")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ nodeTypeId: doorNodeTypeId, number: "NODE-P4-REFERENCED" })
       .expect(201);
     const command = await prisma.gatewayCommand.create({
@@ -641,11 +694,13 @@ describe("Phase 4 device inventory e2e", () => {
     expect(provisioning.id).toBeDefined();
     await request(server)
       .delete(`/admin/devices/gateways/${referencedGateway.body.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(409);
     await request(server)
       .delete(`/admin/devices/nodes/${referencedNode.body.id}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(409);
     expect(await prisma.gatewayCommand.count({ where: { id: command.id } })).toBe(1);
     expect(
@@ -658,17 +713,20 @@ describe("Phase 4 device inventory e2e", () => {
     const token = await login("/auth/gss/login", "phase4-device@example.com");
     const gateway = await request(server)
       .post("/admin/devices/gateways")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ gatewayType: "NODES_GATEWAY", serialNumber: "GW-P4-RACE" })
       .expect(201);
 
     const [deletion, assignment] = await Promise.all([
       request(server)
         .delete(`/admin/devices/gateways/${gateway.body.id}`)
-        .set("Authorization", `Bearer ${token}`),
+        .set("Cookie", token)
+        .set("x-csrf-token", "test-csrf-token"),
       request(server)
         .post(`/admin/devices/gateways/${gateway.body.id}/company-assignment`)
-        .set("Authorization", `Bearer ${token}`)
+        .set("Cookie", token)
+        .set("x-csrf-token", "test-csrf-token")
         .send({ companyId: companyAId }),
     ]);
     const persisted = await prisma.gateway.findUnique({ where: { id: gateway.body.id } });
@@ -693,11 +751,13 @@ describe("Phase 4 device inventory e2e", () => {
     const noPermissionToken = await login("/auth/gss/login", "phase4-none@example.com");
     await request(server)
       .delete("/admin/devices/gateways/not-authorized")
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(403);
     await request(server)
       .patch("/admin/devices/gateways/not-authorized")
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ installedLocation: "No access" })
       .expect(403);
   });
@@ -708,7 +768,8 @@ describe("Phase 4 device inventory e2e", () => {
 
     const created = await request(server)
       .post("/admin/devices/nodes/bulk")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ input: "900001-900003, 900003, 0900004", nodeTypeId: doorNodeTypeId })
       .expect(201);
     expect(created.body.createdCount).toBe(4);
@@ -720,7 +781,8 @@ describe("Phase 4 device inventory e2e", () => {
 
     await request(server)
       .post("/admin/devices/nodes/bulk")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ input: "900004, 900005", nodeTypeId: doorNodeTypeId })
       .expect(409)
       .expect(({ body }) => {
@@ -731,7 +793,8 @@ describe("Phase 4 device inventory e2e", () => {
 
     await request(server)
       .post("/admin/devices/nodes/bulk")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ input: "900006, descending-900008", nodeTypeId: doorNodeTypeId })
       .expect(400)
       .expect(({ body }) => expect(body.code).toBe("INVALID_NODE_NUMBER_INPUT"));
@@ -739,14 +802,16 @@ describe("Phase 4 device inventory e2e", () => {
 
     await request(server)
       .post("/admin/devices/nodes/bulk")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", token)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ input: "900007", nodeTypeId: "00000000-0000-0000-0000-000000000000" })
       .expect(404);
 
     const noPermissionToken = await login("/auth/gss/login", "phase4-none@example.com");
     await request(server)
       .post("/admin/devices/nodes/bulk")
-      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .set("Cookie", noPermissionToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ input: "900008", nodeTypeId: doorNodeTypeId })
       .expect(403);
   });

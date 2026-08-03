@@ -84,6 +84,16 @@ export class OrganizationsCompanyController {
     return this.organizations.assertCompanyArea(areaId, auth!.principal.sub);
   }
 
+  @RequirePermissions("areas.view")
+  @RequireAreaScope("areaId")
+  @Get("areas/:areaId/overview")
+  getAreaOverview(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("areaId") areaId: string,
+  ) {
+    return this.organizations.getCompanyAreaOverview(areaId, auth!.principal.sub);
+  }
+
   @RequirePermissions("areas.update")
   @RequireManageAreaScope("areaId")
   @Patch("areas/:areaId")
@@ -149,6 +159,16 @@ export class OrganizationsCompanyController {
     @Param("buildingId") buildingId: string,
   ) {
     return this.organizations.assertCompanyBuilding(buildingId, auth!.principal.sub);
+  }
+
+  @RequirePermissions("buildings.view")
+  @RequireBuildingScope("buildingId")
+  @Get("buildings/:buildingId/overview")
+  getBuildingOverview(
+    @CurrentPrincipal() auth: AuthenticatedRequest["auth"],
+    @Param("buildingId") buildingId: string,
+  ) {
+    return this.organizations.getCompanyBuildingOverview(buildingId, auth!.principal.sub);
   }
 
   @RequirePermissions("buildings.update")

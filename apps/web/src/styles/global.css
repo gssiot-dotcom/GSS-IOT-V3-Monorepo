@@ -303,22 +303,31 @@ textarea {
   margin-block: 11px;
 }
 
-.gss-shell-header-brand-compact {
-  display: none;
+.gss-platform-brand {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .gss-platform-logo {
   display: block;
   flex: 0 0 auto;
-  height: 42px;
-  max-width: min(220px, 28vw);
+  height: 40px;
+  max-width: 116px;
   object-fit: contain;
   width: auto;
 }
 
-.gss-platform-logo-compact {
-  height: 36px;
-  max-width: 150px;
+.gss-platform-wordmark {
+  color: var(--mantine-color-text);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .gss-company-sidebar-brand {
@@ -433,16 +442,6 @@ textarea {
   }
 }
 
-@media (max-width: 74em) {
-  .gss-shell-header-brand-full {
-    display: none;
-  }
-
-  .gss-shell-header-brand-compact {
-    display: block;
-  }
-}
-
 @media (max-width: 40em) {
   .gss-shell-header-realtime {
     display: none;
@@ -453,10 +452,18 @@ textarea {
     display: none;
   }
 
-  .gss-platform-logo,
-  .gss-platform-logo-compact {
-    height: 36px;
-    max-width: 108px;
+  .gss-platform-brand {
+    gap: 6px;
+  }
+
+  .gss-platform-logo {
+    height: 34px;
+    max-width: 88px;
+  }
+
+  .gss-platform-wordmark {
+    font-size: var(--mantine-font-size-xs);
+    max-width: min(34vw, 132px);
   }
 
   .gss-collection-pagination {

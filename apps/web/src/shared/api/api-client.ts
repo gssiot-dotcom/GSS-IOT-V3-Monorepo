@@ -2,6 +2,7 @@ import type { AuthSession } from "@gss-iot/contracts";
 
 import { readWebEnv } from "../../app/env";
 import { getActiveLocale, hasTranslationKey, intlLocaleByLocale, t } from "../../app/i18n";
+import { ensureCsrfToken, refreshSession } from "../auth/auth-api";
 
 export class ApiError extends Error {
   constructor(
@@ -59,16 +60,37 @@ function localeHeaders(): Record<string, string> {
   return { "accept-language": intlLocaleByLocale[getActiveLocale()] };
 }
 
+async function authenticatedFetch(
+  path: string,
+  options: RequestInit = {},
+  retryAfterRefresh = true,
+): Promise<Response> {
+  const method = options.method?.toUpperCase() ?? "GET";
+  const unsafe = !["GET", "HEAD", "OPTIONS"].includes(method);
+  const response = await fetch(`${readWebEnv().apiBaseUrl}${path}`, {
+    ...options,
+    credentials: "include",
+    headers: {
+      ...(unsafe ? { "x-csrf-token": await ensureCsrfToken() } : {}),
+      ...localeHeaders(),
+      ...options.headers,
+    },
+  });
+  if (response.status === 401 && retryAfterRefresh) {
+    await refreshSession();
+    return authenticatedFetch(path, options, false);
+  }
+  return response;
+}
+
 export async function apiRequest<T>(
-  session: AuthSession,
+  _session: AuthSession,
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`${readWebEnv().apiBaseUrl}${path}`, {
+  const response = await authenticatedFetch(path, {
     ...options,
     headers: {
-      authorization: `Bearer ${session.accessToken}`,
-      ...localeHeaders(),
       "content-type": "application/json",
       ...options.headers,
     },
@@ -86,14 +108,13 @@ export async function apiRequest<T>(
 }
 
 export async function apiMultipartRequest<T>(
-  session: AuthSession,
+  _session: AuthSession,
   path: string,
   body: FormData,
   method: "POST" | "PUT" = "PUT",
 ): Promise<T> {
-  const response = await fetch(`${readWebEnv().apiBaseUrl}${path}`, {
+  const response = await authenticatedFetch(path, {
     body,
-    headers: { authorization: `Bearer ${session.accessToken}`, ...localeHeaders() },
     method,
   });
 
@@ -103,13 +124,12 @@ export async function apiMultipartRequest<T>(
 }
 
 export async function apiBlob(
-  session: AuthSession,
+  _session: AuthSession,
   path: string,
   options: Pick<RequestInit, "cache"> = {},
 ): Promise<Blob> {
-  const response = await fetch(`${readWebEnv().apiBaseUrl}${path}`, {
+  const response = await authenticatedFetch(path, {
     ...options,
-    headers: { authorization: `Bearer ${session.accessToken}`, ...localeHeaders() },
   });
   if (!response.ok) throw await createApiError(response);
   return response.blob();
@@ -134,10 +154,8 @@ export interface ApiDownload {
   fileName: string;
 }
 
-export async function apiDownload(session: AuthSession, path: string): Promise<ApiDownload> {
-  const response = await fetch(`${readWebEnv().apiBaseUrl}${path}`, {
-    headers: { authorization: `Bearer ${session.accessToken}`, ...localeHeaders() },
-  });
+export async function apiDownload(_session: AuthSession, path: string): Promise<ApiDownload> {
+  const response = await authenticatedFetch(path);
 
   if (!response.ok) {
     throw await createApiError(response);

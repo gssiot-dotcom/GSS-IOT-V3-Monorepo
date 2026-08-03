@@ -187,13 +187,15 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
 
     await request(server)
       .post("/admin/alarm-rules")
-      .set("Authorization", `Bearer ${gssToken}`)
+      .set("Cookie", gssToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ buildingId, nodeTypeId, severity: AlarmSeverity.DANGER })
       .expect(201);
 
     await request(server)
       .get(`/company/alarm-rules?buildingId=${buildingId}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.items).toHaveLength(1));
   });
@@ -219,30 +221,36 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     ] as const) {
       await request(server)
         .get(`${prefix}/alarms?page=1&pageSize=50`)
-        .set("Authorization", `Bearer ${token}`)
+        .set("Cookie", token)
+        .set("x-csrf-token", "test-csrf-token")
         .expect(200);
       await request(server)
         .get(`${prefix}/notifications?page=1&pageSize=50`)
-        .set("Authorization", `Bearer ${token}`)
+        .set("Cookie", token)
+        .set("x-csrf-token", "test-csrf-token")
         .expect(200);
       await request(server)
         .get(`${prefix}/notifications/unread-count`)
-        .set("Authorization", `Bearer ${token}`)
+        .set("Cookie", token)
+        .set("x-csrf-token", "test-csrf-token")
         .expect(200);
       await request(server)
         .get(`${prefix}/notifications?pageSize=5`)
-        .set("Authorization", `Bearer ${token}`)
+        .set("Cookie", token)
+        .set("x-csrf-token", "test-csrf-token")
         .expect(400);
     }
     await request(server)
       .get("/company/notifications/unread-count")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.unreadCount).toBe(1));
 
     await request(server)
       .patch(`/company/notifications/${notification.id}/read`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       (await prisma.alarmNotification.findUniqueOrThrow({ where: { id: notification.id } })).readAt,
@@ -274,7 +282,8 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
 
     await request(app.getHttpServer() as Parameters<typeof request>[0])
       .patch(`/company/alarm-policies/${policyId}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         channel: "EMAIL",
         countIntervalSeconds: 30,
@@ -322,7 +331,8 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const createdPolicy = await request(server)
       .post(`/company/alarm-rules/${rule.id}/policies`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({
         channel: "IN_APP",
         countIntervalSeconds: 0,
@@ -334,7 +344,8 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
 
     await request(server)
       .delete(`/company/positions/${historicalPosition.id}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200);
     expect(
       await prisma.companyPosition.findUniqueOrThrow({ where: { id: historicalPosition.id } }),
@@ -358,7 +369,8 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
 
     await request(server)
       .post("/company/alarms/bulk-archive")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ ids: [event.id] })
       .expect(409)
       .expect(({ body }) => expect(body.code).toBe("ALARM_BULK_ARCHIVE_HAS_UNRESOLVED"));
@@ -373,25 +385,29 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
 
     await request(server)
       .post("/company/notifications/bulk-archive")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ ids: [notification.id] })
       .expect(201)
       .expect(({ body }) => expect(body.archivedCount).toBe(1));
     await request(server)
       .post("/company/alarms/bulk-archive")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ ids: [event.id] })
       .expect(201)
       .expect(({ body }) => expect(body.archivedCount).toBe(1));
 
     await request(server)
       .delete(`/company/alarm-policies/${policyId}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.archived).toBe(true));
     await request(server)
       .delete(`/company/alarm-rules/${ruleId}`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.archived).toBe(true));
 
@@ -413,17 +429,20 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
 
     await request(server)
       .get("/company/alarm-rules?page=1&pageSize=50")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.items).toHaveLength(0));
     await request(server)
       .get("/company/alarms?page=1&pageSize=50")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.items).toHaveLength(0));
     await request(server)
       .get("/company/notifications?page=1&pageSize=50")
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .expect(200)
       .expect(({ body }) => expect(body.items).toHaveLength(0));
   });
@@ -438,14 +457,16 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
 
     await request(server)
       .patch(`/company/alarms/${event.id}/acknowledge`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ note: "seen" })
       .expect(200)
       .expect(({ body }) => expect(body.status).toBe("ACKNOWLEDGED"));
 
     await request(server)
       .patch(`/company/alarms/${event.id}/resolve`)
-      .set("Authorization", `Bearer ${companyToken}`)
+      .set("Cookie", companyToken)
+      .set("x-csrf-token", "test-csrf-token")
       .send({ note: "close" })
       .expect(409);
 
@@ -697,9 +718,15 @@ describe("Phase 11/12 alarm occurrence and notification e2e", () => {
     const server = app.getHttpServer() as Parameters<typeof request>[0];
     const response = await request(server)
       .post(path)
+      .set("Cookie", "gss_csrf=test-csrf-token")
+      .set("x-csrf-token", "test-csrf-token")
       .send({ email, password: "test-password" })
       .expect(201);
-    return response.body.accessToken as string;
+    const setCookies = response.headers["set-cookie"];
+    const cookieValues = Array.isArray(setCookies) ? setCookies : setCookies ? [setCookies] : [];
+    return ["gss_csrf=test-csrf-token", ...cookieValues.map((cookie) => cookie.split(";")[0])].join(
+      "; ",
+    );
   }
 
   async function waitFor(query: () => Promise<number>, expected: number) {

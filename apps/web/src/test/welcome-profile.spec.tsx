@@ -30,11 +30,10 @@ vi.mock("socket.io-client", () => ({ io: socketMock.io }));
 
 import { App } from "../App";
 
-const storageKey = "gss-iot-v3-auth-session";
+const storageKey = "gss-iot-v3-auth-context";
 const apiBaseUrl = "http://localhost:3000";
 
 const companySession: AuthSession = {
-  accessToken: "company-token",
   context: "company-user",
   user: {
     company: { id: "company-1", name: "Acme Safety" },
@@ -52,7 +51,6 @@ const companySession: AuthSession = {
 };
 
 const adminSession: AuthSession = {
-  accessToken: "admin-token",
   context: "gss-admin",
   user: {
     email: "admin@example.com",
@@ -77,10 +75,7 @@ function renderApp(path: string) {
 }
 
 function storeSession(context: AuthContext) {
-  window.sessionStorage.setItem(
-    storageKey,
-    JSON.stringify({ accessToken: companySession.accessToken, context }),
-  );
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ context }));
 }
 
 function mockFetch(session: AuthSession = companySession) {

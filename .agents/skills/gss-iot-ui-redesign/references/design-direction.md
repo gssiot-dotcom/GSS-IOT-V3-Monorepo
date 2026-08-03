@@ -99,6 +99,16 @@ Use restrained shadows. Borders and spacing should do most of the grouping.
 - Use a subtle canvas background; do not put every section inside a large card.
 - Keep form/detail pages within a comfortable max width, while monitoring and data workspaces may use full width.
 
+### Theme-aware platform identity
+
+- Use the approved blue GSS SVG on a light header and the approved white GSS SVG on a dark header.
+- Place the visible `Global Smart Solutions` wordmark immediately after the mark, followed by the
+  existing divider and route/portal context.
+- Keep mark, wordmark, divider, and context as one non-wrapping responsive identity group. Hide or
+  shorten lower-priority context before hiding the mark or critical header actions.
+- Do not recolor the SVG with CSS filters, redraw it, or substitute a generated icon when exact
+  light/dark assets exist.
+
 ## Cards
 
 Use card variants rather than one universal card:
@@ -124,6 +134,20 @@ A card should have a clear header, body, and optional footer. Put a compact over
 - Use skeleton rows rather than a generic centered loader for table loading.
 - Provide mobile cards or a detail drawer where horizontal scrolling would make actions unusable.
 
+## Resource detail and relationship pages
+
+- Start with identity, status, location/parent context, and a compact row of real backend-derived
+  totals such as Buildings, Gateways, Nodes, and Assigned users.
+- Prefer a 3/2/1 responsive entity-card grid when each child needs several relationship counts.
+- Put substantial relationship collections in full-width sections stacked vertically. Two dense
+  operational tables must not share one desktop row unless both remain comfortably readable at the
+  approved 1280px viewport.
+- A child Building card may show its gateway, node, and assigned-user counts, status, address, and
+  one high-value entry action. Counts must come from a scoped backend aggregate, not first-page
+  browser filtering.
+- Optional sections remain permission-aware and fail locally without replacing an authorized base
+  detail page.
+
 ## Forms and dialogs
 
 - Use sectioned forms with concise helper text.
@@ -131,6 +155,17 @@ A card should have a clear header, body, and optional footer. Put a compact over
 - Use modals for short create/edit forms only.
 - Put dialog actions in a footer: Cancel then primary Save/Create.
 - Confirm destructive actions with entity name, impact, and irreversible/reversible wording.
+
+## Date and time filters
+
+- Use Mantine Dates components and the same calendar styling, portal behavior, focus states, and
+  localization already established by the Node detail Drawer.
+- Date selection must be available by clicking the whole input. Time may be an optional secondary
+  control; leaving it empty follows a documented local-boundary normalization and never produces an
+  invalid date.
+- Preserve existing default ranges and optional/unbounded filters. Convert local selections to UTC
+  only at the API boundary and test DST/local-midnight behavior.
+- Do not use native `date` or `datetime-local` inputs as application primitives.
 
 ## Motion
 

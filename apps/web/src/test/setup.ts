@@ -4,6 +4,7 @@ import { afterEach } from "vitest";
 import { setActiveLocale } from "../app/i18n";
 
 setActiveLocale("en");
+document.cookie = "gss_csrf=test-csrf-token; path=/";
 
 afterEach(() => setActiveLocale("en"));
 

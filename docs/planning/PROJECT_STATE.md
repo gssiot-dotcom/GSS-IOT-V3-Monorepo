@@ -35,10 +35,16 @@ Phase 12 notifications and alarm operations UI is `PHASE_12_COMPLETE` as of 2026
 - Database correction: forward migration
   `20260727220000_device_retirement_position_archive` adds only Position archive actor/time fields
   and an active-list index. Production order is migrate → API → Web; no `db push` is permitted.
-- Application source: NestJS API keeps the Phase 1 separate GSS Admin and Company JWT contexts, active-user enforcement, permission resolution, decorators and scope guards.
+- Application source: NestJS API keeps separate GSS Admin and Company JWT contexts, active-user
+  enforcement, permission resolution, decorators and scope guards. Browser sessions now use
+  cookie-only short-lived access JWTs plus PostgreSQL-backed one-time rotating refresh sessions,
+  double-submit CSRF and credentialed allowlisted CORS.
 - Database schema: Prisma RBAC, organization hierarchy, scope-access foundation, Phase 4 device history migration `20260714170000_device_inventory_assignments`, Phase 5 command migration `20260715120000_gateway_command_outbox`, Phase 6 monitoring migration `20260715150000_phase_6_monitoring_realtime`, Phase 8 provisioning migration `20260716120000_phase_8_device_provisioning`, Task 09 migrations `20260722120000_task_09_provisioning_modes` and `20260722121000_task_09_reusable_provisioning_assignment_links`, and the later Phase 9/11/12 migrations are present. The Phase 13 report migrations `20260721150000_phase_13_report_foundation`, `20260721153000_phase_13_report_audit_date_index` and `20260721160000_phase_13_report_storage_cleanup` were applied and verified on the prepared isolated `gss_iot_v3_e2e` schema; the shared `public` schema remains pending until the normal deploy command is run.
 - Seed: permission catalog, default GSS/company roles, canonical node types and environment-configured active GSS super admin seeded idempotently.
-- Frontend: bearer auth persists only the access token and auth context in `sessionStorage`, restores full sessions from `/auth/gss/me` or `/auth/company/me`, preserves separate GSS Admin and Company route contexts, permission-filters Admin/Company shells, uses context-aware protected NotFound pages, keeps the Phase 2 design-system demo route and renders universal UI states plus legacy image-first node-type cards.
+- Frontend: only the non-sensitive auth context is retained in `sessionStorage`; access/refresh
+  credentials remain in HttpOnly cookies. The app restores full sessions from `/auth/gss/me` or
+  `/auth/company/me`, performs one single-flight refresh and one retry after a 401, preserves
+  separate route contexts, and reconnects Socket.IO with credentialed cookies.
 - Phase 3 API: guarded GSS Admin and Company endpoints manage companies, areas, buildings, storage-key image records, company users, company-owned roles, direct permissions, area/building access and scoped position assignments. Critical mutations write audit logs inside their database transactions.
 - Phase 3 maintenance: company-owned default role provisioning is idempotent for new and existing companies. The approved default keys are `platform_manager`, `site_manager`, `building_manager`, `viewer` and `no_permission`; GSS Admin role listing backfills missing default roles before returning them to the company-user create form.
 - Phase 3 UI: Admin company creation creates the initial platform manager; Company routes now render scoped area/building lists plus company-user and role management views using the shared Phase 2 shell and UI primitives.
@@ -501,3 +507,35 @@ roles, one active Super Admin, three NodeTypes and five global Company role temp
 tenant and operational tables remain empty. Only production S3 version/delete-marker
 credentials/policy, backup/legal-hold/restore authorization and purge SLA remain external open
 decisions.
+
+## 2026-08-01 production correctness and session hardening
+
+Company edit inputs now snapshot React event values before functional updates and retain exact
+PATCH/cancel behavior. The authenticated shell renders one theme-aware shared platform brand.
+Sensor History and Archive share Mantine local date/optional-time controls with tested UTC, DST,
+exclusive History and inclusive date-only Archive boundaries.
+
+Company Area and Building detail pages now consume bounded backend overview read models with
+independent database totals, permission-aware optional sections, deduplicated user access evidence
+and backend scope guards. Browser REST and Socket.IO authentication now uses HttpOnly access
+cookies, absolute-lifetime rotating refresh families, double-submit CSRF, credentialed allowlisted
+CORS and one-shot refresh/retry/reconnect behavior. Forward migration
+`20260801090000_http_only_rotating_auth` is applied to development and E2E schemas; all 24
+migrations report applied with no pending migration.
+
+Final verification for this correction:
+
+- `pnpm install --frozen-lockfile`, Prisma generate/validate/deploy/status, `pnpm lint`,
+  `pnpm typecheck`, `pnpm test` and `pnpm build` pass. Unit/component coverage passes 49 files and
+  197 tests; the production build retains only the known JavaScript chunk-size advisory.
+- `pnpm --filter api test:e2e` passes 10 files and 92 PostgreSQL-backed tests, including rotating
+  refresh reuse/parallelism, CSRF/context isolation, scoped overview totals and Socket.IO cookie
+  lifecycle denial.
+- Full Playwright verification passes all 24 browser tests in 15.0 minutes across responsive
+  light/dark shells, calendar local-time behavior, company and monitoring views, Archive/History
+  operations and no-permission states.
+- `pnpm i18n:audit` passes 1,040 KO/EN keys. Task-changed files pass Prettier and `git diff --check`;
+  repository-wide `pnpm format:check` still reports the unrelated 123-file historical formatting
+  baseline, which was not expanded into a broad rewrite or the user's pre-existing changes.
+
+No production deployment, commit, push, pull request or Phase 14 work was performed.

@@ -19,6 +19,9 @@ Error state:
 Forbidden/session state:
 Responsive behavior:
 Keyboard behavior:
+Theme behavior:
+Date/time semantics where applicable:
+Aggregate/count source where applicable:
 Screenshots captured:
 Tests updated:
 ```
@@ -38,6 +41,14 @@ Tests updated:
 - No horizontal overflow hides critical actions at mobile size.
 - Focus order and focus ring are visible.
 - Color is not the only status signal.
+- Header branding uses the approved high-contrast asset in both light and dark themes and keeps the
+  platform wordmark before route context.
+- Resource detail relationships remain readable at 1280px and stack deliberately on smaller
+  screens; dense tables are not compressed into arbitrary half-width columns.
+- Displayed totals and per-child counts are backend-derived, scoped, permission-aware, and correct
+  beyond the first pagination page.
+- Calendar/date-time controls share the Mantine Dates design, are keyboard/touch operable, and have
+  explicit local-to-UTC plus optional-time behavior.
 
 ## Behavior checks
 
@@ -49,3 +60,4 @@ Tests updated:
 - No i18n string is hardcoded in a component.
 - No inaccessible action is rendered.
 - No production-only authentication shortcut was added.
+- No accurate relationship count depends on client-side filtering of a bounded collection page.

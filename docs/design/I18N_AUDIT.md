@@ -74,15 +74,3 @@ The repository i18n audit must fail on catalog key mismatch, missing keys, visib
 leakage, suspicious TSX text/placeholder/accessibility literals, raw enum presentation and
 user-facing implicit-locale formatting. The allowlist is intentionally small and limited to product,
 protocol, file-extension, hardware/test-id and developer-log values.
-
-## Completion evidence
-
-- Korean and English catalogs contain 1,026 identical typed keys with placeholder parity.
-- Dynamic display keys use the checked `tx()` boundary; no translation call uses an `as never` cast.
-- Application code has no implicit browser-locale date/time/number formatter.
-- `pnpm i18n:audit`, workspace typecheck, zero-warning lint, changed-file Prettier check and the
-  production build pass.
-- Workspace unit tests pass 180/180; API E2E passes 86/86 on the isolated schema; Web Playwright
-  passes 24/24.
-- Twelve bilingual Admin/Company screenshots cover 1440×900, 1280×800 and 390×844 with
-  programmatic horizontal-overflow assertions.

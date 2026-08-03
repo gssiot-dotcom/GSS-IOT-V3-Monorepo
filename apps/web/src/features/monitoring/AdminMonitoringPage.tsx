@@ -40,6 +40,7 @@ import { readWebEnv } from "../../app/env";
 import { t, tf, tx } from "../../app/i18n";
 import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { refreshSession } from "../../shared/auth/auth-api";
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
 import { BuildingImageViewerPanel } from "./components/BuildingImageViewer";
@@ -97,7 +98,7 @@ export function AdminMonitoringPage() {
       .then(setOptions)
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, [session?.accessToken]);
+  }, [session?.user.id]);
 
   useEffect(() => {
     if (!session) return;
@@ -111,7 +112,7 @@ export function AdminMonitoringPage() {
     )
       .then(setSummary)
       .catch(() => setError(true));
-  }, [areaId, buildingId, companyId, session?.accessToken]);
+  }, [areaId, buildingId, companyId, session?.user.id]);
 
   useEffect(() => {
     if (!session || !buildingId) {
@@ -130,7 +131,7 @@ export function AdminMonitoringPage() {
         setNodeType((current) => current ?? data.nodeTypes[0]?.nodeType.key);
       })
       .catch(() => setError(true));
-  }, [buildingId, session?.accessToken]);
+  }, [buildingId, session?.user.id]);
 
   useEffect(() => {
     if (!session || !buildingId || !nodeType || !isCanonicalNodeType(nodeType)) {
@@ -144,7 +145,7 @@ export function AdminMonitoringPage() {
     )
       .then(setNodeResponse)
       .catch(() => setError(true));
-  }, [buildingId, nodeType, session?.accessToken]);
+  }, [buildingId, nodeType, session?.user.id]);
 
   useEffect(() => {
     if (!session || !buildingId || !nodeType || !selectedNodeId || !isCanonicalNodeType(nodeType)) {
@@ -192,7 +193,7 @@ export function AdminMonitoringPage() {
     historyPageSize,
     nodeType,
     selectedNodeId,
-    session?.accessToken,
+    session?.user.id,
   ]);
 
   useEffect(() => {
@@ -201,9 +202,10 @@ export function AdminMonitoringPage() {
       return;
     }
     const socket = io(readWebEnv().apiBaseUrl, {
-      auth: { token: session.accessToken },
       transports: ["websocket"],
+      withCredentials: true,
     });
+    let refreshAttempted = false;
     setRealtimeStatus("reconnecting");
     socket.on("connect", () => {
       setRealtimeStatus("connected");
@@ -212,6 +214,14 @@ export function AdminMonitoringPage() {
       });
     });
     socket.io.on("reconnect_attempt", () => setRealtimeStatus("reconnecting"));
+    socket.on("connect_error", () => {
+      setRealtimeStatus("offline");
+      if (refreshAttempted) return;
+      refreshAttempted = true;
+      void refreshSession()
+        .then(() => socket.connect())
+        .catch(() => undefined);
+    });
     socket.on("disconnect", () => setRealtimeStatus("offline"));
     socket.on("monitoring:node-state", (event: MonitoringNodeStateEvent) => {
       if (event.buildingId !== buildingId || event.nodeType !== nodeType) return;
@@ -227,7 +237,7 @@ export function AdminMonitoringPage() {
     return () => {
       socket.disconnect();
     };
-  }, [buildingId, nodeType, session?.accessToken]);
+  }, [buildingId, nodeType, session?.user.id]);
 
   const areas = useMemo(
     () => (options?.areas ?? []).filter((area) => !companyId || area.companyId === companyId),

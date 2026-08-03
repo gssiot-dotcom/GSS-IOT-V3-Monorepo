@@ -11,7 +11,6 @@ vi.mock("../shared/auth/auth-context", () => ({
   useAuth: () => ({
     logout: vi.fn(),
     session: {
-      accessToken: "token",
       context: "gss-admin",
       user: {
         email: "admin@example.com",
@@ -59,10 +58,12 @@ describe("Portal sidebar", () => {
     expect(screen.getByRole("link", { name: "Administrators" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "GSS roles" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Permissions" })).toBeTruthy();
-    const blueHeaderLogos = (
-      screen.getAllByAltText("Global Smart Solutions") as HTMLImageElement[]
-    ).filter((logo) => logo.src.endsWith("/assets/gss-logos/Gss-logo-blue.svg"));
-    expect(blueHeaderLogos).toHaveLength(2);
+    const headerLogo = document.querySelector<HTMLImageElement>(".gss-platform-logo");
+    expect(headerLogo).toBeTruthy();
+    expect(headerLogo?.src.endsWith("/assets/gss-logos/Gss-logo-blue.svg")).toBe(true);
+    const headerBrand = document.querySelector(".gss-platform-brand");
+    expect(headerBrand?.textContent).toBe("Global Smart Solutions");
+    expect(headerBrand?.nextElementSibling?.classList.contains("mantine-Divider-root")).toBe(true);
     const sidebarLogo = document.querySelector<HTMLImageElement>(".gss-admin-sidebar-brand > img");
     expect(sidebarLogo?.src.endsWith("/assets/gss-logos/GSS-logo.svg")).toBe(true);
     const sidebarBrand = document.querySelector(".gss-admin-sidebar-brand");

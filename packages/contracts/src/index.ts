@@ -45,7 +45,6 @@ export interface AuthenticatedUser {
 }
 
 export interface AuthSession {
-  accessToken: string;
   context: AuthContext;
   user: AuthenticatedUser;
 }
@@ -176,6 +175,82 @@ export interface BuildingRecord {
   buildingType: string | null;
   status: CompanyStatus;
   deletion?: DeleteCapability;
+}
+
+export interface ScopedOverviewSection<Item> {
+  available: boolean;
+  items: Item[];
+  total: number | null;
+}
+
+export interface ScopedOverviewUserRecord {
+  accessSources: Array<"AREA" | "BUILDING" | "COMPANY">;
+  email: string;
+  id: string;
+  isActive: boolean;
+  name: string;
+  role: {
+    id: string;
+    name: string;
+  };
+}
+
+export interface AreaOverviewBuildingRecord extends BuildingRecord {
+  metrics: {
+    assignedUsers: number | null;
+    gateways: number | null;
+    nodes: number | null;
+  };
+}
+
+export interface BuildingOverviewGatewayRecord {
+  id: string;
+  installedLocation: string | null;
+  isOnline: boolean;
+  lastSeenAt: string | null;
+  nodeCount: number;
+  serialNumber: string;
+  status: DeviceLifecycleStatus;
+}
+
+export interface BuildingOverviewNodeRecord {
+  gateway: { id: string; serialNumber: string };
+  id: string;
+  installedLocation: string | null;
+  lastSeenAt: string | null;
+  latestStatus: MonitoringStatus | null;
+  nodeType: { displayName: string; id: string; key: string };
+  number: string;
+  status: DeviceLifecycleStatus;
+}
+
+export interface AreaOverviewResponse {
+  area: AreaRecord;
+  buildings: ScopedOverviewSection<AreaOverviewBuildingRecord>;
+  metrics: {
+    assignedUsers: number | null;
+    buildings: number | null;
+    gateways: number | null;
+    nodes: number | null;
+  };
+  users: ScopedOverviewSection<ScopedOverviewUserRecord>;
+}
+
+export interface BuildingOverviewResponse {
+  area: AreaRecord | null;
+  building: BuildingRecord;
+  devices: ScopedOverviewSection<BuildingOverviewGatewayRecord>;
+  metrics: {
+    activeNodes: number | null;
+    assignedUsers: number | null;
+    faultNodes: number | null;
+    gateways: number | null;
+    nodes: number | null;
+    offlineGateways: number | null;
+    onlineGateways: number | null;
+  };
+  nodes: ScopedOverviewSection<BuildingOverviewNodeRecord>;
+  users: ScopedOverviewSection<ScopedOverviewUserRecord>;
 }
 
 export interface CompanyRoleRecord {

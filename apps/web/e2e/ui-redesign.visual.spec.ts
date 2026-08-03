@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const apiOrigin = "http://localhost:3000";
-const storageKey = "gss-iot-v3-auth-session";
+const storageKey = "gss-iot-v3-auth-context";
 const colorSchemeKey = "mantine-color-scheme-value";
 const localeKey = "gss-iot.locale.v1";
 
@@ -415,7 +415,6 @@ const gssAdministrators = [
 
 function sessionFor(context: "gss-admin" | "company-user", permissions: readonly string[]) {
   return {
-    accessToken: "ui-redesign-fixture-token",
     context,
     user: {
       company: context === "company-user" ? { id: company.id, name: company.name } : null,
@@ -451,14 +450,20 @@ async function installFixture(
     });
   }
   await page.addInitScript(
-    ({ key, storedSession }) => sessionStorage.setItem(key, JSON.stringify(storedSession)),
+    ({ csrfCookie, key, storedSession }) => {
+      document.cookie = `${csrfCookie}=ui-redesign-csrf; Path=/; SameSite=Lax`;
+      sessionStorage.setItem(key, JSON.stringify(storedSession));
+    },
     {
+      csrfCookie: "gss_csrf",
       key: storageKey,
-      storedSession: { accessToken: session.accessToken, context: session.context },
+      storedSession: { context: session.context },
     },
   );
   await page.route(`${apiOrigin}/**`, async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/auth/csrf") return route.fulfill({ json: { csrfToken: "ui-redesign-csrf" } });
+    if (path === "/auth/refresh") return route.fulfill({ json: session });
     if (path === "/auth/gss/me" || path === "/auth/company/me")
       return route.fulfill({ json: session });
     if (path === "/company/branding/logo" || path === "/admin/companies/company-1/logo")
@@ -743,6 +748,92 @@ async function installFixture(
           page: 1,
           pageSize: 100,
           total: adminCatalogPermissions.length,
+        },
+      });
+    if (path === "/company/areas/area-1/overview")
+      return route.fulfill({
+        json: {
+          area: areas[0],
+          buildings: {
+            available: true,
+            items: buildings.map((building, index) => ({
+              ...building,
+              metrics: { assignedUsers: 1, gateways: index === 0 ? 1 : 0, nodes: index + 2 },
+            })),
+            total: buildings.length,
+          },
+          metrics: { assignedUsers: 1, buildings: 2, gateways: 1, nodes: 5 },
+          users: {
+            available: true,
+            items: companyUsers.map((user) => ({
+              accessSources: ["AREA"],
+              email: user.email,
+              id: user.id,
+              isActive: user.isActive,
+              name: user.name,
+              role: { id: user.role.id, name: user.role.name },
+            })),
+            total: companyUsers.length,
+          },
+        },
+      });
+    if (path === "/company/buildings/building-1/overview")
+      return route.fulfill({
+        json: {
+          area: areas[0],
+          building: buildings[0],
+          devices: {
+            available: true,
+            items: [
+              {
+                id: "gateway-1",
+                installedLocation: "North entrance",
+                isOnline: true,
+                lastSeenAt: "2026-07-23T08:12:00.000Z",
+                nodeCount: 3,
+                serialNumber: "0300",
+                status: "ACTIVE",
+              },
+            ],
+            total: 1,
+          },
+          metrics: {
+            activeNodes: 2,
+            assignedUsers: 1,
+            faultNodes: 1,
+            gateways: 1,
+            nodes: 3,
+            offlineGateways: 0,
+            onlineGateways: 1,
+          },
+          nodes: {
+            available: true,
+            items: [
+              {
+                gateway: { id: "gateway-1", serialNumber: "0300" },
+                id: "node-1",
+                installedLocation: "North entrance door",
+                lastSeenAt: "2026-07-23T08:11:00.000Z",
+                latestStatus: "safe",
+                nodeType: { displayName: "Door Node", id: "door", key: "door_node" },
+                number: "100",
+                status: "ACTIVE",
+              },
+            ],
+            total: 3,
+          },
+          users: {
+            available: true,
+            items: companyUsers.map((user) => ({
+              accessSources: ["AREA", "BUILDING"],
+              email: user.email,
+              id: user.id,
+              isActive: user.isActive,
+              name: user.name,
+              role: { id: user.role.id, name: user.role.name },
+            })),
+            total: companyUsers.length,
+          },
         },
       });
     if (path === "/company/areas/area-1") return route.fulfill({ json: areas[0] });
@@ -1349,12 +1440,15 @@ test("keeps both portal sidebars scrollable without a visible scrollbar and open
   await drawer.getByText("Day", { exact: true }).click();
   const dateInput = drawer.getByRole("button", { name: "History date" });
   await dateInput.click();
-  await expect(page.getByRole("button", { name: tomorrowCalendarLabel() })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { exact: true, name: tomorrowCalendarLabel() }),
+  ).toBeDisabled();
   await page.screenshot({
     fullPage: false,
     path: testInfo.outputPath("company-node-day-calendar-in-drawer.png"),
   });
-  await page.getByRole("button", { name: /20 July 2026/i }).click();
+  await page.getByRole("button", { name: "Previous month" }).click();
+  await page.getByRole("button", { exact: true, name: "20 July 2026" }).click();
   await expect(dateInput).toContainText("2026-07-20");
   const selectedRange = await page.evaluate(() => ({
     from: new Date(2026, 6, 20).toISOString(),
@@ -2564,6 +2658,8 @@ test("verifies persisted KO/EN switching in Admin and Company at required viewpo
     await target.reload({ waitUntil: "domcontentloaded" });
     await expect(target.locator("html")).toHaveAttribute("lang", "ko");
     await expect(target.getByRole("button", { name: "언어 선택" })).toBeVisible();
+    await expect(target.getByRole("heading", { name: "대시보드" })).toBeVisible();
+    await expect(target.getByText("활성 회사", { exact: true }).first()).toBeVisible();
 
     for (const viewport of [
       { height: 900, name: "1440x900", width: 1440 },
@@ -2589,6 +2685,8 @@ test("verifies persisted KO/EN switching in Admin and Company at required viewpo
     expect(await target.evaluate((key) => window.localStorage.getItem(key), localeKey)).toBe("en");
     await target.reload({ waitUntil: "domcontentloaded" });
     await expect(target.locator("html")).toHaveAttribute("lang", "en");
+    await expect(target.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(target.getByText("Active companies", { exact: true }).first()).toBeVisible();
 
     for (const viewport of [
       { height: 900, name: "1440x900", width: 1440 },

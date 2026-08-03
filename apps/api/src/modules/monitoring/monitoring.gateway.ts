@@ -18,6 +18,7 @@ import type { Server, Socket } from "socket.io";
 import { AUTH_CONTEXT, type AuthTokenPayload } from "../../common/auth.types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AlarmRealtimeService } from "../alarms/alarm-realtime.service";
+import { AuthCookieService } from "../auth/auth-cookie.service";
 import { roomName } from "./monitoring-mappers";
 import { MonitoringRealtimeService } from "./monitoring-realtime.service";
 import { MonitoringService } from "./monitoring.service";
@@ -34,13 +35,14 @@ function corsOrigin(
   callback(new Error("Socket.IO origin is not allowed."));
 }
 
-@WebSocketGateway({ cors: { credentials: false, origin: corsOrigin } })
+@WebSocketGateway({ cors: { credentials: true, origin: corsOrigin } })
 export class MonitoringGateway implements OnGatewayInit {
   @WebSocketServer()
   private server!: Server;
 
   constructor(
     @Inject(JwtService) private readonly jwt: JwtService,
+    @Inject(AuthCookieService) private readonly cookies: AuthCookieService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AlarmRealtimeService) private readonly alarmRealtime: AlarmRealtimeService,
     @Inject(MonitoringService) private readonly monitoring: MonitoringService,
@@ -112,14 +114,17 @@ export class MonitoringGateway implements OnGatewayInit {
   }
 
   private async authenticateSocket(client: Socket): Promise<AuthTokenPayload> {
-    const token = this.extractToken(client);
+    const token = this.cookies.accessToken(client.handshake.headers.cookie);
     if (!token) {
-      throw new UnauthorizedException("A bearer token is required.");
+      throw new UnauthorizedException("An access cookie is required.");
     }
     const env = loadApiEnv();
-    const payload = await this.jwt.verifyAsync<AuthTokenPayload>(token, { secret: env.JWT_SECRET });
+    const payload = await this.jwt.verifyAsync<AuthTokenPayload>(token, {
+      secret: env.JWT_ACCESS_SECRET,
+    });
     if (
       !payload.sub ||
+      payload.typ !== "access" ||
       payload.context !== payload.aud ||
       !Object.values(AUTH_CONTEXT).includes(payload.context)
     ) {
@@ -149,15 +154,5 @@ export class MonitoringGateway implements OnGatewayInit {
       throw new UnauthorizedException("The authenticated user is inactive or revoked.");
     }
     return payload;
-  }
-
-  private extractToken(client: Socket): string | null {
-    const auth = client.handshake.auth as { token?: unknown } | undefined;
-    if (typeof auth?.token === "string" && auth.token.trim().length > 0) {
-      return auth.token;
-    }
-    const header = client.handshake.headers.authorization;
-    const [scheme, token] = typeof header === "string" ? header.split(" ") : [];
-    return scheme === "Bearer" && token ? token : null;
   }
 }
