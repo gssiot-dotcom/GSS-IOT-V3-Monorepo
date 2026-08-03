@@ -307,6 +307,8 @@ realtime contracts, RBAC/scope enforcement or alarm semantics.
   height is 40–44px and compact/mobile height is 34–38px.
 - Header order is mobile burger, platform brand, divider and translated current-route context.
   Header groups do not wrap or create document-level horizontal overflow.
+- The shared header renders the translated current route exactly once. It must not add a secondary
+  `portal / route` caption beneath or beside the primary route label.
 - The Admin sidebar renders `/assets/gss-logos/GSS-logo.svg` above `GSS IoT V3` and the localized
   `GSS Admin Portal` line on the dark surface.
 - The Company sidebar brand block is company-owned. It shows a private authenticated logo inside

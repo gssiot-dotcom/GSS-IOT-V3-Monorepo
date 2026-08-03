@@ -33,7 +33,7 @@ import {
   IconPlugConnected,
   IconPlugConnectedX,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
 import { readWebEnv } from "../../app/env";
@@ -58,6 +58,18 @@ import {
 
 type RealtimeStatus = "connected" | "offline" | "reconnecting";
 type StateRow = MonitoringNodeStateRecord & { id: string };
+
+function adminMonitoringSummaryPath(filters: {
+  areaId: string;
+  buildingId: string;
+  companyId: string;
+}): string {
+  const query = new URLSearchParams();
+  if (filters.companyId) query.set("companyId", filters.companyId);
+  if (filters.areaId) query.set("areaId", filters.areaId);
+  if (filters.buildingId) query.set("buildingId", filters.buildingId);
+  return `/admin/monitoring/summary${query.size ? `?${query.toString()}` : ""}`;
+}
 
 export function AdminMonitoringPage() {
   const { session } = useAuth();
@@ -86,6 +98,7 @@ export function AdminMonitoringPage() {
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("offline");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const nodeStatesRef = useRef<MonitoringNodeStateRecord[]>([]);
 
   useEffect(() => {
     setHistoryPage(1);
@@ -118,6 +131,7 @@ export function AdminMonitoringPage() {
     if (!session || !buildingId) {
       setBuildingOverview(undefined);
       setNodeResponse(undefined);
+      nodeStatesRef.current = [];
       setNodeType(undefined);
       setSelectedNodeId(undefined);
       return;
@@ -136,6 +150,7 @@ export function AdminMonitoringPage() {
   useEffect(() => {
     if (!session || !buildingId || !nodeType || !isCanonicalNodeType(nodeType)) {
       setSelectedNodeId(undefined);
+      nodeStatesRef.current = [];
       return;
     }
     setSelectedNodeId(undefined);
@@ -143,7 +158,10 @@ export function AdminMonitoringPage() {
       session,
       `/admin/monitoring/buildings/${buildingId}/node-types/${nodeType}`,
     )
-      .then(setNodeResponse)
+      .then((data) => {
+        nodeStatesRef.current = data.states;
+        setNodeResponse(data);
+      })
       .catch(() => setError(true));
   }, [buildingId, nodeType, session?.user.id]);
 
@@ -210,7 +228,26 @@ export function AdminMonitoringPage() {
     socket.on("connect", () => {
       setRealtimeStatus("connected");
       socket.emit("monitoring:join", { buildingId, nodeType }, (ack: { ok: boolean }) => {
-        if (!ack.ok) setRealtimeStatus("offline");
+        if (!ack.ok) {
+          setRealtimeStatus("offline");
+          return;
+        }
+        void Promise.all([
+          apiRequest<MonitoringNodeTypeResponse>(
+            session,
+            `/admin/monitoring/buildings/${buildingId}/node-types/${nodeType}`,
+          ),
+          apiRequest<AdminMonitoringSummaryRecord>(
+            session,
+            adminMonitoringSummaryPath({ areaId, buildingId, companyId }),
+          ),
+        ])
+          .then(([nodeData, summaryData]) => {
+            nodeStatesRef.current = nodeData.states;
+            setNodeResponse(nodeData);
+            setSummary(summaryData);
+          })
+          .catch(() => setError(true));
       });
     });
     socket.io.on("reconnect_attempt", () => setRealtimeStatus("reconnecting"));
@@ -225,19 +262,20 @@ export function AdminMonitoringPage() {
     socket.on("disconnect", () => setRealtimeStatus("offline"));
     socket.on("monitoring:node-state", (event: MonitoringNodeStateEvent) => {
       if (event.buildingId !== buildingId || event.nodeType !== nodeType) return;
-      setNodeResponse((current) =>
-        current ? { ...current, states: upsertState(current.states, event.state) } : current,
-      );
+      const previousStates = nodeStatesRef.current;
+      const previous = previousStates.find((state) => state.nodeId === event.state.nodeId);
+      const nextStates = upsertState(previousStates, event.state);
+      if (nextStates === previousStates) return;
+      nodeStatesRef.current = nextStates;
+      setNodeResponse((current) => (current ? { ...current, states: nextStates } : current));
       setSummary((current) =>
-        current
-          ? { ...current, recentNodes: upsertState(current.recentNodes, event.state).slice(0, 8) }
-          : current,
+        current ? applyAdminMonitoringState(current, previous, event.state) : current,
       );
     });
     return () => {
       socket.disconnect();
     };
-  }, [buildingId, nodeType, session?.user.id]);
+  }, [areaId, buildingId, companyId, nodeType, session?.user.id]);
 
   const areas = useMemo(
     () => (options?.areas ?? []).filter((area) => !companyId || area.companyId === companyId),
@@ -565,6 +603,41 @@ export function AdminMonitoringPage() {
       <RecentNodes nodes={summary.recentNodes} onOpen={setSelectedNodeId} />
     </Stack>
   );
+}
+
+export function applyAdminMonitoringState(
+  summary: AdminMonitoringSummaryRecord,
+  previous: MonitoringNodeStateRecord | undefined,
+  next: MonitoringNodeStateRecord,
+): AdminMonitoringSummaryRecord {
+  const previousPersisted = Boolean(previous && new Date(previous.lastSeenAt).getTime() > 0);
+  const previousStatus = previousPersisted ? previous?.status : undefined;
+  const distribution = { ...summary.severityDistribution };
+  if (previousStatus !== next.status) {
+    if (previousStatus)
+      distribution[previousStatus] = Math.max(0, distribution[previousStatus] - 1);
+    distribution[next.status] += 1;
+  }
+
+  const buildings = summary.buildings.map((entry) => {
+    if (entry.building.id !== next.buildingId) return entry;
+    const updated = { ...entry };
+    if (!previousPersisted) updated.total += 1;
+    for (const status of ["danger", "offline", "warning"] as const) {
+      if (previousStatus === status && previousStatus !== next.status) {
+        updated[status] = Math.max(0, updated[status] - 1);
+      }
+      if (next.status === status && previousStatus !== next.status) updated[status] += 1;
+    }
+    return updated;
+  });
+
+  return {
+    ...summary,
+    buildings,
+    recentNodes: upsertState(summary.recentNodes, next).slice(0, 8),
+    severityDistribution: distribution,
+  };
 }
 
 function SeveritySummary({

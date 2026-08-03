@@ -3,13 +3,18 @@ import { gssTheme } from "@gss-iot/ui";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AdminMonitoringSummaryRecord, MonitoringNodeStateRecord } from "@gss-iot/contracts";
 
 import {
   BuildingMonitoringPage,
   CompanyMonitoringIndexPage,
   NodeTypeMonitoringPage,
+  upsertState,
 } from "../features/monitoring/CompanyMonitoringPage";
-import { AdminMonitoringPage } from "../features/monitoring/AdminMonitoringPage";
+import {
+  AdminMonitoringPage,
+  applyAdminMonitoringState,
+} from "../features/monitoring/AdminMonitoringPage";
 import { NodeStateCard } from "../features/monitoring/components/NodeStateCard";
 import { NodeHistoryChart } from "../features/monitoring/components/NodeHistoryChart";
 import { NodeDetailDrawer } from "../features/monitoring/components/NodeDetailDrawer";
@@ -61,6 +66,76 @@ function tomorrowCalendarLabel() {
 }
 
 describe("Phase 6 monitoring UI", () => {
+  it("orders realtime states by heartbeat and keeps old values through offline recovery", () => {
+    const safe = monitoringState({
+      lastSeenAt: "2026-07-22T11:55:00.000Z",
+      status: "safe",
+      updatedAt: "2026-07-22T11:55:00.000Z",
+    });
+    const offline = monitoringState({
+      lastSeenAt: safe.lastSeenAt,
+      status: "offline",
+      updatedAt: "2026-07-22T12:00:00.000Z",
+    });
+    const offlineStates = upsertState([safe], offline);
+    expect(offlineStates[0]).toMatchObject({ status: "offline", values: safe.values });
+
+    const recovered = monitoringState({
+      lastSeenAt: "2026-07-22T12:00:01.000Z",
+      status: "warning",
+      updatedAt: "2026-07-22T12:00:01.000Z",
+    });
+    const recoveredStates = upsertState(offlineStates, recovered);
+    expect(recoveredStates[0]?.status).toBe("warning");
+
+    const delayedOffline = { ...offline, updatedAt: "2026-07-22T12:00:02.000Z" };
+    expect(upsertState(recoveredStates, delayedOffline)).toBe(recoveredStates);
+  });
+
+  it("updates Admin severity and building counts for an offline realtime transition", () => {
+    const safe = monitoringState({ status: "safe" });
+    const offline = monitoringState({
+      lastSeenAt: safe.lastSeenAt,
+      status: "offline",
+      updatedAt: "2026-07-22T12:00:00.000Z",
+    });
+    const summary: AdminMonitoringSummaryRecord = {
+      buildings: [
+        {
+          building: {
+            address: null,
+            areaId: "area-1",
+            buildingType: null,
+            companyId: "company-1",
+            id: "building-1",
+            number: null,
+            status: "ACTIVE",
+            title: "Tower A",
+          },
+          danger: 0,
+          offline: 0,
+          total: 1,
+          warning: 0,
+        },
+      ],
+      gateways: { offline: 0, online: 1, stale: 0, total: 1 },
+      recentNodes: [safe],
+      severityDistribution: {
+        caution: 0,
+        danger: 0,
+        offline: 0,
+        safe: 1,
+        unconfigured: 0,
+        warning: 0,
+      },
+    };
+
+    const next = applyAdminMonitoringState(summary, safe, offline);
+    expect(next.severityDistribution).toMatchObject({ offline: 1, safe: 0 });
+    expect(next.buildings[0]).toMatchObject({ offline: 1, total: 1 });
+    expect(next.recentNodes[0]?.status).toBe("offline");
+  });
+
   it("builds exact rolling-hour and local-calendar half-open ranges", () => {
     const anchor = new Date("2026-07-22T12:00:00.000Z");
     expect(hourRange(12, anchor)).toEqual({
@@ -912,3 +987,33 @@ describe("Phase 6 monitoring UI", () => {
     });
   });
 });
+
+function monitoringState(
+  overrides: Partial<MonitoringNodeStateRecord> = {},
+): MonitoringNodeStateRecord {
+  return {
+    areaId: "area-1",
+    building: { id: "building-1", title: "Tower A" },
+    buildingId: "building-1",
+    classificationEvidence: null,
+    companyId: "company-1",
+    faultFiltered: false,
+    gateway: { id: "gateway-1", serialNumber: "GW-001" },
+    gatewayId: "gateway-1",
+    lastSeenAt: "2026-07-22T11:59:00.000Z",
+    node: { id: "node-1", installedLocation: null, number: "100" },
+    nodeId: "node-1",
+    nodeType: {
+      displayName: "Angle Node",
+      id: "angle",
+      imageAssetKey: "angle-node.png",
+      key: "angle_node",
+      numericCode: 1,
+    },
+    nodeTypeId: "angle",
+    status: "safe",
+    updatedAt: "2026-07-22T11:59:00.000Z",
+    values: { angleX: 2.4, angleY: -1.1 },
+    ...overrides,
+  };
+}

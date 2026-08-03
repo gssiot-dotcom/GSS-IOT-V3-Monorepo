@@ -168,14 +168,9 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
               wordmark={t("branding.platformName")}
             />
             <Divider orientation="vertical" />
-            <Stack gap={0} style={{ minWidth: 0 }}>
-              <Text fw={700} lineClamp={1} size="sm">
-                {titleKey ? t(titleKey) : t("app.name")}
-              </Text>
-              <Text c="dimmed" lineClamp={1} size="xs">
-                {shellTitle} / {titleKey ? t(titleKey) : t("app.name")}
-              </Text>
-            </Stack>
+            <Text fw={700} lineClamp={1} size="sm" style={{ minWidth: 0 }}>
+              {titleKey ? t(titleKey) : t("app.name")}
+            </Text>
           </Group>
           <Group className="gss-shell-header-actions" gap="xs" wrap="nowrap">
             {realtimeState !== "idle" && realtimeState !== "connected" ? (

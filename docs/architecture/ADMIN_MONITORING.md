@@ -17,3 +17,11 @@ credentials are not exposed.
 No schema migration is required. Five-minute gateway freshness matches the
 existing dashboard device-summary convention for stale reporting. Long-term
 telemetry retention remains deferred.
+
+Node liveness is now represented by persisted `LatestNodeState.status`, not by a browser-only age
+guess. An accepted unique reading sets `lastSeenAt`; at an exact five-minute age the bounded backend
+evaluator conditionally changes an otherwise eligible state to `OFFLINE` while retaining the last
+telemetry and evidence. The Admin severity distribution, building offline count, monitoring detail
+and dashboard summary therefore read the same database truth. Live node-state events update the
+selected state and summary counters, and a successful realtime rejoin refetches both detail and
+summary read models before continuing.

@@ -1,9 +1,9 @@
 import type { AuthContext } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PortalLayout } from "../features/shell/PortalLayout";
 
@@ -24,9 +24,19 @@ vi.mock("../shared/auth/auth-context", () => ({
   }),
 }));
 
-vi.mock("../shared/api/api-client", () => ({
-  apiRequest: vi.fn().mockResolvedValue({ unreadCount: 0 }),
-}));
+vi.mock("../shared/api/api-client", () => {
+  class ApiError extends Error {
+    constructor(readonly status: number) {
+      super(`API request failed with status ${status}`);
+    }
+  }
+
+  return {
+    ApiError,
+    apiBlob: vi.fn().mockRejectedValue(new ApiError(404)),
+    apiRequest: vi.fn().mockResolvedValue({ unreadCount: 0 }),
+  };
+});
 
 vi.mock("../app/env", () => ({ readWebEnv: () => ({ apiBaseUrl: "http://localhost:3000" }) }));
 
@@ -40,6 +50,8 @@ vi.mock("socket.io-client", () => ({
 }));
 
 describe("Portal sidebar", () => {
+  afterEach(cleanup);
+
   it("keeps the Devices links in the shared visible scroll area", () => {
     render(
       <MantineProvider theme={gssTheme}>
@@ -64,6 +76,9 @@ describe("Portal sidebar", () => {
     const headerBrand = document.querySelector(".gss-platform-brand");
     expect(headerBrand?.textContent).toBe("Global Smart Solutions");
     expect(headerBrand?.nextElementSibling?.classList.contains("mantine-Divider-root")).toBe(true);
+    const header = document.querySelector(".gss-shell-header");
+    expect(header?.textContent?.match(/Devices/g)).toHaveLength(1);
+    expect(header?.textContent).not.toContain("GSS Admin Portal /");
     const sidebarLogo = document.querySelector<HTMLImageElement>(".gss-admin-sidebar-brand > img");
     expect(sidebarLogo?.src.endsWith("/assets/gss-logos/GSS-logo.svg")).toBe(true);
     const sidebarBrand = document.querySelector(".gss-admin-sidebar-brand");
@@ -77,5 +92,22 @@ describe("Portal sidebar", () => {
     expect(scrollArea?.querySelector("[data-mantine-scrollbar]")?.getAttribute("data-hidden")).toBe(
       "true",
     );
+  });
+
+  it("keeps one route label in the shared Company header", () => {
+    render(
+      <MantineProvider theme={gssTheme}>
+        <MemoryRouter initialEntries={["/company/devices"]}>
+          <PortalLayout context={"company-user" as AuthContext}>
+            <div>Content</div>
+          </PortalLayout>
+        </MemoryRouter>
+      </MantineProvider>,
+    );
+
+    const header = document.querySelector(".gss-shell-header");
+    expect(header?.textContent).toContain("Global Smart Solutions");
+    expect(header?.textContent?.match(/Devices/g)).toHaveLength(1);
+    expect(header?.textContent).not.toContain("Company Portal /");
   });
 });

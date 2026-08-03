@@ -148,11 +148,7 @@ export function NodeStateCard({
             ) : null}
             {state.lastSeenAt ? (
               <Group gap={4}>
-                {state.lastSeenAt === new Date(0).toISOString() ? (
-                  <IconWifiOff size={14} />
-                ) : (
-                  <IconWifi size={14} />
-                )}
+                {state.status === "offline" ? <IconWifiOff size={14} /> : <IconWifi size={14} />}
                 <Text c="dimmed" size="xs">
                   {formatAge(state.lastSeenAt)}
                 </Text>

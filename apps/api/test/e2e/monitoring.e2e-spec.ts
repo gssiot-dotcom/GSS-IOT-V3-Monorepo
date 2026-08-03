@@ -13,12 +13,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../src/app.module";
 import { configureApiApp } from "../../src/bootstrap";
 import { MonitoringService } from "../../src/modules/monitoring/monitoring.service";
+import { NodeOfflineEvaluatorService } from "../../src/modules/monitoring/node-offline-evaluator.service";
 import { PrismaService } from "../../src/prisma/prisma.service";
 
 describe("Phase 6 monitoring and realtime e2e", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let monitoring: MonitoringService;
+  let offlineEvaluator: NodeOfflineEvaluatorService;
   let jwt: JwtService;
   let serverUrl: string;
   let allowedBuildingId: string;
@@ -45,6 +47,7 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     serverUrl = `http://127.0.0.1:${address.port}`;
     prisma = app.get(PrismaService);
     monitoring = app.get(MonitoringService);
+    offlineEvaluator = app.get(NodeOfflineEvaluatorService);
     jwt = app.get(JwtService);
 
     await prisma.reportExport.deleteMany();
@@ -89,7 +92,12 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     await prisma.gssRole.deleteMany();
     await prisma.permission.deleteMany();
 
-    const permissionKeys = ["monitoring.view", "monitoring.realtime", "mqtt-commands.view"];
+    const permissionKeys = [
+      "dashboard.view",
+      "monitoring.view",
+      "monitoring.realtime",
+      "mqtt-commands.view",
+    ];
     await prisma.permission.createMany({
       data: permissionKeys.map((key) => {
         const [module, action] = key.split(".") as [string, string];
@@ -107,7 +115,7 @@ describe("Phase 6 monitoring and realtime e2e", () => {
           name: "Monitoring Admin",
           permissions: {
             createMany: {
-              data: ["monitoring.view", "monitoring.realtime"].map((key) => ({
+              data: ["dashboard.view", "monitoring.view", "monitoring.realtime"].map((key) => ({
                 permissionId: byKey.get(key)!.id,
               })),
             },
@@ -120,7 +128,7 @@ describe("Phase 6 monitoring and realtime e2e", () => {
           name: "Monitoring Realtime",
           permissions: {
             createMany: {
-              data: ["monitoring.view", "monitoring.realtime"].map((key) => ({
+              data: ["dashboard.view", "monitoring.view", "monitoring.realtime"].map((key) => ({
                 permissionId: byKey.get(key)!.id,
               })),
             },
@@ -526,10 +534,21 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     const before = await prisma.sensorReading.count();
     const payload = { betChk: 77, doorChk: 0, doorNum: "D-P6-001", msgId: "door-duplicate" };
     monitoring.simulateSensorMessage(`${base}/GATE_PUB/GW-P6-0001`, payload);
-    monitoring.simulateSensorMessage(`${base}/GATE_PUB/GW-P6-0001`, payload);
     await waitForCount("sensorReading", before + 1);
+    const acceptedLastSeenAt = (
+      await prisma.latestNodeState.findUniqueOrThrow({ where: { nodeId: doorNodeId } })
+    ).lastSeenAt;
+    monitoring.simulateSensorMessage(`${base}/GATE_PUB/GW-P6-0001`, payload);
+    monitoring.simulateSensorMessage(`${base}/GATE_PUB/GW-P6-0001`, {
+      doorNum: "D-P6-001",
+      msgId: "door-malformed-no-values",
+    });
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(await prisma.sensorReading.count()).toBe(before + 1);
+    expect(
+      (await prisma.latestNodeState.findUniqueOrThrow({ where: { nodeId: doorNodeId } }))
+        .lastSeenAt,
+    ).toEqual(acceptedLastSeenAt);
   });
 
   it("enforces scope and returns building/node-type filtered monitoring data with paginated history", async () => {
@@ -794,6 +813,171 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     wrongRoom.disconnect();
   });
 
+  it("transitions at the exact five-minute heartbeat boundary and recovers on the next reading", async () => {
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+    const authorized = await connect(scopedToken);
+    const foreign = await connect(foreignToken);
+    expect(
+      (
+        await emitAck(authorized, "monitoring:join", {
+          buildingId: allowedBuildingId,
+          nodeType: "door_node",
+        })
+      ).ok,
+    ).toBe(true);
+    expect(
+      (
+        await emitAck(foreign, "monitoring:join", {
+          buildingId: foreignBuildingId,
+          nodeType: "door_node",
+        })
+      ).ok,
+    ).toBe(true);
+
+    const cycleNow = new Date("2026-08-03T12:00:00.000Z");
+    const freshLastSeenAt = new Date(cycleNow.getTime() - 5 * 60 * 1_000 + 1);
+    const exactLastSeenAt = new Date(cycleNow.getTime() - 5 * 60 * 1_000);
+    const values = { batteryLevel: 88, doorState: "closed" };
+    await prisma.latestNodeState.updateMany({ data: { lastSeenAt: freshLastSeenAt } });
+    await prisma.latestNodeState.update({
+      data: { lastSeenAt: freshLastSeenAt, status: "SAFE", values },
+      where: { nodeId: doorNodeId },
+    });
+    expect(
+      (
+        await emitAck(authorized, "monitoring:join", {
+          buildingId: allowedBuildingId,
+          nodeType: "angle_node",
+        })
+      ).ok,
+    ).toBe(true);
+    let ineligibleEvent = false;
+    authorized.on("monitoring:node-state", (event: { state: { nodeId: string } }) => {
+      if (event.state.nodeId === angleNodeId) ineligibleEvent = true;
+    });
+    await prisma.latestNodeState.update({
+      data: { lastSeenAt: exactLastSeenAt, status: "SAFE" },
+      where: { nodeId: angleNodeId },
+    });
+    await prisma.node.update({ data: { status: "INACTIVE" }, where: { id: angleNodeId } });
+    await expect(offlineEvaluator.runCycle(cycleNow)).resolves.toMatchObject({ transitioned: 0 });
+    await prisma.node.update({ data: { status: "ACTIVE" }, where: { id: angleNodeId } });
+    const angleCompanyAssignment = await prisma.companyDeviceAssignment.findFirstOrThrow({
+      where: { nodeId: angleNodeId, status: "ACTIVE" },
+    });
+    await prisma.companyDeviceAssignment.update({
+      data: {
+        activeKey: angleCompanyAssignment.id,
+        status: "ENDED",
+        unassignedAt: cycleNow,
+      },
+      where: { id: angleCompanyAssignment.id },
+    });
+    await expect(offlineEvaluator.runCycle(cycleNow)).resolves.toMatchObject({ transitioned: 0 });
+    await prisma.companyDeviceAssignment.update({
+      data: { activeKey: "active", status: "ACTIVE", unassignedAt: null },
+      where: { id: angleCompanyAssignment.id },
+    });
+    await prisma.constructionBuilding.update({
+      data: { deletedAt: cycleNow },
+      where: { id: allowedBuildingId },
+    });
+    await expect(offlineEvaluator.runCycle(cycleNow)).resolves.toMatchObject({ transitioned: 0 });
+    await prisma.constructionBuilding.update({
+      data: { deletedAt: null },
+      where: { id: allowedBuildingId },
+    });
+    expect(
+      await prisma.latestNodeState.findUniqueOrThrow({ where: { nodeId: angleNodeId } }),
+    ).toMatchObject({ lastSeenAt: exactLastSeenAt, status: "SAFE" });
+    await prisma.latestNodeState.update({
+      data: { lastSeenAt: freshLastSeenAt },
+      where: { nodeId: angleNodeId },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(ineligibleEvent).toBe(false);
+    const readingsBefore = await prisma.sensorReading.count();
+
+    await expect(offlineEvaluator.runCycle(cycleNow)).resolves.toMatchObject({ transitioned: 0 });
+    await request(server)
+      .get(`/company/buildings/${allowedBuildingId}/monitoring/door_node`)
+      .set("Cookie", scopedToken)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(
+          body.states.find((state: { nodeId: string }) => state.nodeId === doorNodeId),
+        ).toMatchObject({ status: "safe" });
+      });
+
+    await prisma.latestNodeState.update({
+      data: { lastSeenAt: exactLastSeenAt },
+      where: { nodeId: doorNodeId },
+    });
+    const offlineEvent = onceNodeStateEvent(authorized);
+    let leaked = false;
+    foreign.once("monitoring:node-state", () => {
+      leaked = true;
+    });
+    await expect(offlineEvaluator.runCycle(cycleNow)).resolves.toMatchObject({ transitioned: 1 });
+    await expect(offlineEvent).resolves.toMatchObject({
+      state: {
+        lastSeenAt: exactLastSeenAt.toISOString(),
+        nodeId: doorNodeId,
+        status: "offline",
+        values,
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(leaked).toBe(false);
+    expect(await prisma.sensorReading.count()).toBe(readingsBefore);
+
+    await request(server)
+      .get(`/admin/monitoring/buildings/${allowedBuildingId}/node-types/door_node`)
+      .set("Cookie", gssToken)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(
+          body.states.find((state: { nodeId: string }) => state.nodeId === doorNodeId),
+        ).toMatchObject({ lastSeenAt: exactLastSeenAt.toISOString(), status: "offline", values });
+      });
+    await request(server)
+      .get(`/admin/monitoring/summary?buildingId=${allowedBuildingId}`)
+      .set("Cookie", gssToken)
+      .expect(200)
+      .expect(({ body }) => expect(body.severityDistribution.offline).toBeGreaterThanOrEqual(1));
+    await request(server)
+      .get("/admin/dashboard/summary?range=7d")
+      .set("Cookie", gssToken)
+      .expect(200)
+      .expect(({ body }) => expect(body.severityDistribution.offline).toBeGreaterThanOrEqual(1));
+
+    const recoveredEvent = onceNodeStateEvent(authorized);
+    monitoring.simulateSensorMessage(
+      `${process.env.MQTT_TOPIC_BASE ?? "GSSIOT/test"}/GATE_PUB/GW-P6-0001`,
+      {
+        betChk: 87,
+        doorChk: 0,
+        doorNum: "D-P6-001",
+        msgId: "door-offline-recovery",
+      },
+    );
+    await expect(recoveredEvent).resolves.toMatchObject({
+      state: { nodeId: doorNodeId, status: "safe" },
+    });
+    await request(server)
+      .get(`/company/buildings/${allowedBuildingId}/monitoring/door_node`)
+      .set("Cookie", scopedToken)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(
+          body.states.find((state: { nodeId: string }) => state.nodeId === doorNodeId),
+        ).toMatchObject({ status: "safe" });
+      });
+
+    authorized.disconnect();
+    foreign.disconnect();
+  });
+
   it("rejects wrong-context, expired and revoked access cookies on Socket.IO joins", async () => {
     const env = loadApiEnv();
     const user = await prisma.companyUser.findUniqueOrThrow({
@@ -869,5 +1053,16 @@ describe("Phase 6 monitoring and realtime e2e", () => {
     return new Promise((resolve) => {
       socket.once(event, (payload: { state: { nodeId: string } }) => resolve(payload));
     });
+  }
+
+  function onceNodeStateEvent(socket: Socket): Promise<{
+    state: {
+      lastSeenAt: string;
+      nodeId: string;
+      status: string;
+      values: Record<string, unknown>;
+    };
+  }> {
+    return new Promise((resolve) => socket.once("monitoring:node-state", resolve));
   }
 });

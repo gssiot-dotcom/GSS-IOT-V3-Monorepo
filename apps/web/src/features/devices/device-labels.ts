@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 
 import { formatDateTime, t } from "../../app/i18n";
 
+export const DEVICE_CONNECTIVITY_TIMEOUT_MS = 5 * 60 * 1_000;
+
 export function deviceStatusLabel(status: DeviceLifecycleStatus): string {
   if (status === "ACTIVE") return t("devices.statusActive");
   if (status === "INACTIVE") return t("devices.statusInactive");
@@ -25,10 +27,17 @@ export function deviceLifecycleBadge(status: DeviceLifecycleStatus): ReactNode {
   return StatusBadge({ label: deviceStatusLabel(status), status: deviceLifecycleStatus(status) });
 }
 
+export function isDeviceOnline(lastSeenAt: string | null, now = Date.now()): boolean {
+  if (!lastSeenAt) return false;
+  const timestamp = new Date(lastSeenAt).getTime();
+  return Number.isFinite(timestamp) && now - timestamp < DEVICE_CONNECTIVITY_TIMEOUT_MS;
+}
+
 export function deviceConnectivityBadge(lastSeenAt: string | null): ReactNode {
+  const online = isDeviceOnline(lastSeenAt);
   return StatusBadge({
-    label: lastSeenAt ? t("status.online") : t("status.offline"),
-    status: lastSeenAt ? "online" : "offline",
+    label: online ? t("status.online") : t("status.offline"),
+    status: online ? "online" : "offline",
   });
 }
 

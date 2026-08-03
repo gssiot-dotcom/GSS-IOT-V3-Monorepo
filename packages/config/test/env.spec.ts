@@ -23,6 +23,9 @@ describe("loadApiEnv", () => {
     expect(env.REPORT_STORAGE_PROVIDER).toBe("memory");
     expect(env.REPORT_WORKER_ENABLED).toBe(false);
     expect(env.DELETION_WORKER_ENABLED).toBe(false);
+    expect(env.NODE_OFFLINE_BATCH_SIZE).toBe(250);
+    expect(env.NODE_OFFLINE_EVALUATOR_ENABLED).toBe(false);
+    expect(env.NODE_OFFLINE_SWEEP_INTERVAL_MS).toBe(10_000);
     expect(env.SENSOR_RETENTION_DAYS).toBe(180);
     expect(env.SENSOR_RETENTION_DRY_RUN).toBe(true);
     expect(env.SENSOR_RETENTION_ENABLED).toBe(false);

@@ -12,6 +12,7 @@ process.env.MQTT_BROKER_URL ??= "mqtt://localhost:1883";
 process.env.MQTT_ENABLED ??= "false";
 process.env.MQTT_FAKE_ACK ??= "false";
 process.env.MQTT_TOPIC_BASE ??= "GSSIOT/test";
+process.env.NODE_OFFLINE_EVALUATOR_ENABLED ??= "false";
 process.env.REPORT_STORAGE_PROVIDER ??= "memory";
 process.env.REPORT_WORKER_ENABLED ??= "false";
 process.env.REDIS_URL ??= "redis://localhost:6379";

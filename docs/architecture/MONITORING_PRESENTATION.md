@@ -26,3 +26,19 @@ intentionally absent from the detail drawer.
 No API or schema migration is required. The existing backend permission and
 building-scope guards remain authoritative, and production telemetry
 retention remains deferred.
+
+## Accepted-reading heartbeat and derived offline presentation
+
+Every accepted, unique and valid sensor reading is also the Node heartbeat. Its backend
+`receivedAt` becomes `LatestNodeState.lastSeenAt`; duplicate MQTT deliveries and malformed or
+rejected payloads do not refresh liveness. An operationally eligible Node whose last accepted
+reading is exactly five minutes old or older transitions to `OFFLINE` during the bounded evaluator
+sweep. The transition updates only `status` and `updatedAt`: the last values, classification
+evidence, fault-filter evidence and `lastSeenAt` remain visible as historical context.
+
+The existing `monitoring:node-state` event carries the derived offline state only after a
+conditional database update wins. A new accepted reading immediately upserts the classified
+non-offline state and emits through the same room. Admin and Company clients reject out-of-order
+events and refetch current read models after a successful Socket.IO rejoin, so reconnects cannot
+leave stale offline UI behind. The Node card disconnected icon follows the persisted status, while
+generic inventory connectivity uses the same exact five-minute freshness boundary.

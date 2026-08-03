@@ -1327,3 +1327,25 @@ blocked before network calls, and runtime timezone rules supply DST offsets.
 **Consequences:** Scope/RBAC remain backend boundaries, overview response size is bounded, and list
 pagination no longer changes KPI truth. List/export paths receive the same normalized Archive
 filters. No alarm, retention, MQTT or stored UTC semantics change.
+
+## DEC-2026-08-03-01 — Accepted readings are Node heartbeats with persisted offline state (ACCEPTED)
+
+**Decision:** Every accepted, unique and valid sensor reading is a Node heartbeat. Its backend
+`receivedAt` is the authoritative `LatestNodeState.lastSeenAt`. A Node is stale at the exact
+boundary `lastSeenAt <= now - 300000ms`; the expected normal device cadence is at least one reading
+per minute. A default ten-second bounded evaluator changes eligible non-offline latest states to
+`OFFLINE` through a conditional database update; only the winning process emits
+`monitoring:node-state`. Eligibility requires active/non-archived ownership scope, active
+Node/Gateway lifecycle and the applicable active assignments. The five-minute timeout is not
+configurable; enablement, sweep interval and batch size are operational configuration only.
+
+**Clarification:** The derived transition preserves last values, classification evidence,
+fault-filter evidence and `lastSeenAt`, and changes only `status` plus `updatedAt`. It does not
+create a `SensorReading`, run alarm occurrence logic, dispatch notifications or change firmware.
+Malformed/rejected readings and duplicate delivery do not refresh liveness. The next accepted
+reading immediately restores the normally classified state through the existing transaction.
+
+**Consequences:** `LatestNodeState.status` is the shared truth for Company/Admin monitoring,
+building/admin severity summaries and Admin dashboard totals. Realtime clients reject older events
+and refetch detail plus summary state after rejoin. The existing `lastSeenAt` index is sufficient;
+there is no migration or seed change. Gateway freshness remains a separate existing convention.

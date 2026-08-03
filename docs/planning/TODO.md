@@ -408,6 +408,24 @@ Phase 14 remains not started.
 
 Phase 14 remains not started by this correction.
 
+## 2026-08-03 header and Node heartbeat correction
+
+- [x] Remove the duplicate `portal / current route` caption from the shared Admin/Company header.
+- [x] Treat only accepted unique readings as heartbeat and persist the exact five-minute offline
+      state without changing alarm or notification behavior.
+- [x] Add bounded, race-safe, multi-instance-safe evaluation with one scoped realtime emission.
+- [x] Preserve telemetry/evidence/`lastSeenAt` offline and recover immediately on the next reading.
+- [x] Resynchronize Admin/Company monitoring on reconnect and keep Admin summary counts current.
+- [x] Cover exact timing, repeated sweeps, race loss, scope isolation, UI ordering and responsive
+      single-route header behavior.
+- [x] Pass frozen install, lint, typecheck, i18n audit, 213 unit/component tests, production build,
+      93 API E2E tests, 24 Playwright tests, task-scoped Prettier and `git diff --check`.
+- [ ] Validate a real hardware Node silence/recovery cycle in the deployment environment; automated
+      MQTT simulation covers the same backend contract locally.
+
+No migration, seed, offline alarm notification or firmware work is introduced. Phase 14 remains
+not started by this correction.
+
 ## 2026-07-28 targeted operations correction
 
 - [x] Make Recipient Policy rows the sole table entry to the readable, permission-aware Drawer and

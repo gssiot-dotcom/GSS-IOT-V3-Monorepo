@@ -13,6 +13,7 @@ import {
 import { MonitoringGateway } from "./monitoring.gateway";
 import { MonitoringRealtimeService } from "./monitoring-realtime.service";
 import { MonitoringService } from "./monitoring.service";
+import { NodeOfflineEvaluatorService } from "./node-offline-evaluator.service";
 import { SensorReadingRetentionService } from "./sensor-reading-retention.service";
 
 @Module({
@@ -27,6 +28,7 @@ import { SensorReadingRetentionService } from "./sensor-reading-retention.servic
     MonitoringGateway,
     MonitoringRealtimeService,
     MonitoringService,
+    NodeOfflineEvaluatorService,
     SensorReadingRetentionService,
   ],
 })

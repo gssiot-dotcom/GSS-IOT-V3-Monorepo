@@ -78,6 +78,9 @@ const rawApiEnvSchema = z
     MQTT_PUBLISH_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
     MQTT_TOPIC_BASE: z.string().min(1),
     MQTT_USERNAME: z.string().optional(),
+    NODE_OFFLINE_BATCH_SIZE: z.coerce.number().int().min(1).max(1_000).default(250),
+    NODE_OFFLINE_EVALUATOR_ENABLED: optionalBooleanStringSchema,
+    NODE_OFFLINE_SWEEP_INTERVAL_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
     NODE_ENV: nodeEnvSchema,
     PORT: z.coerce.number().int().positive().default(3000),
     REPORT_CLEANUP_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
@@ -211,6 +214,10 @@ export const apiEnvSchema = rawApiEnvSchema.transform((env) => ({
     env.DELETION_WORKER_ENABLED === undefined
       ? env.NODE_ENV !== "test"
       : env.DELETION_WORKER_ENABLED === "true" || env.DELETION_WORKER_ENABLED === "1",
+  NODE_OFFLINE_EVALUATOR_ENABLED:
+    env.NODE_OFFLINE_EVALUATOR_ENABLED === undefined
+      ? env.NODE_ENV !== "test"
+      : env.NODE_OFFLINE_EVALUATOR_ENABLED === "true" || env.NODE_OFFLINE_EVALUATOR_ENABLED === "1",
   REPORT_CLEANUP_ENABLED:
     env.REPORT_CLEANUP_ENABLED === undefined
       ? true

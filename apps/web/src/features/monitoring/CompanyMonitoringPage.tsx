@@ -52,7 +52,7 @@ import {
   IconCircleCheck,
   IconRefresh,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 
@@ -242,6 +242,20 @@ export function NodeTypeMonitoringPage() {
   >("states");
   const canViewBuildingImages = hasPermission(session, "building-plans.view");
 
+  const loadNodeStates = useCallback(async () => {
+    if (!session || !buildingId || !canonicalNodeType) return;
+    setError(false);
+    try {
+      const data = await apiRequest<MonitoringNodeTypeResponse>(
+        session,
+        `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}`,
+      );
+      setResponse(data);
+    } catch {
+      setError(true);
+    }
+  }, [buildingId, canonicalNodeType, session]);
+
   useEffect(() => {
     if (
       !canViewBuildingImages &&
@@ -256,17 +270,8 @@ export function NodeTypeMonitoringPage() {
   }, [historyRange.range.from, historyRange.range.to, selectedNodeId]);
 
   useEffect(() => {
-    if (!session || !buildingId || !canonicalNodeType) return;
-    setError(false);
-    void apiRequest<MonitoringNodeTypeResponse>(
-      session,
-      `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}`,
-    )
-      .then((data) => {
-        setResponse(data);
-      })
-      .catch(() => setError(true));
-  }, [buildingId, canonicalNodeType, session?.user.id]);
+    void loadNodeStates();
+  }, [loadNodeStates]);
 
   useEffect(() => {
     if (!session || !buildingId || !canonicalNodeType) return;
@@ -283,6 +288,7 @@ export function NodeTypeMonitoringPage() {
         { buildingId, nodeType: canonicalNodeType },
         (ack: { ok: boolean }) => {
           if (!ack.ok) setRealtimeStatus("offline");
+          else void loadNodeStates();
         },
       );
     });
@@ -310,7 +316,7 @@ export function NodeTypeMonitoringPage() {
     return () => {
       socket.disconnect();
     };
-  }, [buildingId, canonicalNodeType, session]);
+  }, [buildingId, canonicalNodeType, loadNodeStates, session]);
 
   useEffect(() => {
     if (!session || !buildingId || !canonicalNodeType || !selectedNodeId) {
@@ -1109,6 +1115,17 @@ export function upsertState(
 ): MonitoringNodeStateRecord[] {
   const index = states.findIndex((state) => state.nodeId === next.nodeId);
   if (index === -1) return [next, ...states];
+  const current = states[index]!;
+  const currentLastSeenAt = new Date(current.lastSeenAt).getTime();
+  const nextLastSeenAt = new Date(next.lastSeenAt).getTime();
+  const currentUpdatedAt = new Date(current.updatedAt).getTime();
+  const nextUpdatedAt = new Date(next.updatedAt).getTime();
+  if (
+    nextLastSeenAt < currentLastSeenAt ||
+    (nextLastSeenAt === currentLastSeenAt && nextUpdatedAt < currentUpdatedAt)
+  ) {
+    return states;
+  }
   return states.map((state, currentIndex) => (currentIndex === index ? next : state));
 }
 

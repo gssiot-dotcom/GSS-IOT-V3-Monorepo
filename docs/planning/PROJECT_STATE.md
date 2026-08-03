@@ -539,3 +539,34 @@ Final verification for this correction:
   baseline, which was not expanded into a broad rewrite or the user's pre-existing changes.
 
 No production deployment, commit, push, pull request or Phase 14 work was performed.
+
+## 2026-08-03 shared-header cleanup and Node heartbeat offline state
+
+The shared Admin/Company header now renders one translated current-route context after the existing
+theme-aware platform brand and divider; the duplicate compact `portal / route` caption is removed.
+No route, control, permission, logo or responsive shell behavior changed.
+
+Accepted unique sensor readings now serve as Node heartbeats. A bounded evaluator applies the fixed
+five-minute stale boundary to operationally eligible `LatestNodeState` rows with a conditional
+database transition, preserves telemetry/evidence/`lastSeenAt`, and emits one scoped realtime event
+only for the winning update. The next accepted reading recovers immediately. Admin summaries and
+Company/Admin monitoring reconnect paths now resynchronize from persisted state, stale events are
+ignored, and inventory/card connectivity presentation follows the same boundary/status truth.
+
+No Prisma migration or seed change is required because `LatestNodeState.lastSeenAt` is already
+indexed. Focused config, API evaluator, Web component and PostgreSQL/Socket.IO monitoring E2E tests
+pass, including 4:59.999 versus 5:00.000, scope isolation, summary propagation and recovery.
+
+Final verification for this correction:
+
+- `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm i18n:audit`, `pnpm test`
+  and `pnpm build` pass. Unit/component coverage passes 50 files and 213 tests; the production build
+  retains only the known JavaScript chunk-size advisory.
+- `pnpm --filter api test:e2e -- --retry=1` passes all 10 files and 93 PostgreSQL-backed tests. The
+  task-focused monitoring spec passes 10 tests without retry and includes exact timeout, inactive,
+  unassigned, archived, cross-company realtime and recovery coverage.
+- `pnpm --filter web test:e2e -- --workers=1 --retries=1` passes all 24 browser tests in 16.3
+  minutes. The focused Admin/Company KO/EN header test also passes independently at 1440×900,
+  1280×800 and 390×844.
+- Task-changed files pass Prettier and `git diff --check`. No production deployment, commit, push,
+  pull request, offline notification, firmware or Phase 14 work was performed.

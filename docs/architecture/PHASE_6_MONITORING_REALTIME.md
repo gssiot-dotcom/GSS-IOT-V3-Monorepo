@@ -155,6 +155,25 @@ body:  { buildingId, nodeType, state }
 
 The frontend keeps the last known value visible when the socket disconnects and shows connected, reconnecting or offline state.
 
+## Five-minute Node heartbeat evaluation
+
+An accepted unique sensor reading is the Node heartbeat and stores its backend `receivedAt` in
+`LatestNodeState.lastSeenAt`. Invalid/rejected readings and duplicate MQTT delivery do not extend
+the heartbeat. A bounded evaluator runs at a default ten-second interval and selects non-offline
+latest states with `lastSeenAt <= now - 300000ms`. Only active, non-archived ownership scope with
+active Node/Gateway lifecycle and active Company/Gateway/Building assignments is eligible.
+
+Each candidate uses a conditional `updateMany` that repeats the stale timestamp, non-offline status
+and operational assignment predicates. Consequently a concurrent accepted reading wins safely,
+and only one process can change a row and emit the derived offline event. The winning transition
+changes only `status=OFFLINE` and `updatedAt`; it does not insert `SensorReading`, evaluate alarm
+rules, create notifications, or erase values/evidence/`lastSeenAt`. A later accepted reading uses
+the normal transactional latest-state upsert and immediately recovers the classified state.
+
+The timeout is a fixed domain rule. Environment configuration controls only evaluator enablement,
+sweep interval and bounded batch size. The existing `LatestNodeState.lastSeenAt` index supports the
+candidate query, so this change requires no Prisma migration or seed update.
+
 ## Retention
 
 Phase 6 defines a default sensor history retention target of 180 days and adds indexes for node/time

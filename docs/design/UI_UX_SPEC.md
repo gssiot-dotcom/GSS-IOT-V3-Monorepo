@@ -298,6 +298,10 @@ The authenticated shell presents one platform identity in the header and, for Co
 tenant identity in the sidebar. Route titles and breadcrumbs remain translated. Existing account,
 theme, notification and realtime controls retain their behavior and priority.
 
+The Admin and Company shell header contains one current-route label after the shared platform brand
+and divider. A duplicate compact `portal / route` line is not rendered, including at responsive
+breakpoints where the single lower-priority route context may be visually hidden.
+
 `/company/settings` loads company metadata through `settings.company.view`. Every such viewer sees
 the current logo or fallback. Only `settings.company.manage` exposes choose, upload/replace and
 confirmed remove controls. Selecting a file shows a local preview and cancel action; successful

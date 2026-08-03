@@ -2668,6 +2668,9 @@ test("verifies persisted KO/EN switching in Admin and Company at required viewpo
     ]) {
       await target.setViewportSize({ height: viewport.height, width: viewport.width });
       await expect(target.getByTestId("app-root")).toBeVisible();
+      const headerText = await target.locator(".gss-shell-header").textContent();
+      expect(headerText?.match(/대시보드/g)).toHaveLength(1);
+      expect(headerText).not.toContain(" / ");
       expect(
         await target.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       ).toBe(true);
@@ -2694,6 +2697,9 @@ test("verifies persisted KO/EN switching in Admin and Company at required viewpo
       { height: 844, name: "390x844", width: 390 },
     ]) {
       await target.setViewportSize({ height: viewport.height, width: viewport.width });
+      const headerText = await target.locator(".gss-shell-header").textContent();
+      expect(headerText?.match(/Dashboard/g)).toHaveLength(1);
+      expect(headerText).not.toContain(" / ");
       expect(
         await target.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       ).toBe(true);

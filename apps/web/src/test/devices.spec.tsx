@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminDevicesPage } from "../features/devices/AdminDevicesPage";
+import { DEVICE_CONNECTIVITY_TIMEOUT_MS, isDeviceOnline } from "../features/devices/device-labels";
 import { apiRequest } from "../shared/api/api-client";
 
 vi.mock("../shared/auth/auth-context", () => ({
@@ -43,6 +44,14 @@ vi.mock("../shared/api/api-client", () => ({
 }));
 
 describe("Phase 8 Admin devices provisioning UI", () => {
+  it("uses the accepted exact five-minute device freshness boundary", () => {
+    const now = new Date("2026-08-03T12:00:00.000Z").getTime();
+    expect(DEVICE_CONNECTIVITY_TIMEOUT_MS).toBe(300_000);
+    expect(isDeviceOnline("2026-08-03T11:55:00.001Z", now)).toBe(true);
+    expect(isDeviceOnline("2026-08-03T11:55:00.000Z", now)).toBe(false);
+    expect(isDeviceOnline(null, now)).toBe(false);
+  });
+
   let deletionAllowed = false;
   let deleteError = "";
   let bulkOptions: RequestInit | undefined;
