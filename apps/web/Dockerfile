@@ -28,6 +28,9 @@ ARG VITE_API_BASE_URL
 ARG VITE_AUTH_CSRF_COOKIE_NAME=gss_csrf
 
 RUN test -n "$VITE_API_BASE_URL" \
+    && pnpm --filter @gss-iot/config build \
+    && pnpm --filter @gss-iot/contracts build \
+    && pnpm --filter @gss-iot/ui build \
     && VITE_API_BASE_URL="$VITE_API_BASE_URL" \
        VITE_AUTH_CSRF_COOKIE_NAME="$VITE_AUTH_CSRF_COOKIE_NAME" \
        pnpm --filter web build
