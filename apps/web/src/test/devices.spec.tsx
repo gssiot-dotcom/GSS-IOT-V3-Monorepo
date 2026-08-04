@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "./render";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminDevicesPage } from "../features/devices/AdminDevicesPage";

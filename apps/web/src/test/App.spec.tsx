@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { render, screen } from "@testing-library/react";
+import { render, screen } from "./render";
 import { describe, expect, it } from "vitest";
 
 import { App } from "../App";
@@ -11,6 +11,7 @@ describe("App", () => {
       <MantineProvider theme={gssTheme}>
         <App />
       </MantineProvider>,
+      { router: false },
     );
 
     expect(screen.getByTestId("app-root")).toBeTruthy();
@@ -24,6 +25,7 @@ describe("App", () => {
       <MantineProvider theme={gssTheme}>
         <App />
       </MantineProvider>,
+      { router: false },
     );
 
     expect(screen.getByTestId("phase-2-demo")).toBeTruthy();

@@ -1,4 +1,5 @@
 import type { CollectionPageSize, ReportFileFormat, ReportJobRecord } from "@gss-iot/contracts";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Badge,
@@ -23,7 +24,7 @@ import {
   IconRefresh,
   IconTrash,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import {
   CollectionPagination,
   EmptyState,
@@ -33,11 +34,14 @@ import {
 } from "@gss-iot/ui";
 
 import { formatDateTime, t, tf, tx } from "../../app/i18n";
-import { ApiError, apiDownload, apiRequest } from "../../shared/api/api-client";
+import { ApiError, apiDownload } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { LocalDateTimeInput } from "../../shared/date-time/LocalDateTimeInput";
 import { normalizeOptionalDateTimeRange } from "../../shared/date-time/local-date-time-range";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { apiQueryOptions, useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { queryKeys } from "../../shared/query/query-keys";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 
 const entityTypes = [
   "COMPANY",
@@ -107,29 +111,35 @@ const domainPermission: Record<ArchiveType, string> = {
 
 export function ArchivePage(): ReactElement {
   const { session } = useAuth();
-  const [type, setType] = useState<ArchiveType>("COMPANY");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [search, setSearch] = useState("");
-  const [companyId, setCompanyId] = useState("");
-  const [areaId, setAreaId] = useState("");
-  const [buildingId, setBuildingId] = useState("");
-  const [archivedBy, setArchivedBy] = useState("");
-  const [archivedRange, setArchivedRange] = useState({
-    from: { date: null as string | null, time: "" },
-    to: { date: null as string | null, time: "" },
-  });
-  const [data, setData] = useState<ArchiveResponse>();
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { page, pageSize, search, setPage, setPageSize, setSearch, searchParams, update } =
+    useCollectionSearchParams();
+  const requestedType = searchParams.get("entityType");
+  const type: ArchiveType = entityTypes.includes(requestedType as ArchiveType)
+    ? (requestedType as ArchiveType)
+    : "COMPANY";
+  const companyId = searchParams.get("companyId") ?? "";
+  const areaId = searchParams.get("areaId") ?? "";
+  const buildingId = searchParams.get("buildingId") ?? "";
+  const archivedBy = searchParams.get("archivedBy") ?? "";
+  const archivedRange = {
+    from: {
+      date: searchParams.get("archivedFromDate"),
+      time: searchParams.get("archivedFromTime") ?? "",
+    },
+    to: {
+      date: searchParams.get("archivedToDate"),
+      time: searchParams.get("archivedToTime") ?? "",
+    },
+  };
   const [preview, setPreview] = useState<PurgePreview>();
   const [detail, setDetail] = useState<ArchiveDetail>();
   const [confirmation, setConfirmation] = useState("");
   const [purging, setPurging] = useState(false);
   const [purgeError, setPurgeError] = useState("");
-  const [job, setJob] = useState<DeletionJob>();
+  const [jobId, setJobId] = useState<string>();
   const [exportFormat, setExportFormat] = useState<ReportFileFormat>("CSV");
-  const [exportJob, setExportJob] = useState<ReportJobRecord>();
+  const [exportJobId, setExportJobId] = useState<string>();
   const [exportError, setExportError] = useState("");
   const canPurge = Boolean(
     session &&
@@ -151,16 +161,9 @@ export function ArchivePage(): ReactElement {
           : "common.timeRangeInvalid",
       )
     : undefined;
+  const normalizedRangeValue = normalizedRange.value ?? {};
 
-  const load = useCallback(async () => {
-    if (!session) return;
-    setLoading(true);
-    setError(false);
-    if (normalizedRange.error) {
-      setData(undefined);
-      setLoading(false);
-      return;
-    }
+  const archivePath = useMemo(() => {
     const query = new URLSearchParams({
       entityType: type,
       page: String(page),
@@ -171,62 +174,74 @@ export function ArchivePage(): ReactElement {
     if (areaId.trim()) query.set("areaId", areaId.trim());
     if (buildingId.trim()) query.set("buildingId", buildingId.trim());
     if (archivedBy.trim()) query.set("archivedBy", archivedBy.trim());
-    if (normalizedRange.value.from) query.set("archivedFrom", normalizedRange.value.from);
-    if (normalizedRange.value.to) query.set("archivedTo", normalizedRange.value.to);
-    try {
-      setData(await apiRequest<ArchiveResponse>(session, `/admin/archive?${query}`));
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    archivedBy,
-    normalizedRange,
-    areaId,
-    buildingId,
-    companyId,
-    page,
-    pageSize,
-    search,
+    if (normalizedRangeValue.from) query.set("archivedFrom", normalizedRangeValue.from);
+    if (normalizedRangeValue.to) query.set("archivedTo", normalizedRangeValue.to);
+    return `/admin/archive?${query}`;
+  }, [archivedBy, normalizedRange, areaId, buildingId, companyId, page, pageSize, search, type]);
+  const userId = session?.user.id ?? "anonymous";
+  const archiveQuery = useApiQuery<ArchiveResponse>(
     session,
-    type,
-  ]);
-
-  useEffect(() => void load(), [load]);
+    queryKeys.admin.archive(userId, "list", {
+      archivedBy,
+      archivedFrom: normalizedRangeValue.from,
+      archivedTo: normalizedRangeValue.to,
+      areaId,
+      buildingId,
+      companyId,
+      page,
+      pageSize,
+      search,
+      type,
+    }),
+    archivePath,
+    { enabled: !normalizedRange.error, placeholderData: keepPreviousData },
+  );
+  const data = archiveQuery.data;
+  const purgeJobKey = queryKeys.admin.archive(userId, "purge-job", { jobId });
+  const purgeJobQuery = useApiQuery<DeletionJob>(
+    session,
+    purgeJobKey,
+    `/admin/archive/purge/jobs/${jobId ?? "missing-job"}`,
+    {
+      enabled: Boolean(jobId),
+      refetchInterval: (query) =>
+        query.state.data?.status === "PENDING" || query.state.data?.status === "RUNNING"
+          ? 1_000
+          : false,
+    },
+  );
+  const job = purgeJobQuery.data;
+  const exportJobKey = queryKeys.admin.archive(userId, "export-job", { jobId: exportJobId });
+  const exportJobQuery = useApiQuery<ReportJobRecord>(
+    session,
+    exportJobKey,
+    `/admin/reports/${exportJobId ?? "missing-job"}`,
+    {
+      enabled: Boolean(exportJobId),
+      refetchInterval: (query) =>
+        query.state.data?.status === "PENDING" || query.state.data?.status === "PROCESSING"
+          ? 1_000
+          : false,
+    },
+  );
+  const exportJob = exportJobQuery.data;
+  const previewMutation = useApiMutation<PurgePreview>(session);
+  const deletionMutation = useApiMutation<DeletionJob>(session);
+  const exportMutation = useApiMutation<ReportJobRecord>(session);
 
   useEffect(() => {
-    if (!session || !job || (job.status !== "PENDING" && job.status !== "RUNNING")) return;
-    const timer = window.setInterval(async () => {
-      try {
-        setJob(await apiRequest<DeletionJob>(session, `/admin/archive/purge/jobs/${job.id}`));
-      } catch (requestError) {
-        setPurgeError(
-          requestError instanceof ApiError ? requestError.message : t("archive.jobFailed"),
-        );
-      }
-    }, 1_000);
-    return () => window.clearInterval(timer);
-  }, [job, session]);
-
+    if (purgeJobQuery.isError) setPurgeError(t("archive.jobFailed"));
+  }, [purgeJobQuery.isError]);
   useEffect(() => {
-    if (
-      !session ||
-      !exportJob ||
-      (exportJob.status !== "PENDING" && exportJob.status !== "PROCESSING")
-    )
-      return;
-    const timer = window.setInterval(async () => {
-      try {
-        setExportJob(await apiRequest<ReportJobRecord>(session, `/admin/reports/${exportJob.id}`));
-      } catch (requestError) {
-        setExportError(
-          requestError instanceof ApiError ? requestError.message : t("archive.exportFailed"),
-        );
-      }
-    }, 1_000);
-    return () => window.clearInterval(timer);
-  }, [exportJob, session]);
+    if (exportJobQuery.isError) setExportError(t("archive.exportFailed"));
+  }, [exportJobQuery.isError]);
+  useEffect(() => {
+    if (job?.status === "COMPLETED") {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.archive(userId, "list").slice(0, -1),
+      });
+    }
+  }, [job?.status, queryClient, userId]);
 
   const archiveFilters = () =>
     normalizedRange.error
@@ -244,18 +259,26 @@ export function ArchivePage(): ReactElement {
 
   const openDetail = async (row: ArchiveRow) => {
     if (!session) return;
-    setDetail(await apiRequest<ArchiveDetail>(session, `/admin/archive/${type}/${row.id}`));
+    setDetail(
+      await queryClient.fetchQuery(
+        apiQueryOptions<ArchiveDetail>(
+          session,
+          queryKeys.admin.archive(userId, "detail", { id: row.id, type }),
+          `/admin/archive/${type}/${row.id}`,
+        ),
+      ),
+    );
   };
 
   const openPreview = async (row: ArchiveRow) => {
     if (!session) return;
     setConfirmation("");
     setPurgeError("");
-    setJob(undefined);
+    setJobId(undefined);
     setPreview(
-      await apiRequest<PurgePreview>(session, "/admin/archive/purge/preview", {
-        body: JSON.stringify({ rootId: row.id, rootType: type }),
-        method: "POST",
+      await previewMutation.mutateAsync({
+        path: "/admin/archive/purge/preview",
+        options: { body: JSON.stringify({ rootId: row.id, rootType: type }), method: "POST" },
       }),
     );
   };
@@ -265,8 +288,9 @@ export function ArchivePage(): ReactElement {
     setPurging(true);
     setPurgeError("");
     try {
-      setJob(
-        await apiRequest<DeletionJob>(session, "/admin/archive/purge/jobs", {
+      const created = await deletionMutation.mutateAsync({
+        path: "/admin/archive/purge/jobs",
+        options: {
           body: JSON.stringify({
             confirmation,
             idempotencyKey: crypto.randomUUID(),
@@ -275,8 +299,11 @@ export function ArchivePage(): ReactElement {
             rootType: preview.rootType,
           }),
           method: "POST",
-        }),
-      );
+        },
+      });
+      const key = queryKeys.admin.archive(userId, "purge-job", { jobId: created.id });
+      queryClient.setQueryData(key, created);
+      setJobId(created.id);
     } catch (requestError) {
       const message =
         requestError instanceof ApiError ? requestError.message : t("archive.jobFailed");
@@ -293,12 +320,14 @@ export function ArchivePage(): ReactElement {
     if (!session || !job) return;
     setPurgeError("");
     try {
-      setJob(
-        await apiRequest<DeletionJob>(session, `/admin/archive/purge/jobs/${job.id}/retry`, {
+      const retried = await deletionMutation.mutateAsync({
+        path: `/admin/archive/purge/jobs/${job.id}/retry`,
+        options: {
           body: JSON.stringify({ acknowledgeFailure: true }),
           method: "POST",
-        }),
-      );
+        },
+      });
+      queryClient.setQueryData(purgeJobKey, retried);
     } catch (requestError) {
       setPurgeError(
         requestError instanceof ApiError ? requestError.message : t("archive.jobFailed"),
@@ -312,16 +341,20 @@ export function ArchivePage(): ReactElement {
     if (!filters) return;
     setExportError("");
     try {
-      setExportJob(
-        await apiRequest<ReportJobRecord>(session, "/admin/reports/export", {
+      const created = await exportMutation.mutateAsync({
+        path: "/admin/reports/export",
+        options: {
           body: JSON.stringify({
             filters,
             format: exportFormat,
             reportType: "ARCHIVE_EVIDENCE",
           }),
           method: "POST",
-        }),
-      );
+        },
+      });
+      const key = queryKeys.admin.archive(userId, "export-job", { jobId: created.id });
+      queryClient.setQueryData(key, created);
+      setExportJobId(created.id);
     } catch (requestError) {
       setExportError(
         requestError instanceof ApiError ? requestError.message : t("archive.exportFailed"),
@@ -367,7 +400,11 @@ export function ArchivePage(): ReactElement {
                 </Button>
               </>
             ) : null}
-            <Button leftSection={<IconRefresh size={16} />} onClick={() => void load()}>
+            <Button
+              leftSection={<IconRefresh size={16} />}
+              loading={archiveQuery.isFetching}
+              onClick={() => void archiveQuery.refetch()}
+            >
               {t("archive.refresh")}
             </Button>
           </Group>
@@ -384,8 +421,7 @@ export function ArchivePage(): ReactElement {
             }))}
             label={t("archive.entityType")}
             onChange={(event) => {
-              setPage(1);
-              setType(event.currentTarget.value as ArchiveType);
+              update({ entityType: event.currentTarget.value, page: 1 });
             }}
             value={type}
           />
@@ -403,32 +439,28 @@ export function ArchivePage(): ReactElement {
             label={t("archive.companyFilter")}
             value={companyId}
             onChange={(event) => {
-              setPage(1);
-              setCompanyId(event.currentTarget.value);
+              update({ companyId: event.currentTarget.value, page: 1 });
             }}
           />
           <TextInput
             label={t("archive.siteFilter")}
             value={areaId}
             onChange={(event) => {
-              setPage(1);
-              setAreaId(event.currentTarget.value);
+              update({ areaId: event.currentTarget.value, page: 1 });
             }}
           />
           <TextInput
             label={t("archive.buildingFilter")}
             value={buildingId}
             onChange={(event) => {
-              setPage(1);
-              setBuildingId(event.currentTarget.value);
+              update({ buildingId: event.currentTarget.value, page: 1 });
             }}
           />
           <TextInput
             label={t("archive.actorFilter")}
             value={archivedBy}
             onChange={(event) => {
-              setPage(1);
-              setArchivedBy(event.currentTarget.value);
+              update({ archivedBy: event.currentTarget.value, page: 1 });
             }}
           />
         </Group>
@@ -437,16 +469,14 @@ export function ArchivePage(): ReactElement {
             label={t("archive.archivedFrom")}
             value={archivedRange.from}
             onChange={(value) => {
-              setPage(1);
-              setArchivedRange((current) => ({ ...current, from: value }));
+              update({ archivedFromDate: value.date, archivedFromTime: value.time, page: 1 });
             }}
           />
           <LocalDateTimeInput
             label={t("archive.archivedTo")}
             value={archivedRange.to}
             onChange={(value) => {
-              setPage(1);
-              setArchivedRange((current) => ({ ...current, to: value }));
+              update({ archivedToDate: value.date, archivedToTime: value.time, page: 1 });
             }}
           />
         </Group>
@@ -474,9 +504,9 @@ export function ArchivePage(): ReactElement {
           </Group>
         </Alert>
       ) : null}
-      {loading ? (
+      {archiveQuery.isPending ? (
         <LoadingState title={t("common.loading")} />
-      ) : error ? (
+      ) : archiveQuery.isError ? (
         <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />
       ) : !data?.items.length ? (
         <EmptyState description={t("archive.emptyDescription")} title={t("archive.emptyTitle")} />
@@ -552,7 +582,6 @@ export function ArchivePage(): ReactElement {
             totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))}
             onPageChange={setPage}
             onPageSizeChange={(value) => {
-              setPage(1);
               setPageSize(Number(value) as CollectionPageSize);
             }}
           />
@@ -620,8 +649,8 @@ export function ArchivePage(): ReactElement {
                   <Button
                     onClick={() => {
                       setPreview(undefined);
-                      setJob(undefined);
-                      void load();
+                      setJobId(undefined);
+                      void archiveQuery.refetch();
                     }}
                   >
                     {t("common.close")}

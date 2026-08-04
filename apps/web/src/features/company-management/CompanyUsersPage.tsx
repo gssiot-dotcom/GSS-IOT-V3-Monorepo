@@ -12,7 +12,7 @@ import type {
   PaginatedResponse,
 } from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
-import { ApiError, apiRequest } from "../../shared/api/api-client";
+import { ApiError } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
@@ -58,11 +58,15 @@ import {
   IconShield,
   IconTrash,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 
 import { t, tf } from "../../app/i18n";
+import { apiQueryOptions, useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalDomainKey, portalQueryKey } from "../../shared/query/query-keys";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 
 interface AccessForm {
   id: string;
@@ -106,15 +110,9 @@ const emptyUserForm: UserFormState = {
 
 export function CompanyUsersPage() {
   const { session } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [users, setUsers] = useState<CompanyUserRecord[]>();
-  const [roles, setRoles] = useState<CompanyRoleRecord[]>([]);
-  const [permissions, setPermissions] = useState<CompanyPermissionRecord[]>([]);
-  const [areas, setAreas] = useState<AreaRecord[]>([]);
-  const [buildings, setBuildings] = useState<BuildingRecord[]>([]);
-  const [positions, setPositions] = useState<CompanyPositionRecord[]>([]);
   const [preview, setPreview] = useState<CompanyUserEffectiveAccessRecord | null>(null);
-  const [error, setError] = useState(false);
   const [userModalOpened, setUserModalOpened] = useState(false);
   const [positionModalOpened, setPositionModalOpened] = useState(false);
   const [editingUser, setEditingUser] = useState<CompanyUserRecord | null>(null);
@@ -135,9 +133,65 @@ export function CompanyUsersPage() {
   } | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const [mutationError, setMutationError] = useState<string>();
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
+  const collection = useCollectionSearchParams(50);
+  const { page, pageSize } = collection;
+
+  const keyed = (domain: string, resource: string, filters = {}) =>
+    session
+      ? portalQueryKey(session, domain, resource, filters)
+      : ([domain, "anonymous", resource] as const);
+  const usersQuery = useApiQuery<PaginatedResponse<CompanyUserRecord>>(
+    session,
+    keyed("users", "list", { page, pageSize }),
+    `/company/users?page=${page}&pageSize=${pageSize}`,
+    { placeholderData: keepPreviousData },
+  );
+  const rolesQuery = useApiQuery<PaginatedResponse<CompanyRoleRecord>>(
+    session,
+    keyed("roles", "options"),
+    "/company/roles?pageSize=100",
+    { enabled: hasPermission(session, "company-roles.view") },
+  );
+  const permissionsQuery = useApiQuery<CompanyPermissionRecord[]>(
+    session,
+    keyed("permissions", "options"),
+    "/company/permissions/options",
+    { enabled: hasPermission(session, "company-permissions.view") },
+  );
+  const areasQuery = useApiQuery<PaginatedResponse<AreaRecord>>(
+    session,
+    keyed("areas", "options"),
+    "/company/areas?pageSize=100",
+    { enabled: hasPermission(session, "areas.view") },
+  );
+  const buildingsQuery = useApiQuery<PaginatedResponse<BuildingRecord>>(
+    session,
+    keyed("buildings", "options"),
+    "/company/buildings?pageSize=100",
+    { enabled: hasPermission(session, "buildings.view") },
+  );
+  const positionsQuery = useApiQuery<PaginatedResponse<CompanyPositionRecord>>(
+    session,
+    keyed("positions", "options"),
+    "/company/positions?pageSize=100",
+  );
+  const users = usersQuery.data?.items;
+  const roles = rolesQuery.data?.items ?? [];
+  const permissions = permissionsQuery.data ?? [];
+  const areas = areasQuery.data?.items ?? [];
+  const buildings = buildingsQuery.data?.items ?? [];
+  const positions = positionsQuery.data?.items ?? [];
+  const total = usersQuery.data?.total ?? 0;
+  const mutation = useApiMutation(session);
+  const createUserMutation = useApiMutation<CompanyUserRecord>(session);
+  const invalidateUsers = async () => {
+    if (session)
+      await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, "users") });
+  };
+  const invalidatePositions = async () => {
+    if (session)
+      await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, "positions") });
+  };
 
   const permissionOptions = permissions.map((permission) => ({
     label: permission.key,
@@ -158,89 +212,6 @@ export function CompanyUsersPage() {
     () => form.buildingAccess.map(({ id }) => id),
     [form.buildingAccess],
   );
-
-  const load = async () => {
-    if (!session) return;
-    setError(false);
-    try {
-      const usersPage = await apiRequest<PaginatedResponse<CompanyUserRecord>>(
-        session,
-        `/company/users?page=${page}&pageSize=${pageSize}`,
-      );
-      setUsers(usersPage.items);
-      setTotal(usersPage.total);
-
-      if (hasPermission(session, "company-roles.view")) {
-        try {
-          const response = await apiRequest<PaginatedResponse<CompanyRoleRecord>>(
-            session,
-            "/company/roles?pageSize=100",
-          );
-          setRoles(response.items);
-        } catch {
-          setRoles([]);
-        }
-      } else {
-        setRoles([]);
-      }
-
-      if (hasPermission(session, "company-permissions.view")) {
-        try {
-          setPermissions(
-            await apiRequest<CompanyPermissionRecord[]>(session, "/company/permissions/options"),
-          );
-        } catch {
-          setPermissions([]);
-        }
-      } else {
-        setPermissions([]);
-      }
-
-      if (hasPermission(session, "areas.view")) {
-        try {
-          const response = await apiRequest<PaginatedResponse<AreaRecord>>(
-            session,
-            "/company/areas?pageSize=100",
-          );
-          setAreas(response.items);
-        } catch {
-          setAreas([]);
-        }
-      } else {
-        setAreas([]);
-      }
-
-      if (hasPermission(session, "buildings.view")) {
-        try {
-          const response = await apiRequest<PaginatedResponse<BuildingRecord>>(
-            session,
-            "/company/buildings?pageSize=100",
-          );
-          setBuildings(response.items);
-        } catch {
-          setBuildings([]);
-        }
-      } else {
-        setBuildings([]);
-      }
-
-      try {
-        const response = await apiRequest<PaginatedResponse<CompanyPositionRecord>>(
-          session,
-          "/company/positions?pageSize=100",
-        );
-        setPositions(response.items);
-      } catch {
-        setPositions([]);
-      }
-    } catch {
-      setError(true);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [session, page, pageSize]);
 
   const openCreate = () => {
     setEditingUser(null);
@@ -288,9 +259,12 @@ export function CompanyUsersPage() {
     setUserFormError("");
     if (session) {
       setPreview(
-        await apiRequest<CompanyUserEffectiveAccessRecord>(
-          session,
-          `/company/users/${user.id}/effective-access`,
+        await queryClient.fetchQuery(
+          apiQueryOptions<CompanyUserEffectiveAccessRecord>(
+            session,
+            keyed("users", "effective-access", { userId: user.id }),
+            `/company/users/${user.id}/effective-access`,
+          ),
         ),
       );
     }
@@ -367,31 +341,37 @@ export function CompanyUsersPage() {
       });
       let userId = editingUser?.id;
       if (editingUser) {
-        await apiRequest(session, `/company/users/${editingUser.id}`, { body, method: "PATCH" });
+        await mutation.mutateAsync({
+          path: `/company/users/${editingUser.id}`,
+          options: { body, method: "PATCH" },
+        });
       } else {
-        const created = await apiRequest<CompanyUserRecord>(session, "/company/users", {
-          body,
-          method: "POST",
+        const created = await createUserMutation.mutateAsync({
+          path: "/company/users",
+          options: { body, method: "POST" },
         });
         userId = created.id;
       }
       if (userId) {
-        await apiRequest(session, `/company/users/${userId}/positions`, {
-          body: JSON.stringify({
-            assignments: form.positionAssignments.map(({ areaId, buildingId, positionId }) => ({
-              areaId,
-              buildingId,
-              positionId,
-            })),
-          }),
-          method: "PATCH",
+        await mutation.mutateAsync({
+          path: `/company/users/${userId}/positions`,
+          options: {
+            body: JSON.stringify({
+              assignments: form.positionAssignments.map(({ areaId, buildingId, positionId }) => ({
+                areaId,
+                buildingId,
+                positionId,
+              })),
+            }),
+            method: "PATCH",
+          },
         });
       }
       setUserModalOpened(false);
       setEditingUser(null);
       setPreview(null);
       setForm(emptyUserForm);
-      await load();
+      await invalidateUsers();
     } catch (error) {
       setUserFormError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
@@ -426,14 +406,14 @@ export function CompanyUsersPage() {
 
   const createPosition = async () => {
     if (!session) return;
-    await apiRequest(session, "/company/positions", {
-      body: JSON.stringify({ key: positionKey, name: positionName }),
-      method: "POST",
+    await mutation.mutateAsync({
+      path: "/company/positions",
+      options: { body: JSON.stringify({ key: positionKey, name: positionName }), method: "POST" },
     });
     setPositionKey("");
     setPositionName("");
     setPositionModalOpened(false);
-    await load();
+    await invalidatePositions();
   };
 
   const confirmMutation = async () => {
@@ -442,14 +422,15 @@ export function CompanyUsersPage() {
     setMutationError(undefined);
     try {
       const base = `/company/${pendingMutation.kind === "user" ? "users" : "positions"}/${pendingMutation.id}`;
-      await apiRequest(
-        session,
-        pendingMutation.action === "DELETE" ? base : `${base}/status`,
-        pendingMutation.action === "DELETE"
-          ? { method: "DELETE" }
-          : { body: JSON.stringify({ isActive: pendingMutation.isActive }), method: "PATCH" },
-      );
-      await load();
+      await mutation.mutateAsync({
+        path: pendingMutation.action === "DELETE" ? base : `${base}/status`,
+        options:
+          pendingMutation.action === "DELETE"
+            ? { method: "DELETE" }
+            : { body: JSON.stringify({ isActive: pendingMutation.isActive }), method: "PATCH" },
+      });
+      if (pendingMutation.kind === "position") await invalidatePositions();
+      else await invalidateUsers();
       if (pendingMutation.kind === "position") setDependencyPosition(null);
       setPendingMutation(null);
     } catch (error) {
@@ -459,8 +440,8 @@ export function CompanyUsersPage() {
     }
   };
 
-  if (!users && !error) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if (!users && usersQuery.isLoading) return <LoadingState title={t("common.loading")} />;
+  if (usersQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (
@@ -491,10 +472,9 @@ export function CompanyUsersPage() {
       {users?.length ? (
         <Stack gap="sm">
           <CollectionPagination
-            onPageChange={setPage}
+            onPageChange={collection.setPage}
             onPageSizeChange={(value) => {
-              setPageSize(Number(value) as CollectionPageSize);
-              setPage(1);
+              collection.setPageSize(Number(value) as CollectionPageSize);
             }}
             page={page}
             pageSize={pageSize}

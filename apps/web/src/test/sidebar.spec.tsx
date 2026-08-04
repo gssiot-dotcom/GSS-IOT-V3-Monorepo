@@ -1,7 +1,7 @@
 import type { AuthContext } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "./render";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -61,6 +61,7 @@ describe("Portal sidebar", () => {
           </PortalLayout>
         </MemoryRouter>
       </MantineProvider>,
+      { router: false },
     );
 
     expect(screen.getAllByText("Devices").length).toBeGreaterThan(0);
@@ -103,6 +104,7 @@ describe("Portal sidebar", () => {
           </PortalLayout>
         </MemoryRouter>
       </MantineProvider>,
+      { router: false },
     );
 
     const header = document.querySelector(".gss-shell-header");

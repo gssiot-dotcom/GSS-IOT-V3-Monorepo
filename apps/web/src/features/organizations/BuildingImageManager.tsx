@@ -23,10 +23,13 @@ import {
 } from "@mantine/core";
 import { IconPhotoPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { formatDateTime, t, tf } from "../../app/i18n";
-import { ApiError, apiBlob, apiMultipartRequest, apiRequest } from "../../shared/api/api-client";
+import { ApiError, apiBlob, apiMultipartRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalQueryKey } from "../../shared/query/query-keys";
 import { hasPermission } from "../../shared/rbac/has-permission";
 
 const MAX_IMAGES_PER_KIND = 4;
@@ -40,9 +43,8 @@ export function BuildingImageManager({
   buildingId: string;
 }) {
   const { session } = useAuth();
-  const [images, setImages] = useState<BuildingPlanImageRecord[]>();
+  const queryClient = useQueryClient();
   const [kind, setKind] = useState<"PLAN" | "REAL">("PLAN");
-  const [errorStatus, setErrorStatus] = useState<number>();
   const [uploadOpened, setUploadOpened] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File>();
   const [selectedKind, setSelectedKind] = useState<"PLAN" | "REAL">("PLAN");
@@ -50,25 +52,22 @@ export function BuildingImageManager({
   const [mutationError, setMutationError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const canManage = hasPermission(session, "building-plans.manage");
-
-  const load = async () => {
-    if (!session) return;
-    setErrorStatus(undefined);
-    try {
-      setImages(
-        await apiRequest<BuildingPlanImageRecord[]>(
-          session,
-          `${basePath}/buildings/${buildingId}/images`,
-        ),
-      );
-    } catch (error) {
-      setErrorStatus(error instanceof ApiError ? error.status : 500);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [basePath, buildingId, session?.user.id]);
+  const imagesKey = session
+    ? portalQueryKey(session, "building-images", buildingId)
+    : (["building-images", "anonymous", buildingId] as const);
+  const imagesQuery = useApiQuery<BuildingPlanImageRecord[]>(
+    session,
+    imagesKey,
+    `${basePath}/buildings/${buildingId}/images`,
+  );
+  const images = imagesQuery.data;
+  const errorStatus =
+    imagesQuery.error instanceof ApiError
+      ? imagesQuery.error.status
+      : imagesQuery.isError
+        ? 500
+        : undefined;
+  const deleteMutation = useApiMutation(session);
 
   const current = useMemo(
     () => (images ?? []).filter((image) => image.kind === kind),
@@ -100,7 +99,7 @@ export function BuildingImageManager({
       setSelectedFile(undefined);
       setUploadOpened(false);
       setKind(selectedKind);
-      await load();
+      await queryClient.invalidateQueries({ queryKey: imagesKey });
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
@@ -113,11 +112,12 @@ export function BuildingImageManager({
     setMutationError(undefined);
     setSaving(true);
     try {
-      await apiRequest(session, `${basePath}/building-images/${selectedDelete.id}`, {
-        method: "DELETE",
+      await deleteMutation.mutateAsync({
+        path: `${basePath}/building-images/${selectedDelete.id}`,
+        options: { method: "DELETE" },
       });
       setSelectedDelete(undefined);
-      await load();
+      await queryClient.invalidateQueries({ queryKey: imagesKey });
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {

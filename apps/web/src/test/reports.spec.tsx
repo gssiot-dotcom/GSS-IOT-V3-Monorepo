@@ -1,6 +1,6 @@
 import type { AuthContext, AuthSession, ReportJobRecord } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "./render";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
@@ -100,6 +100,7 @@ function renderApp(
     <MantineProvider theme={gssTheme}>
       <App />
     </MantineProvider>,
+    { router: false },
   );
 }
 

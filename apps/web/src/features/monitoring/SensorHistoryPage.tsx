@@ -1,4 +1,5 @@
 import type { CollectionPageSize, SensorReadingRecord } from "@gss-iot/contracts";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -14,7 +15,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { IconDownload, IconRefresh, IconTrash } from "@tabler/icons-react";
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import {
   CollectionPagination,
   EmptyState,
@@ -25,7 +26,7 @@ import {
 } from "@gss-iot/ui";
 
 import { formatDateTime, nodeTypeLabel, t, tf, tx } from "../../app/i18n";
-import { ApiError, apiRequest } from "../../shared/api/api-client";
+import { ApiError } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { LocalDateTimeInput } from "../../shared/date-time/LocalDateTimeInput";
 import {
@@ -33,6 +34,9 @@ import {
   normalizeRequiredDateTimeRange,
 } from "../../shared/date-time/local-date-time-range";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { REFERENCE_STALE_TIME, useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalQueryKey } from "../../shared/query/query-keys";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 import { NodeHistoryChart } from "./components/NodeHistoryChart";
 
 type HistoryResponse = {
@@ -77,30 +81,41 @@ type DeletionJob = {
 
 export function SensorHistoryPage({ context }: { context: "admin" | "company" }): ReactElement {
   const { session } = useAuth();
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [status, setStatus] = useState("");
-  const [companyId, setCompanyId] = useState("");
-  const [areaId, setAreaId] = useState("");
-  const [buildingId, setBuildingId] = useState("");
-  const [nodeTypeId, setNodeTypeId] = useState("");
-  const [nodeId, setNodeId] = useState("");
-  const [faultFiltered, setFaultFiltered] = useState("");
-  const [dateRange, setDateRange] = useState(() => {
+  const queryClient = useQueryClient();
+  const { page, pageSize, setPage, setPageSize, searchParams, update } =
+    useCollectionSearchParams();
+  const [defaultDateRange] = useState(() => {
     const to = new Date();
     return {
       from: localDateTimeValue(new Date(to.getTime() - 24 * 60 * 60 * 1000)),
       to: localDateTimeValue(to),
     };
   });
-  const [data, setData] = useState<HistoryResponse>();
-  const [chart, setChart] = useState<HistoryChartResponse>();
-  const [options, setOptions] = useState<HistoryOptions>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const rawStatus = searchParams.get("status") ?? "";
+  const status = ["SAFE", "CAUTION", "WARNING", "DANGER", "OFFLINE"].includes(rawStatus)
+    ? rawStatus
+    : "";
+  const companyId = searchParams.get("companyId") ?? "";
+  const areaId = searchParams.get("areaId") ?? "";
+  const buildingId = searchParams.get("buildingId") ?? "";
+  const nodeTypeId = searchParams.get("nodeTypeId") ?? "";
+  const nodeId = searchParams.get("nodeId") ?? "";
+  const rawFaultFiltered = searchParams.get("faultFiltered") ?? "";
+  const faultFiltered =
+    rawFaultFiltered === "true" || rawFaultFiltered === "false" ? rawFaultFiltered : "";
+  const dateRange = {
+    from: {
+      date: searchParams.get("fromDate") ?? defaultDateRange.from.date,
+      time: searchParams.get("fromTime") ?? defaultDateRange.from.time,
+    },
+    to: {
+      date: searchParams.get("toDate") ?? defaultDateRange.to.date,
+      time: searchParams.get("toTime") ?? defaultDateRange.to.time,
+    },
+  };
   const [purgePreview, setPurgePreview] = useState<PurgePreview>();
   const [purgeConfirmation, setPurgeConfirmation] = useState("");
-  const [purgeJob, setPurgeJob] = useState<DeletionJob>();
+  const [purgeJobId, setPurgeJobId] = useState<string>();
   const [purgeError, setPurgeError] = useState("");
   const base = context === "admin" ? "/admin" : "/company";
   const normalizedRange = useMemo(
@@ -123,7 +138,7 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
       )
     : undefined;
 
-  const filters = useCallback(() => {
+  const filters = useMemo(() => {
     if (!normalizedRange.value) return null;
     const query = new URLSearchParams({
       from: normalizedRange.value.from,
@@ -151,43 +166,80 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
     pageSize,
     status,
   ]);
-
-  const load = useCallback(async () => {
-    if (!session) return;
-    setLoading(true);
-    setError(false);
-    const query = filters();
-    if (!query) {
-      setData(undefined);
-      setChart(undefined);
-      setLoading(false);
-      return;
-    }
-    try {
-      const chartQuery = new URLSearchParams(query);
-      chartQuery.delete("page");
-      chartQuery.delete("pageSize");
-      const [history, chartResponse] = await Promise.all([
-        apiRequest<HistoryResponse>(session, `${base}/monitoring/history?${query}`),
-        apiRequest<HistoryChartResponse>(session, `${base}/monitoring/history/chart?${chartQuery}`),
-      ]);
-      setData(history);
-      setChart(chartResponse);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [base, filters, session]);
-
-  useEffect(() => void load(), [load]);
-
-  useEffect(() => {
-    if (!session) return;
-    void apiRequest<HistoryOptions>(session, `${base}/monitoring/history/options`)
-      .then(setOptions)
-      .catch(() => setError(true));
-  }, [base, session]);
+  const chartFilters = filters ? new URLSearchParams(filters) : null;
+  chartFilters?.delete("page");
+  chartFilters?.delete("pageSize");
+  const historyKey = session
+    ? portalQueryKey(session, "monitoring", "sensor-history", {
+        areaId,
+        buildingId,
+        companyId,
+        faultFiltered,
+        from: normalizedRange.value?.from,
+        nodeId,
+        nodeTypeId,
+        page,
+        pageSize,
+        status,
+        to: normalizedRange.value?.to,
+      })
+    : [context, "anonymous", "sensor-history"];
+  const dataQuery = useApiQuery<HistoryResponse>(
+    session,
+    historyKey,
+    `${base}/monitoring/history?${filters?.toString() ?? ""}`,
+    { enabled: Boolean(filters), placeholderData: keepPreviousData },
+  );
+  const chartQuery = useApiQuery<HistoryChartResponse>(
+    session,
+    session
+      ? portalQueryKey(session, "monitoring", "sensor-history-chart", {
+          areaId,
+          buildingId,
+          companyId,
+          faultFiltered,
+          from: normalizedRange.value?.from,
+          nodeId,
+          nodeTypeId,
+          status,
+          to: normalizedRange.value?.to,
+        })
+      : [context, "anonymous", "sensor-history-chart"],
+    `${base}/monitoring/history/chart?${chartFilters?.toString() ?? ""}`,
+    { enabled: Boolean(chartFilters) },
+  );
+  const optionsQuery = useApiQuery<HistoryOptions>(
+    session,
+    session
+      ? portalQueryKey(session, "monitoring", "sensor-history-options")
+      : [context, "anonymous", "sensor-history-options"],
+    `${base}/monitoring/history/options`,
+    { staleTime: REFERENCE_STALE_TIME },
+  );
+  const purgeJobKey = session
+    ? portalQueryKey(session, "archive", "sensor-purge-job", { jobId: purgeJobId })
+    : [context, "anonymous", "sensor-purge-job"];
+  const purgeJobQuery = useApiQuery<DeletionJob>(
+    session,
+    purgeJobKey,
+    `/admin/archive/purge/jobs/${purgeJobId ?? "missing-job"}`,
+    {
+      enabled: context === "admin" && Boolean(purgeJobId),
+      refetchInterval: (query) =>
+        query.state.data?.status === "PENDING" || query.state.data?.status === "RUNNING"
+          ? 1_000
+          : false,
+    },
+  );
+  const data = dataQuery.data;
+  const chart = chartQuery.data;
+  const options = optionsQuery.data;
+  const purgeJob = purgeJobQuery.data;
+  const loading = dataQuery.isPending || chartQuery.isPending || optionsQuery.isPending;
+  const error = dataQuery.isError || chartQuery.isError || optionsQuery.isError;
+  const actionMutation = useApiMutation(session);
+  const previewMutation = useApiMutation<PurgePreview>(session);
+  const deletionMutation = useApiMutation<DeletionJob>(session);
 
   const filteredAreas = useMemo(
     () => (options?.areas ?? []).filter((area) => !companyId || area.companyId === companyId),
@@ -218,23 +270,6 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
     [buildingId, nodeTypeId, options?.nodes],
   );
 
-  useEffect(() => {
-    if (!session || !purgeJob || (purgeJob.status !== "PENDING" && purgeJob.status !== "RUNNING"))
-      return;
-    const timer = window.setInterval(async () => {
-      try {
-        setPurgeJob(
-          await apiRequest<DeletionJob>(session, `/admin/archive/purge/jobs/${purgeJob.id}`),
-        );
-      } catch (requestError) {
-        setPurgeError(
-          requestError instanceof ApiError ? requestError.message : t("history.purgeFailed"),
-        );
-      }
-    }, 1_000);
-    return () => window.clearInterval(timer);
-  }, [purgeJob, session]);
-
   const filterBody = () =>
     normalizedRange.value
       ? {
@@ -254,13 +289,16 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
     if (!session) return;
     const bodyFilters = filterBody();
     if (!bodyFilters) return;
-    await apiRequest(session, `${base}/reports/export`, {
-      body: JSON.stringify({
-        format: "CSV",
-        reportType: "SENSOR_HISTORY",
-        filters: bodyFilters,
-      }),
-      method: "POST",
+    await actionMutation.mutateAsync({
+      path: `${base}/reports/export`,
+      options: {
+        body: JSON.stringify({
+          format: "CSV",
+          reportType: "SENSOR_HISTORY",
+          filters: bodyFilters,
+        }),
+        method: "POST",
+      },
     });
   };
 
@@ -271,13 +309,13 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
     setPurgeError("");
     try {
       setPurgePreview(
-        await apiRequest<PurgePreview>(session, "/admin/archive/sensor-readings/preview", {
-          body: JSON.stringify(bodyFilters),
-          method: "POST",
+        await previewMutation.mutateAsync({
+          path: "/admin/archive/sensor-readings/preview",
+          options: { body: JSON.stringify(bodyFilters), method: "POST" },
         }),
       );
       setPurgeConfirmation("");
-      setPurgeJob(undefined);
+      setPurgeJobId(undefined);
     } catch (requestError) {
       setPurgeError(
         requestError instanceof ApiError ? requestError.message : t("history.purgeFailed"),
@@ -291,8 +329,9 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
     if (!bodyFilters) return;
     setPurgeError("");
     try {
-      setPurgeJob(
-        await apiRequest<DeletionJob>(session, "/admin/archive/sensor-readings/jobs", {
+      const created = await deletionMutation.mutateAsync({
+        path: "/admin/archive/sensor-readings/jobs",
+        options: {
           body: JSON.stringify({
             ...bodyFilters,
             confirmation: purgeConfirmation,
@@ -300,8 +339,11 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
             previewHash: purgePreview.previewHash,
           }),
           method: "POST",
-        }),
-      );
+        },
+      });
+      const key = portalQueryKey(session, "archive", "sensor-purge-job", { jobId: created.id });
+      queryClient.setQueryData(key, created);
+      setPurgeJobId(created.id);
     } catch (requestError) {
       setPurgeError(
         requestError instanceof ApiError ? requestError.message : t("history.purgeFailed"),
@@ -312,12 +354,14 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
 
   const retryPurge = async () => {
     if (!session || !purgeJob) return;
-    setPurgeJob(
-      await apiRequest<DeletionJob>(session, `/admin/archive/purge/jobs/${purgeJob.id}/retry`, {
+    const retried = await deletionMutation.mutateAsync({
+      path: `/admin/archive/purge/jobs/${purgeJob.id}/retry`,
+      options: {
         body: JSON.stringify({ acknowledgeFailure: true }),
         method: "POST",
-      }),
-    );
+      },
+    });
+    queryClient.setQueryData(purgeJobKey, retried);
   };
 
   return (
@@ -327,7 +371,14 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
         subtitle={t("history.description")}
         action={
           <Group>
-            <Button leftSection={<IconRefresh size={16} />} onClick={() => void load()}>
+            <Button
+              leftSection={<IconRefresh size={16} />}
+              loading={dataQuery.isFetching || chartQuery.isFetching}
+              onClick={() => {
+                void dataQuery.refetch();
+                void chartQuery.refetch();
+              }}
+            >
               {t("history.refresh")}
             </Button>
             {session && hasPermission(session, "reports.export") ? (
@@ -360,23 +411,21 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
           <LocalDateTimeInput
             label={t("history.from")}
             onChange={(value) => {
-              setPage(1);
-              setDateRange((current) => ({ ...current, from: value }));
+              update({ fromDate: value.date, fromTime: value.time, page: 1 });
             }}
             value={dateRange.from}
           />
           <LocalDateTimeInput
             label={t("history.to")}
             onChange={(value) => {
-              setPage(1);
-              setDateRange((current) => ({ ...current, to: value }));
+              update({ page: 1, toDate: value.date, toTime: value.time });
             }}
             value={dateRange.to}
           />
           <NativeSelect
             label={t("history.status")}
             value={status}
-            onChange={(event) => setStatus(event.currentTarget.value)}
+            onChange={(event) => update({ page: 1, status: event.currentTarget.value })}
             data={[
               { label: t("history.allStatuses"), value: "" },
               ...["SAFE", "CAUTION", "WARNING", "DANGER", "OFFLINE"].map((value) => ({
@@ -397,12 +446,14 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
               label={t("history.company")}
               value={companyId}
               onChange={(event) => {
-                setPage(1);
-                setCompanyId(event.currentTarget.value);
-                setAreaId("");
-                setBuildingId("");
-                setNodeTypeId("");
-                setNodeId("");
+                update({
+                  areaId: null,
+                  buildingId: null,
+                  companyId: event.currentTarget.value,
+                  nodeId: null,
+                  nodeTypeId: null,
+                  page: 1,
+                });
               }}
               data={[
                 { label: t("history.allCompanies"), value: "" },
@@ -414,11 +465,13 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
             label={t("history.site")}
             value={areaId}
             onChange={(event) => {
-              setPage(1);
-              setAreaId(event.currentTarget.value);
-              setBuildingId("");
-              setNodeTypeId("");
-              setNodeId("");
+              update({
+                areaId: event.currentTarget.value,
+                buildingId: null,
+                nodeId: null,
+                nodeTypeId: null,
+                page: 1,
+              });
             }}
             data={[
               { label: t("history.allSites"), value: "" },
@@ -429,10 +482,12 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
             label={t("history.building")}
             value={buildingId}
             onChange={(event) => {
-              setPage(1);
-              setBuildingId(event.currentTarget.value);
-              setNodeTypeId("");
-              setNodeId("");
+              update({
+                buildingId: event.currentTarget.value,
+                nodeId: null,
+                nodeTypeId: null,
+                page: 1,
+              });
             }}
             data={[
               { label: t("history.allBuildings"), value: "" },
@@ -443,9 +498,7 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
             label={t("history.nodeType")}
             value={nodeTypeId}
             onChange={(event) => {
-              setPage(1);
-              setNodeTypeId(event.currentTarget.value);
-              setNodeId("");
+              update({ nodeId: null, nodeTypeId: event.currentTarget.value, page: 1 });
             }}
             data={[
               { label: t("history.allNodeTypes"), value: "" },
@@ -459,8 +512,7 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
             label={t("history.node")}
             value={nodeId}
             onChange={(event) => {
-              setPage(1);
-              setNodeId(event.currentTarget.value);
+              update({ nodeId: event.currentTarget.value, page: 1 });
             }}
             data={[
               { label: t("history.allNodes"), value: "" },
@@ -471,8 +523,7 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
             label={t("history.faultFiltered")}
             value={faultFiltered}
             onChange={(event) => {
-              setPage(1);
-              setFaultFiltered(event.currentTarget.value);
+              update({ faultFiltered: event.currentTarget.value, page: 1 });
             }}
             data={[
               { label: t("history.allFaultStates"), value: "" },
@@ -561,7 +612,6 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
             totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))}
             onPageChange={setPage}
             onPageSizeChange={(value) => {
-              setPage(1);
               setPageSize(Number(value) as CollectionPageSize);
             }}
           />
@@ -618,8 +668,8 @@ export function SensorHistoryPage({ context }: { context: "admin" | "company" })
                   <Button
                     onClick={() => {
                       setPurgePreview(undefined);
-                      setPurgeJob(undefined);
-                      void load();
+                      setPurgeJobId(undefined);
+                      void dataQuery.refetch();
                     }}
                   >
                     {t("common.close")}

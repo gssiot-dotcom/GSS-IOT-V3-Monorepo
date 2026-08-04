@@ -1,7 +1,6 @@
 import type {
   AreaRecord,
   BuildingRecord,
-  CompanyDeviceSnapshot,
   CompanyRecord,
   CompanyRoleRecord,
   CompanyUserRecord,
@@ -44,22 +43,17 @@ import {
   IconPlayerPlay,
   IconTrash,
 } from "@tabler/icons-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 
 import { nodeTypeLabel, t } from "../../app/i18n";
-import { ApiError, apiMultipartRequest, apiRequest } from "../../shared/api/api-client";
+import { ApiError, apiMultipartRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { CompanyLogoEditor } from "../../shared/branding/CompanyLogoEditor";
 import { useAuthenticatedLogo } from "../../shared/branding/use-authenticated-logo";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalQueryKey } from "../../shared/query/query-keys";
 import { OrganizationResourceCard } from "./OrganizationResourceCard";
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
@@ -89,15 +83,6 @@ export interface AdminCompanyWorkspaceContext {
   onCreateUser: () => void;
 }
 
-const emptyState: DetailState = {
-  areas: [],
-  buildings: [],
-  gateways: [],
-  nodes: [],
-  roles: [],
-  users: [],
-};
-
 function getSection(pathname: string): CompanyDetailSection {
   if (pathname.endsWith("/sites")) return "sites";
   if (pathname.endsWith("/buildings")) return "buildings";
@@ -113,15 +98,12 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     workspaceInstanceCounter += 1;
     return `workspace-${workspaceInstanceCounter}`;
   });
-  const initialLoadKeyRef = useRef<string | undefined>(undefined);
   const { companyId = "" } = useParams();
   const { logout, session } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const section = getSection(location.pathname);
-  const [detail, setDetail] = useState<DetailState>(emptyState);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
   const [formError, setFormError] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
   const [lifecycleConfirmOpen, setLifecycleConfirmOpen] = useState(false);
@@ -138,11 +120,6 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
   const [userEmail, setUserEmail] = useState("");
   const [userPassword, setUserPassword] = useState("");
   const [userRoleId, setUserRoleId] = useState<string | null>(null);
-  const adminLogo = useAuthenticatedLogo(
-    `/admin/companies/${companyId}/logo`,
-    Boolean(detail.company?.hasLogo),
-  );
-
   const canLoadAreas = hasPermission(session, "areas.view");
   const canLoadBuildings = hasPermission(session, "buildings.view");
   const canLoadUsers = hasPermission(session, "company-users.view");
@@ -159,98 +136,114 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     setModal("company");
   };
 
-  const handleApiError = useCallback(
-    async (error: unknown) => {
-      if (error instanceof ApiError && error.status === 401) {
-        await logout();
-        void navigate("/login", { replace: true });
-        return;
-      }
-      setHasError(true);
-    },
-    [logout, navigate],
-  );
-
-  const load = useCallback(async () => {
-    if (!session || !companyId) return;
-    setIsLoading(true);
-    setHasError(false);
-    try {
-      const company = await apiRequest<CompanyRecord>(session, `/admin/companies/${companyId}`);
-      const [areasPage, buildingsPage, usersPage, rolesPage, devices] = await Promise.all([
-        canLoadAreas
-          ? apiRequest<PaginatedResponse<AreaRecord>>(
-              session,
-              `/admin/companies/${companyId}/areas?pageSize=100`,
-            )
-          : Promise.resolve({ items: [] } as Pick<PaginatedResponse<AreaRecord>, "items">),
-        canLoadBuildings
-          ? apiRequest<PaginatedResponse<BuildingRecord>>(
-              session,
-              `/admin/companies/${companyId}/buildings?pageSize=100`,
-            )
-          : Promise.resolve({ items: [] } as Pick<PaginatedResponse<BuildingRecord>, "items">),
-        canLoadUsers
-          ? apiRequest<PaginatedResponse<CompanyUserRecord>>(
-              session,
-              `/admin/companies/${companyId}/users?pageSize=100`,
-            )
-          : Promise.resolve({ items: [] } as Pick<PaginatedResponse<CompanyUserRecord>, "items">),
-        canLoadRoles
-          ? apiRequest<PaginatedResponse<CompanyRoleRecord>>(
-              session,
-              `/admin/companies/${companyId}/roles?pageSize=100`,
-            )
-          : Promise.resolve({ items: [] } as Pick<PaginatedResponse<CompanyRoleRecord>, "items">),
-        canLoadDevices
-          ? Promise.all([
-              apiRequest<PaginatedResponse<GatewayRecord>>(
-                session,
-                "/admin/devices/gateways?pageSize=100",
-              ),
-              apiRequest<PaginatedResponse<NodeRecord>>(
-                session,
-                "/admin/devices/nodes?pageSize=100",
-              ),
-            ]).then(([gateways, nodes]) => ({ gateways: gateways.items, nodes: nodes.items }))
-          : Promise.resolve<CompanyDeviceSnapshot>({ gateways: [], nodes: [] }),
-      ]);
-
-      setDetail({
-        areas: areasPage.items,
-        buildings: buildingsPage.items,
-        company,
-        gateways: devices.gateways.filter((gateway) =>
-          gateway.companyAssignments.some((assignment) => assignment.companyId === companyId),
-        ),
-        nodes: devices.nodes.filter((node) =>
-          node.companyAssignments.some((assignment) => assignment.companyId === companyId),
-        ),
-        roles: rolesPage.items,
-        users: usersPage.items,
-      });
-    } catch (error) {
-      await handleApiError(error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [
-    canLoadAreas,
-    canLoadBuildings,
-    canLoadDevices,
-    canLoadRoles,
-    canLoadUsers,
-    companyId,
-    handleApiError,
+  const key = (resource: string) =>
+    session
+      ? portalQueryKey(session, "company-detail", resource, { companyId })
+      : (["company-detail", "anonymous", resource, companyId] as const);
+  const companyQuery = useApiQuery<CompanyRecord>(
     session,
-  ]);
+    key("company"),
+    `/admin/companies/${companyId}`,
+    { enabled: Boolean(companyId) },
+  );
+  const areasQuery = useApiQuery<PaginatedResponse<AreaRecord>>(
+    session,
+    key("areas"),
+    `/admin/companies/${companyId}/areas?pageSize=100`,
+    { enabled: Boolean(companyId) && canLoadAreas },
+  );
+  const buildingsQuery = useApiQuery<PaginatedResponse<BuildingRecord>>(
+    session,
+    key("buildings"),
+    `/admin/companies/${companyId}/buildings?pageSize=100`,
+    { enabled: Boolean(companyId) && canLoadBuildings },
+  );
+  const usersQuery = useApiQuery<PaginatedResponse<CompanyUserRecord>>(
+    session,
+    key("users"),
+    `/admin/companies/${companyId}/users?pageSize=100`,
+    { enabled: Boolean(companyId) && canLoadUsers },
+  );
+  const rolesQuery = useApiQuery<PaginatedResponse<CompanyRoleRecord>>(
+    session,
+    key("roles"),
+    `/admin/companies/${companyId}/roles?pageSize=100`,
+    { enabled: Boolean(companyId) && canLoadRoles },
+  );
+  const gatewaysQuery = useApiQuery<PaginatedResponse<GatewayRecord>>(
+    session,
+    key("gateways"),
+    "/admin/devices/gateways?pageSize=100",
+    { enabled: canLoadDevices },
+  );
+  const nodesQuery = useApiQuery<PaginatedResponse<NodeRecord>>(
+    session,
+    key("nodes"),
+    "/admin/devices/nodes?pageSize=100",
+    { enabled: canLoadDevices },
+  );
+  const detail = useMemo<DetailState>(
+    () => ({
+      areas: areasQuery.data?.items ?? [],
+      buildings: buildingsQuery.data?.items ?? [],
+      company: companyQuery.data,
+      gateways: (gatewaysQuery.data?.items ?? []).filter((gateway) =>
+        gateway.companyAssignments.some((assignment) => assignment.companyId === companyId),
+      ),
+      nodes: (nodesQuery.data?.items ?? []).filter((node) =>
+        node.companyAssignments.some((assignment) => assignment.companyId === companyId),
+      ),
+      roles: rolesQuery.data?.items ?? [],
+      users: usersQuery.data?.items ?? [],
+    }),
+    [
+      areasQuery.data,
+      buildingsQuery.data,
+      companyId,
+      companyQuery.data,
+      gatewaysQuery.data,
+      nodesQuery.data,
+      rolesQuery.data,
+      usersQuery.data,
+    ],
+  );
+  const adminLogo = useAuthenticatedLogo(
+    `/admin/companies/${companyId}/logo`,
+    Boolean(detail.company?.hasLogo),
+  );
+  const queries = [
+    companyQuery,
+    areasQuery,
+    buildingsQuery,
+    usersQuery,
+    rolesQuery,
+    gatewaysQuery,
+    nodesQuery,
+  ];
+  const isLoading = queries.some((query) => query.isLoading);
+  const hasError = queries.some((query) => query.isError);
+  const refetchAll = async () => {
+    await Promise.all(queries.map((query) => query.refetch()));
+  };
+  const mutation = useApiMutation(session);
 
   useEffect(() => {
-    const loadKey = `${session?.user.id ?? ""}:${companyId}`;
-    if (!loadKey || initialLoadKeyRef.current === loadKey) return;
-    initialLoadKeyRef.current = loadKey;
-    void load();
-  }, [companyId, load, session?.user.id]);
+    const unauthorized = queries.some(
+      (query) => query.error instanceof ApiError && query.error.status === 401,
+    );
+    if (!unauthorized) return;
+    void logout().then(() => navigate("/login", { replace: true }));
+  }, [
+    companyQuery.error,
+    areasQuery.error,
+    buildingsQuery.error,
+    usersQuery.error,
+    rolesQuery.error,
+    gatewaysQuery.error,
+    nodesQuery.error,
+    logout,
+    navigate,
+  ]);
 
   const roleOptions = useMemo(
     () => detail.roles.map((role) => ({ label: role.name, value: role.id })),
@@ -283,12 +276,15 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     setIsSaving(true);
     setFormError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${detail.company.id}`, {
-        body: JSON.stringify({ code: companyCode.trim() || undefined, name: companyName.trim() }),
-        method: "PATCH",
+      await mutation.mutateAsync({
+        path: `/admin/companies/${detail.company.id}`,
+        options: {
+          body: JSON.stringify({ code: companyCode.trim() || undefined, name: companyName.trim() }),
+          method: "PATCH",
+        },
       });
       closeModal();
-      await load();
+      await companyQuery.refetch();
     } catch (error) {
       setFormError(
         error instanceof ApiError && error.status === 409
@@ -305,13 +301,16 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     setIsSaving(true);
     setLifecycleError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${detail.company.id}/status`, {
-        body: JSON.stringify({
-          status: detail.company.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
-        }),
-        method: "PATCH",
+      await mutation.mutateAsync({
+        path: `/admin/companies/${detail.company.id}/status`,
+        options: {
+          body: JSON.stringify({
+            status: detail.company.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+          }),
+          method: "PATCH",
+        },
       });
-      await load();
+      await companyQuery.refetch();
       setLifecycleConfirmOpen(false);
     } catch (error) {
       setLifecycleError(error instanceof ApiError ? error.message : t("common.errorDescription"));
@@ -325,8 +324,9 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     setIsSaving(true);
     setLifecycleError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${detail.company.id}`, {
-        method: "DELETE",
+      await mutation.mutateAsync({
+        path: `/admin/companies/${detail.company.id}`,
+        options: { method: "DELETE" },
       });
       void navigate("/admin/companies", { replace: true });
     } catch (error) {
@@ -341,20 +341,21 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     const body = new FormData();
     body.append("logo", file);
     await apiMultipartRequest(session, `/admin/companies/${detail.company.id}/logo`, body);
-    setDetail((current) => ({
-      ...current,
-      company: current.company ? { ...current.company, hasLogo: true } : current.company,
-    }));
+    queryClient.setQueryData<CompanyRecord>(key("company"), (current) =>
+      current ? { ...current, hasLogo: true } : current,
+    );
     await adminLogo.refreshLogo();
   };
 
   const removeCompanyLogo = async () => {
     if (!session || !detail.company) return;
-    await apiRequest(session, `/admin/companies/${detail.company.id}/logo`, { method: "DELETE" });
-    setDetail((current) => ({
-      ...current,
-      company: current.company ? { ...current.company, hasLogo: false } : current.company,
-    }));
+    await mutation.mutateAsync({
+      path: `/admin/companies/${detail.company.id}/logo`,
+      options: { method: "DELETE" },
+    });
+    queryClient.setQueryData<CompanyRecord>(key("company"), (current) =>
+      current ? { ...current, hasLogo: false } : current,
+    );
     await adminLogo.refreshLogo();
   };
 
@@ -366,12 +367,15 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     setIsSaving(true);
     setFormError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${companyId}/areas`, {
-        body: JSON.stringify({ address: areaAddress.trim() || undefined, name: areaName.trim() }),
-        method: "POST",
+      await mutation.mutateAsync({
+        path: `/admin/companies/${companyId}/areas`,
+        options: {
+          body: JSON.stringify({ address: areaAddress.trim() || undefined, name: areaName.trim() }),
+          method: "POST",
+        },
       });
       closeModal();
-      await load();
+      await areasQuery.refetch();
     } catch {
       setFormError(t("organizations.duplicateFeedback"));
     } finally {
@@ -387,12 +391,12 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     setIsSaving(true);
     setFormError(undefined);
     try {
-      await apiRequest(session, `/admin/areas/${buildingAreaId}/buildings`, {
-        body: JSON.stringify({ title: buildingTitle.trim() }),
-        method: "POST",
+      await mutation.mutateAsync({
+        path: `/admin/areas/${buildingAreaId}/buildings`,
+        options: { body: JSON.stringify({ title: buildingTitle.trim() }), method: "POST" },
       });
       closeModal();
-      await load();
+      await buildingsQuery.refetch();
     } catch {
       setFormError(t("organizations.duplicateFeedback"));
     } finally {
@@ -408,17 +412,20 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     setIsSaving(true);
     setFormError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${companyId}/users`, {
-        body: JSON.stringify({
-          email: userEmail.trim(),
-          name: userName.trim(),
-          password: userPassword,
-          roleId: userRoleId,
-        }),
-        method: "POST",
+      await mutation.mutateAsync({
+        path: `/admin/companies/${companyId}/users`,
+        options: {
+          body: JSON.stringify({
+            email: userEmail.trim(),
+            name: userName.trim(),
+            password: userPassword,
+            roleId: userRoleId,
+          }),
+          method: "POST",
+        },
       });
       closeModal();
-      await load();
+      await usersQuery.refetch();
     } catch {
       setFormError(t("organizations.duplicateFeedback"));
     } finally {
@@ -431,7 +438,7 @@ export function AdminCompanyWorkspaceLayout(): ReactElement {
     return (
       <ErrorState
         description={t("common.errorDescription")}
-        onRetry={() => void load()}
+        onRetry={() => void refetchAll()}
         retryLabel={t("common.retry")}
         title={t("common.errorTitle")}
       />

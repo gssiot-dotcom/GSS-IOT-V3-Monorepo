@@ -1,7 +1,7 @@
 import type { AuthSession, GssAdminUserRecord } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "./render";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GssAdministratorsPage } from "../features/settings/GssAdministratorsPage";

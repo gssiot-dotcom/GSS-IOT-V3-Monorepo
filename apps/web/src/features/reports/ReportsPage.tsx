@@ -12,6 +12,7 @@ import type {
   ReportJobStatus,
   ReportType,
 } from "@gss-iot/contracts";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Box,
@@ -32,12 +33,15 @@ import {
   IconRefresh,
   IconReportAnalytics,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { formatDateTime, nodeTypeLabel, t, tf, tx } from "../../app/i18n";
-import { ApiError, apiDownload, apiRequest } from "../../shared/api/api-client";
+import { ApiError, apiDownload } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { REFERENCE_STALE_TIME, useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalDomainKey, portalQueryKey, queryKeys } from "../../shared/query/query-keys";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 import {
   CollectionPagination,
   EmptyState,
@@ -506,6 +510,7 @@ export function ReportsWorkspace({
   onCompanyChange,
 }: ReportsWorkspaceProps) {
   const { session } = useAuth();
+  const queryClient = useQueryClient();
   const canView = hasPermission(session, "reports.view");
   const canExport = hasPermission(session, "reports.export");
   const [reportType, setReportType] = useState<ReportType>(
@@ -513,17 +518,9 @@ export function ReportsWorkspace({
   );
   const [format, setFormat] = useState<ReportFileFormat>("CSV");
   const [filters, setFilters] = useState<ReportFilters>(emptyFilters);
-  const [jobs, setJobs] = useState<ReportJobRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [downloadError, setDownloadError] = useState<string>();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const loadRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const { page, pageSize, setPage, setPageSize } = useCollectionSearchParams();
 
   const queryPath = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
@@ -538,32 +535,33 @@ export function ReportsWorkspace({
     return `${basePath}/reports?${params.toString()}`;
   }, [basePath, filters, isAdmin, page, pageSize, reportType, session]);
 
-  const load = useCallback(async () => {
-    if (!session || !canView) return;
-    setRefreshing(true);
-    try {
-      const response = await apiRequest<ReportListResponse>(session, queryPath);
-      setJobs(response.items);
-      setTotal(response.total);
-      setError(false);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [canView, queryPath, session]);
-
-  loadRef.current = load;
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    if (!jobs.some((job) => job.status === "PENDING" || job.status === "PROCESSING")) return;
-    const timer = window.setInterval(() => void loadRef.current?.(), 2_000);
-    return () => window.clearInterval(timer);
-  }, [jobs]);
+  const jobsKey = session
+    ? portalQueryKey(session, "reports", "jobs", {
+        areaId: filters.areaId,
+        buildingId: filters.buildingId,
+        companyId: filters.companyId,
+        page,
+        pageSize,
+        reportType,
+      })
+    : ["reports", "anonymous"];
+  const jobsQuery = useApiQuery<ReportListResponse>(session, jobsKey, queryPath, {
+    enabled: canView,
+    placeholderData: keepPreviousData,
+    refetchInterval: (query) =>
+      query.state.data?.items.some((job) => job.status === "PENDING" || job.status === "PROCESSING")
+        ? 2_000
+        : false,
+  });
+  const jobs = jobsQuery.data?.items ?? [];
+  const total = jobsQuery.data?.total ?? 0;
+  const submitMutation = useApiMutation<ReportJobRecord>(session, {
+    onSuccess: async () => {
+      if (session)
+        await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, "reports") });
+    },
+  });
+  const submitting = submitMutation.isPending;
 
   const availableReportTypes = (isAdmin ? REPORT_TYPES : COMPANY_REPORT_TYPES).filter((type) => {
     const permission = GSS_REPORT_TYPE_PERMISSIONS[type];
@@ -595,20 +593,25 @@ export function ReportsWorkspace({
 
   const submit = async () => {
     if (!session || !canExport || submitting || validationError) return;
-    setSubmitting(true);
     setDownloadError(undefined);
     try {
-      await apiRequest<ReportJobRecord>(session, `${basePath}/reports/export`, {
-        body: JSON.stringify({ reportType, format, filters: cleanReportFilters(filters, isAdmin) }),
-        method: "POST",
+      await submitMutation.mutateAsync({
+        path: `${basePath}/reports/export`,
+        options: {
+          body: JSON.stringify({
+            reportType,
+            format,
+            filters: cleanReportFilters(filters, isAdmin),
+          }),
+          method: "POST",
+        },
       });
-      await load();
     } catch (requestError) {
       setDownloadError(
         requestError instanceof ApiError ? requestError.message : t("reports.exportFailed"),
       );
     } finally {
-      setSubmitting(false);
+      submitMutation.reset();
     }
   };
 
@@ -641,8 +644,8 @@ export function ReportsWorkspace({
   };
 
   if (!canView) return null;
-  if (loading && !jobs.length) return <LoadingState title={t("common.loading")} />;
-  if (error && !jobs.length) {
+  if (jobsQuery.isPending && !jobs.length) return <LoadingState title={t("common.loading")} />;
+  if (jobsQuery.isError && !jobs.length) {
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
   }
 
@@ -652,8 +655,8 @@ export function ReportsWorkspace({
         action={
           <Button
             leftSection={<IconRefresh size={16} />}
-            loading={refreshing}
-            onClick={() => void load()}
+            loading={jobsQuery.isFetching}
+            onClick={() => void jobsQuery.refetch()}
             variant="light"
           >
             {t("reports.refresh")}
@@ -697,7 +700,9 @@ export function ReportsWorkspace({
             {tf("reports.totalJobs", { count: total })}
           </Text>
         </Group>
-        {error ? <Alert color="yellow">{t("reports.backgroundRefreshFailed")}</Alert> : null}
+        {jobsQuery.isError ? (
+          <Alert color="yellow">{t("reports.backgroundRefreshFailed")}</Alert>
+        ) : null}
         <CollectionPagination
           onPageChange={setPage}
           onPageSizeChange={(value) => {
@@ -731,79 +736,70 @@ export function ReportsWorkspace({
 
 export function AdminReportsPage() {
   const { session } = useAuth();
-  const [options, setOptions] = useState<ReportOptions>({
-    areas: [],
-    buildings: [],
-    companies: [],
-    gateways: [],
-    nodes: [],
-  });
-  const [optionsError, setOptionsError] = useState(false);
-
-  useEffect(() => {
-    if (!session || !hasPermission(session, "reports.view")) return;
-    const load = async () => {
-      try {
-        const [companies, gateways, nodes] = await Promise.all([
-          hasPermission(session, "companies.view")
-            ? apiRequest<PaginatedResponse<CompanyRecord>>(session, "/admin/companies?pageSize=100")
-            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<CompanyRecord>, "items">),
-          hasPermission(session, "gateways.view")
-            ? apiRequest<PaginatedResponse<GatewayRecord>>(
-                session,
-                "/admin/devices/gateways?pageSize=100",
-              )
-            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<GatewayRecord>, "items">),
-          hasPermission(session, "nodes.view")
-            ? apiRequest<PaginatedResponse<NodeRecord>>(
-                session,
-                "/admin/devices/nodes?pageSize=100",
-              )
-            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<NodeRecord>, "items">),
-        ]);
-        setOptions((current) => ({
-          ...current,
-          companies: companies.items,
-          gateways: gateways.items,
-          nodes: nodes.items,
-        }));
-      } catch {
-        setOptionsError(true);
-      }
-    };
-    void load();
-  }, [session]);
-
-  const loadCompany = useCallback(
-    async (companyId: string | null) => {
-      if (!session || !companyId) {
-        setOptions((current) => ({ ...current, areas: [], buildings: [] }));
-        return;
-      }
-      try {
-        const [areas, buildings] = await Promise.all([
-          apiRequest<PaginatedResponse<AreaRecord>>(
-            session,
-            `/admin/companies/${companyId}/areas?pageSize=100`,
-          ),
-          apiRequest<PaginatedResponse<BuildingRecord>>(
-            session,
-            `/admin/companies/${companyId}/buildings?pageSize=100`,
-          ),
-        ]);
-        setOptions((current) => ({ ...current, areas: areas.items, buildings: buildings.items }));
-      } catch {
-        setOptionsError(true);
-      }
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const canView = hasPermission(session, "reports.view");
+  const userId = session?.user.id ?? "anonymous";
+  const companiesQuery = useApiQuery<PaginatedResponse<CompanyRecord>>(
+    session,
+    queryKeys.admin.reports(userId, "options-companies", { pageSize: 100 }),
+    "/admin/companies?pageSize=100",
+    {
+      enabled: canView && hasPermission(session, "companies.view"),
+      staleTime: REFERENCE_STALE_TIME,
     },
-    [session],
+  );
+  const gatewaysQuery = useApiQuery<PaginatedResponse<GatewayRecord>>(
+    session,
+    queryKeys.admin.reports(userId, "options-gateways", { pageSize: 100 }),
+    "/admin/devices/gateways?pageSize=100",
+    {
+      enabled: canView && hasPermission(session, "gateways.view"),
+      staleTime: REFERENCE_STALE_TIME,
+    },
+  );
+  const nodesQuery = useApiQuery<PaginatedResponse<NodeRecord>>(
+    session,
+    queryKeys.admin.reports(userId, "options-nodes", { pageSize: 100 }),
+    "/admin/devices/nodes?pageSize=100",
+    { enabled: canView && hasPermission(session, "nodes.view"), staleTime: REFERENCE_STALE_TIME },
+  );
+  const areasQuery = useApiQuery<PaginatedResponse<AreaRecord>>(
+    session,
+    queryKeys.admin.reports(userId, "options-areas", { companyId, pageSize: 100 }),
+    `/admin/companies/${companyId ?? "missing-company"}/areas?pageSize=100`,
+    { enabled: canView && Boolean(companyId), staleTime: REFERENCE_STALE_TIME },
+  );
+  const buildingsQuery = useApiQuery<PaginatedResponse<BuildingRecord>>(
+    session,
+    queryKeys.admin.reports(userId, "options-buildings", { companyId, pageSize: 100 }),
+    `/admin/companies/${companyId ?? "missing-company"}/buildings?pageSize=100`,
+    { enabled: canView && Boolean(companyId), staleTime: REFERENCE_STALE_TIME },
+  );
+  const options = useMemo<ReportOptions>(
+    () => ({
+      areas: areasQuery.data?.items ?? [],
+      buildings: buildingsQuery.data?.items ?? [],
+      companies: companiesQuery.data?.items ?? [],
+      gateways: gatewaysQuery.data?.items ?? [],
+      nodes: nodesQuery.data?.items ?? [],
+    }),
+    [
+      areasQuery.data,
+      buildingsQuery.data,
+      companiesQuery.data,
+      gatewaysQuery.data,
+      nodesQuery.data,
+    ],
+  );
+  const optionsError = [companiesQuery, gatewaysQuery, nodesQuery, areasQuery, buildingsQuery].some(
+    (query) => query.isError,
   );
 
   return (
     <ReportsWorkspace
       basePath="/admin"
       isAdmin
-      onCompanyChange={loadCompany}
+      onCompanyChange={setCompanyId}
       options={options}
       optionsError={optionsError}
     />
@@ -812,52 +808,44 @@ export function AdminReportsPage() {
 
 export function CompanyReportsPage() {
   const { session } = useAuth();
-  const [options, setOptions] = useState<ReportOptions>({
-    areas: [],
-    buildings: [],
-    companies: [],
-    gateways: [],
-    nodes: [],
-  });
-  const [optionsError, setOptionsError] = useState(false);
-
-  useEffect(() => {
-    if (!session || !hasPermission(session, "reports.view")) return;
-    const load = async () => {
-      try {
-        const [areas, buildings, devices] = await Promise.all([
-          hasPermission(session, "areas.view")
-            ? apiRequest<PaginatedResponse<AreaRecord>>(session, "/company/areas?pageSize=100")
-            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<AreaRecord>, "items">),
-          hasPermission(session, "buildings.view")
-            ? apiRequest<PaginatedResponse<BuildingRecord>>(
-                session,
-                "/company/buildings?pageSize=100",
-              )
-            : Promise.resolve({ items: [] } as Pick<PaginatedResponse<BuildingRecord>, "items">),
-          hasPermission(session, "company-devices.view")
-            ? apiRequest<CompanyDeviceInventoryResponse>(
-                session,
-                "/company/devices?gatewayPageSize=100&nodePageSize=100",
-              )
-            : Promise.resolve({
-                gateways: { items: [] },
-                nodes: { items: [] },
-              } as unknown as CompanyDeviceInventoryResponse),
-        ]);
-        setOptions((current) => ({
-          ...current,
-          areas: areas.items,
-          buildings: buildings.items,
-          gateways: devices.gateways.items,
-          nodes: devices.nodes.items,
-        }));
-      } catch {
-        setOptionsError(true);
-      }
-    };
-    void load();
-  }, [session]);
+  const canView = hasPermission(session, "reports.view");
+  const userId = session?.user.id ?? "anonymous";
+  const companyId = session?.user.companyId ?? "missing-company";
+  const areasQuery = useApiQuery<PaginatedResponse<AreaRecord>>(
+    session,
+    queryKeys.company.reports(userId, companyId, "options-areas", { pageSize: 100 }),
+    "/company/areas?pageSize=100",
+    { enabled: canView && hasPermission(session, "areas.view"), staleTime: REFERENCE_STALE_TIME },
+  );
+  const buildingsQuery = useApiQuery<PaginatedResponse<BuildingRecord>>(
+    session,
+    queryKeys.company.reports(userId, companyId, "options-buildings", { pageSize: 100 }),
+    "/company/buildings?pageSize=100",
+    {
+      enabled: canView && hasPermission(session, "buildings.view"),
+      staleTime: REFERENCE_STALE_TIME,
+    },
+  );
+  const devicesQuery = useApiQuery<CompanyDeviceInventoryResponse>(
+    session,
+    queryKeys.company.reports(userId, companyId, "options-devices", { pageSize: 100 }),
+    "/company/devices?gatewayPageSize=100&nodePageSize=100",
+    {
+      enabled: canView && hasPermission(session, "company-devices.view"),
+      staleTime: REFERENCE_STALE_TIME,
+    },
+  );
+  const options = useMemo<ReportOptions>(
+    () => ({
+      areas: areasQuery.data?.items ?? [],
+      buildings: buildingsQuery.data?.items ?? [],
+      companies: [],
+      gateways: devicesQuery.data?.gateways.items ?? [],
+      nodes: devicesQuery.data?.nodes.items ?? [],
+    }),
+    [areasQuery.data, buildingsQuery.data, devicesQuery.data],
+  );
+  const optionsError = areasQuery.isError || buildingsQuery.isError || devicesQuery.isError;
 
   return (
     <ReportsWorkspace

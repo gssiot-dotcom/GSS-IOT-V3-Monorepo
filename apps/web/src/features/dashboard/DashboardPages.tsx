@@ -21,8 +21,8 @@ import {
   IconReportAnalytics,
   IconUsers,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   DashboardKpiCard,
@@ -34,9 +34,10 @@ import {
   StatusBadge,
 } from "@gss-iot/ui";
 import { formatDateTime, getActiveLocale, intlLocaleByLocale, t, tf, tx } from "../../app/i18n";
-import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { useApiQuery } from "../../shared/query/api-query";
+import { portalQueryKey } from "../../shared/query/query-keys";
 import {
   ChartTooltip,
   chartTooltipPosition,
@@ -50,23 +51,19 @@ function statusLabel(status: ReportJobRecord["status"]): string {
 export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/company" }) {
   const { session } = useAuth();
   const navigate = useNavigate();
-  const [jobs, setJobs] = useState<ReportJobRecord[]>([]);
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const canView = hasPermission(session, "reports.view");
+  const jobsQuery = useApiQuery<{ items: ReportJobRecord[] }>(
+    session,
+    session
+      ? portalQueryKey(session, "dashboard", "recent-reports", { page: 1, pageSize: 50 })
+      : [basePath, "anonymous", "recent-reports"],
+    `${basePath}/reports?page=1&pageSize=50`,
+    { enabled: canView },
+  );
+  const jobs = jobsQuery.data?.items.slice(0, 5) ?? [];
 
-  useEffect(() => {
-    if (!session || !hasPermission(session, "reports.view")) {
-      setLoading(false);
-      return;
-    }
-    void apiRequest<{ items: ReportJobRecord[] }>(session, `${basePath}/reports?page=1&pageSize=50`)
-      .then((response) => setJobs(response.items.slice(0, 5)))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [basePath, session]);
-
-  if (!hasPermission(session, "reports.view")) return null;
-  if (loading)
+  if (!canView) return null;
+  if (jobsQuery.isPending)
     return (
       <DashboardSection
         accent="indigo"
@@ -77,7 +74,7 @@ export function ReportsDashboardCard({ basePath }: { basePath: "/admin" | "/comp
         <Skeleton height={92} />
       </DashboardSection>
     );
-  if (error)
+  if (jobsQuery.isError)
     return (
       <DashboardSection
         accent="indigo"
@@ -443,17 +440,18 @@ function DashboardPage({
   context: "admin" | "company";
 }) {
   const { session } = useAuth();
-  const [range, setRange] = useState<DashboardRange>("7d");
-  const [summary, setSummary] = useState<DashboardSummary>();
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    if (!session) return;
-    setError(false);
-    void apiRequest<DashboardSummary>(session, `${basePath}/dashboard/summary?range=${range}`)
-      .then(setSummary)
-      .catch(() => setError(true));
-  }, [basePath, range, session]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedRange = searchParams.get("range");
+  const range: DashboardRange =
+    requestedRange === "30d" || requestedRange === "90d" ? requestedRange : "7d";
+  const summaryQuery = useApiQuery<DashboardSummary>(
+    session,
+    session
+      ? portalQueryKey(session, "dashboard", "summary", { range })
+      : [basePath, "anonymous", "summary", range],
+    `${basePath}/dashboard/summary?range=${range}`,
+  );
+  const summary = summaryQuery.data;
 
   const kpis = useMemo(() => {
     if (!summary) return [];
@@ -518,8 +516,8 @@ function DashboardPage({
     return items;
   }, [summary]);
 
-  if (!session || (!summary && !error)) return <DashboardLoading />;
-  if (error)
+  if (!session || summaryQuery.isPending) return <DashboardLoading />;
+  if (summaryQuery.isError)
     return (
       <ErrorState description={t("common.errorDescription")} title={t("dashboard.loadError")} />
     );
@@ -536,7 +534,13 @@ function DashboardPage({
               { label: t("dashboard.range30d"), value: "30d" },
               { label: t("dashboard.range90d"), value: "90d" },
             ]}
-            onChange={(event) => setRange(event.currentTarget.value as DashboardRange)}
+            onChange={(event) => {
+              setSearchParams((current) => {
+                const next = new URLSearchParams(current);
+                next.set("range", event.currentTarget.value);
+                return next;
+              });
+            }}
             value={range}
             w={150}
           />

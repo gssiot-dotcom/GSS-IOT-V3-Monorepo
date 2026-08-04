@@ -1,7 +1,17 @@
 import type { AuthContext, AuthSession } from "@gss-iot/contracts";
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import * as authApi from "./auth-api";
+import { queryIdentityKey } from "../query/query-keys";
 
 type AuthStatus = "anonymous" | "authenticated" | "loading" | "session-expired";
 
@@ -44,7 +54,9 @@ function clearStoredContext(): void {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<AuthSession>();
+  const identityRef = useRef<string | undefined>(undefined);
   const [status, setStatus] = useState<AuthStatus>(() =>
     readStoredContext() ? "loading" : "anonymous",
   );
@@ -61,12 +73,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .getCurrentSession(context)
       .then((restoredSession) => {
         if (cancelled) return;
+        queryClient.clear();
+        if (!restoredSession.user.isActive) {
+          identityRef.current = undefined;
+          clearStoredContext();
+          setSession(undefined);
+          setStatus("session-expired");
+          return;
+        }
+        identityRef.current = queryIdentityKey(restoredSession);
         setSession(restoredSession);
         writeStoredContext(restoredSession.context);
         setStatus("authenticated");
       })
       .catch(() => {
         if (cancelled) return;
+        queryClient.clear();
+        identityRef.current = undefined;
         clearStoredContext();
         setSession(undefined);
         setStatus("session-expired");
@@ -75,12 +98,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     const refreshed = (event: Event) => {
       const nextSession = (event as CustomEvent<AuthSession>).detail;
       if (!nextSession) return;
+      if (!nextSession.user.isActive) {
+        clearStoredContext();
+        setSession(undefined);
+        identityRef.current = undefined;
+        queryClient.clear();
+        setStatus("session-expired");
+        return;
+      }
+      const nextIdentity = queryIdentityKey(nextSession);
+      if (identityRef.current && identityRef.current !== nextIdentity) queryClient.clear();
+      identityRef.current = nextIdentity;
       setSession(nextSession);
       writeStoredContext(nextSession.context);
       setStatus("authenticated");
@@ -88,6 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const expired = () => {
       clearStoredContext();
       setSession(undefined);
+      identityRef.current = undefined;
+      queryClient.clear();
       setStatus("session-expired");
     };
     window.addEventListener(authApi.authSessionRefreshedEvent, refreshed);
@@ -96,14 +132,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener(authApi.authSessionRefreshedEvent, refreshed);
       window.removeEventListener(authApi.authSessionExpiredEvent, expired);
     };
-  }, []);
+  }, [queryClient]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       login: async (context, email, password) => {
         setStatus("loading");
+        setSession(undefined);
+        identityRef.current = undefined;
+        queryClient.clear();
         try {
           const nextSession = await authApi.login(context, email, password);
+          identityRef.current = queryIdentityKey(nextSession);
           setSession(nextSession);
           writeStoredContext(nextSession.context);
           setStatus("authenticated");
@@ -115,8 +155,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       logout: async () => {
+        const hadSession = Boolean(session);
+        setStatus("loading");
+        setSession(undefined);
+        identityRef.current = undefined;
+        queryClient.clear();
         try {
-          if (session) {
+          if (hadSession) {
             await authApi.logout();
           }
         } finally {
@@ -128,7 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       status,
     }),
-    [session, status],
+    [queryClient, session, status],
   );
 
   return <AuthContextValue.Provider value={value}>{children}</AuthContextValue.Provider>;

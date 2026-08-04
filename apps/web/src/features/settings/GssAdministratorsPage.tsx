@@ -40,11 +40,15 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 
 import { formatDateTime, t, tf } from "../../app/i18n";
-import { ApiError, apiRequest } from "../../shared/api/api-client";
+import { ApiError } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalDomainKey, portalQueryKey } from "../../shared/query/query-keys";
 import { Can } from "../../shared/rbac/Can";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 
 interface AdministratorForm {
   email: string;
@@ -66,16 +70,11 @@ const emptyForm: AdministratorForm = {
 
 export function GssAdministratorsPage() {
   const { session } = useAuth();
-  const [administrators, setAdministrators] = useState<GssAdminUserRecord[]>();
-  const [roles, setRoles] = useState<GssAdminRoleOption[]>([]);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [loadStatus, setLoadStatus] = useState<"ready" | "error" | "forbidden" | "session">(
-    "ready",
-  );
+  const queryClient = useQueryClient();
+  const collection = useCollectionSearchParams(50);
+  const { page, pageSize } = collection;
+  const search = collection.search;
+  const [searchDraft, setSearchDraft] = useState(search);
   const [viewing, setViewing] = useState<GssAdminUserRecord | null>(null);
   const [editing, setEditing] = useState<GssAdminUserRecord | null>(null);
   const [formOpened, setFormOpened] = useState(false);
@@ -87,39 +86,39 @@ export function GssAdministratorsPage() {
   const [mutating, setMutating] = useState(false);
   const [mutationError, setMutationError] = useState("");
 
-  const load = async () => {
-    if (!session) return;
-    setLoadStatus("ready");
-    try {
-      const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-      if (appliedSearch) query.set("search", appliedSearch);
-      const [usersPage, roleOptions] = await Promise.all([
-        apiRequest<PaginatedResponse<GssAdminUserRecord>>(
-          session,
-          `/admin/gss-users?${query.toString()}`,
-        ),
-        apiRequest<GssAdminRoleOption[]>(session, "/admin/gss-users/options"),
-      ]);
-      setAdministrators(usersPage.items);
-      setRoles(roleOptions);
-      setTotal(usersPage.total);
-      setViewing((current) =>
-        current ? (usersPage.items.find(({ id }) => id === current.id) ?? null) : null,
-      );
-    } catch (error) {
-      setLoadStatus(
-        error instanceof ApiError && error.status === 401
-          ? "session"
-          : error instanceof ApiError && error.status === 403
-            ? "forbidden"
-            : "error",
-      );
-    }
-  };
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (search) query.set("search", search);
+  const usersQuery = useApiQuery<PaginatedResponse<GssAdminUserRecord>>(
+    session,
+    session
+      ? portalQueryKey(session, "gss-users", "list", { page, pageSize, search })
+      : ["gss-users", "anonymous"],
+    `/admin/gss-users?${query.toString()}`,
+    { placeholderData: keepPreviousData },
+  );
+  const rolesQuery = useApiQuery<GssAdminRoleOption[]>(
+    session,
+    session
+      ? portalQueryKey(session, "gss-users", "role-options")
+      : ["gss-users", "anonymous", "role-options"],
+    "/admin/gss-users/options",
+  );
+  const administrators = usersQuery.data?.items;
+  const roles = rolesQuery.data ?? [];
+  const total = usersQuery.data?.total ?? 0;
+  const userMutation = useApiMutation(session, {
+    onSuccess: async () => {
+      if (session)
+        await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, "gss-users") });
+    },
+  });
 
   useEffect(() => {
-    void load();
-  }, [session, page, pageSize, appliedSearch]);
+    if (!administrators) return;
+    setViewing((current) =>
+      current ? (administrators.find(({ id }) => id === current.id) ?? null) : null,
+    );
+  }, [administrators]);
 
   const openCreate = () => {
     setEditing(null);
@@ -156,19 +155,21 @@ export function GssAdministratorsPage() {
     setSaving(true);
     setFormError("");
     try {
-      await apiRequest(session, editing ? `/admin/gss-users/${editing.id}` : "/admin/gss-users", {
-        body: JSON.stringify({
-          email: form.email,
-          ...(editing ? { isActive: form.isActive } : {}),
-          name: form.name,
-          ...(form.password ? { password: form.password } : {}),
-          phone: form.phone,
-          roleId: form.roleId,
-        }),
-        method: editing ? "PATCH" : "POST",
+      await userMutation.mutateAsync({
+        path: editing ? `/admin/gss-users/${editing.id}` : "/admin/gss-users",
+        options: {
+          body: JSON.stringify({
+            email: form.email,
+            ...(editing ? { isActive: form.isActive } : {}),
+            name: form.name,
+            ...(form.password ? { password: form.password } : {}),
+            phone: form.phone,
+            roleId: form.roleId,
+          }),
+          method: editing ? "PATCH" : "POST",
+        },
       });
       setFormOpened(false);
-      await load();
     } catch (error) {
       setFormError(error instanceof ApiError ? error.message : t("settings.actionFailed"));
     } finally {
@@ -183,14 +184,16 @@ export function GssAdministratorsPage() {
     setMutating(true);
     setMutationError("");
     try {
-      await apiRequest(session, `/admin/gss-users/${target.id}`, {
-        ...(kind === "status"
-          ? { body: JSON.stringify({ isActive: !target.isActive }), method: "PATCH" }
-          : { method: "DELETE" }),
+      await userMutation.mutateAsync({
+        path: `/admin/gss-users/${target.id}`,
+        options: {
+          ...(kind === "status"
+            ? { body: JSON.stringify({ isActive: !target.isActive }), method: "PATCH" }
+            : { method: "DELETE" }),
+        },
       });
       setDeleteTarget(null);
       setStatusTarget(null);
-      await load();
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("settings.actionFailed"));
       setDeleteTarget(null);
@@ -200,12 +203,13 @@ export function GssAdministratorsPage() {
     }
   };
 
-  if (!administrators && loadStatus === "ready") {
+  if (!administrators && usersQuery.isLoading) {
     return <LoadingState title={t("common.loading")} />;
   }
-  if (loadStatus === "session") return <SessionExpiredState title={t("common.sessionExpired")} />;
-  if (loadStatus === "forbidden") return <ForbiddenState title={t("common.forbidden")} />;
-  if (loadStatus === "error") {
+  const loadStatus = usersQuery.error instanceof ApiError ? usersQuery.error.status : undefined;
+  if (loadStatus === 401) return <SessionExpiredState title={t("common.sessionExpired")} />;
+  if (loadStatus === 403) return <ForbiddenState title={t("common.forbidden")} />;
+  if (usersQuery.isError) {
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
   }
 
@@ -237,17 +241,16 @@ export function GssAdministratorsPage() {
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          setPage(1);
-          setAppliedSearch(search.trim());
+          collection.setSearch(searchDraft.trim());
         }}
       >
         <Group align="end" wrap="nowrap">
           <TextInput
             aria-label={t("settings.searchAdministrators")}
             label={t("settings.searchAdministrators")}
-            onChange={(event) => setSearch(event.currentTarget.value)}
+            onChange={(event) => setSearchDraft(event.currentTarget.value)}
             style={{ flex: 1 }}
-            value={search}
+            value={searchDraft}
           />
           <Button type="submit" variant="light">
             {t("settings.search")}
@@ -340,10 +343,9 @@ export function GssAdministratorsPage() {
             rows={administrators}
           />
           <CollectionPagination
-            onPageChange={setPage}
+            onPageChange={collection.setPage}
             onPageSizeChange={(value) => {
-              setPageSize(Number(value) as CollectionPageSize);
-              setPage(1);
+              collection.setPageSize(Number(value) as CollectionPageSize);
             }}
             page={page}
             pageSize={pageSize}
@@ -359,7 +361,7 @@ export function GssAdministratorsPage() {
       ) : (
         <EmptyState
           description={
-            appliedSearch
+            search
               ? t("settings.noAdministratorsSearchDescription")
               : t("settings.noAdministratorsDescription")
           }

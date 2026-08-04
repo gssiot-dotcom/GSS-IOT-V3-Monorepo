@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "./render";
 import { describe, expect, it, vi } from "vitest";
 
 import { LocalDateTimeInput } from "../shared/date-time/LocalDateTimeInput";

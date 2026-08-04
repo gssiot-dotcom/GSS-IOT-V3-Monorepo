@@ -1,7 +1,7 @@
 import type { AuthSession, CompanyPermissionRecord } from "@gss-iot/contracts";
 import { gssTheme } from "@gss-iot/ui";
 import { MantineProvider } from "@mantine/core";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "./render";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PermissionCatalogPage } from "../features/permissions/PermissionCatalogPage";

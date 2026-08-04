@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "./render";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminMonitoringSummaryRecord, MonitoringNodeStateRecord } from "@gss-iot/contracts";
@@ -219,6 +219,7 @@ describe("Phase 6 monitoring UI", () => {
           </Routes>
         </MemoryRouter>
       </MantineProvider>,
+      { router: false },
     );
 
     expect(await screen.findByText("Tower A")).toBeTruthy();
@@ -267,6 +268,7 @@ describe("Phase 6 monitoring UI", () => {
           </Routes>
         </MemoryRouter>
       </MantineProvider>,
+      { router: false },
     );
 
     const towerCard = await screen.findByRole("button", {
@@ -455,6 +457,7 @@ describe("Phase 6 monitoring UI", () => {
           </Routes>
         </MemoryRouter>
       </MantineProvider>,
+      { router: false },
     );
 
     expect((await screen.findAllByText("Unconfigured")).length).toBeGreaterThan(0);

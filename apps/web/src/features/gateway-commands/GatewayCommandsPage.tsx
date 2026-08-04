@@ -4,6 +4,7 @@ import type {
   MqttStatusRecord,
   PaginatedResponse,
 } from "@gss-iot/contracts";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   ConfirmActionModal,
   CollectionPagination,
@@ -19,12 +20,14 @@ import {
 } from "@gss-iot/ui";
 import { Code, Drawer, Group, Paper, Select, SimpleGrid, Stack, Text } from "@mantine/core";
 import { IconEye, IconPlayerPause, IconRefresh } from "@tabler/icons-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { formatDateTime, t, tf } from "../../app/i18n";
-import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { queryKeys } from "../../shared/query/query-keys";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 
 function commandStatus(
   status: GatewayCommandRecord["status"],
@@ -81,72 +84,72 @@ function isActiveCommand(command: GatewayCommandRecord): boolean {
 
 export function GatewayCommandsPage() {
   const { session } = useAuth();
-  const [commands, setCommands] = useState<GatewayCommandRecord[]>();
-  const [mqttStatus, setMqttStatus] = useState<MqttStatusRecord>();
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState<GatewayCommandRecord>();
-  const [error, setError] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<GatewayCommandRecord["status"] | "ALL">("ALL");
+  const { page, pageSize, searchParams, setPage, setPageSize, update } =
+    useCollectionSearchParams();
+  const requestedStatus = searchParams.get("status");
+  const statusFilter =
+    requestedStatus &&
+    ["PENDING", "SENT", "ACKNOWLEDGED", "FAILED", "EXPIRED", "CANCELLED"].includes(requestedStatus)
+      ? (requestedStatus as GatewayCommandRecord["status"])
+      : "ALL";
   const [pendingMutation, setPendingMutation] = useState<
     { action: "cancel" | "retry"; command: GatewayCommandRecord } | undefined
   >();
   const [isMutating, setIsMutating] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
-
-  const load = useCallback(async () => {
-    if (!session) return;
-    setError(false);
-    try {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-      if (statusFilter !== "ALL") params.set("status", statusFilter);
-      const [loadedCommands, loadedMqttStatus] = await Promise.all([
-        apiRequest<PaginatedResponse<GatewayCommandRecord>>(
-          session,
-          `/admin/gateway-commands?${params.toString()}`,
-        ),
-        apiRequest<MqttStatusRecord>(session, "/admin/gateway-commands/mqtt-status"),
-      ]);
-      setCommands(loadedCommands.items);
-      setTotal(loadedCommands.total);
-      setMqttStatus(loadedMqttStatus);
-      setSelected((current) =>
-        current
-          ? (loadedCommands.items.find((command) => command.id === current.id) ?? current)
-          : current,
-      );
-    } catch {
-      setError(true);
-    }
-  }, [page, pageSize, session, statusFilter]);
-
-  const shouldPoll = useMemo(
-    () => Boolean(commands?.some((command) => isActiveCommand(command))),
-    [commands],
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (statusFilter !== "ALL") params.set("status", statusFilter);
+  const userId = session?.user.id ?? "anonymous";
+  const commandsKey = queryKeys.admin.resource(userId, "gateway-commands", "list", {
+    page,
+    pageSize,
+    status: statusFilter,
+  });
+  const commandsQuery = useApiQuery<PaginatedResponse<GatewayCommandRecord>>(
+    session,
+    commandsKey,
+    `/admin/gateway-commands?${params.toString()}`,
+    {
+      placeholderData: keepPreviousData,
+      refetchInterval: (query) =>
+        query.state.data?.items.some((command) => isActiveCommand(command)) ? 2_000 : false,
+    },
   );
+  const mqttStatusQuery = useApiQuery<MqttStatusRecord>(
+    session,
+    queryKeys.admin.resource(userId, "gateway-commands", "mqtt-status"),
+    "/admin/gateway-commands/mqtt-status",
+  );
+  const commands = commandsQuery.data?.items;
+  const total = commandsQuery.data?.total ?? 0;
+  const mqttStatus = mqttStatusQuery.data;
+  const mutation = useApiMutation<GatewayCommandRecord>(session);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    if (!shouldPoll) return;
-    const interval = window.setInterval(() => {
-      void load();
-    }, 2_000);
-    return () => window.clearInterval(interval);
-  }, [load, shouldPoll]);
+    setSelected((current) =>
+      current && commands
+        ? (commands.find((command) => command.id === current.id) ?? current)
+        : current,
+    );
+  }, [commands]);
 
   const mutate = async (command: GatewayCommandRecord, action: "cancel" | "retry") => {
     if (!session) return;
-    const updated = await apiRequest<GatewayCommandRecord>(
-      session,
-      `/admin/gateway-commands/${command.id}/${action}`,
-      { method: "POST" },
-    );
+    const updated = await mutation.mutateAsync({
+      path: `/admin/gateway-commands/${command.id}/${action}`,
+      options: { method: "POST" },
+    });
     setSelected(updated);
-    await load();
+    queryClient.setQueryData<PaginatedResponse<GatewayCommandRecord>>(commandsKey, (current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item) => (item.id === updated.id ? updated : item)),
+          }
+        : current,
+    );
   };
 
   const filteredCommands = commands;
@@ -206,7 +209,7 @@ export function GatewayCommandsPage() {
     }
   };
 
-  if (error)
+  if (commandsQuery.isError || mqttStatusQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
   if (!commands || !mqttStatus) return <LoadingState title={t("common.loading")} />;
 
@@ -221,7 +224,6 @@ export function GatewayCommandsPage() {
             onPageChange={setPage}
             onPageSizeChange={(value) => {
               setPageSize(Number(value) as CollectionPageSize);
-              setPage(1);
             }}
             page={page}
             pageSize={pageSize}
@@ -246,8 +248,7 @@ export function GatewayCommandsPage() {
                 ).map((status) => ({ label: commandStatusLabel(status), value: status })),
               ]}
               onChange={(value) => {
-                setStatusFilter((value as GatewayCommandRecord["status"] | "ALL") ?? "ALL");
-                setPage(1);
+                update({ page: 1, status: value === "ALL" ? null : value });
               }}
               value={statusFilter}
             />

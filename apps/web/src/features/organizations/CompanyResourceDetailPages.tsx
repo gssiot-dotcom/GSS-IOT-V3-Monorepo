@@ -1,6 +1,6 @@
 import type { AreaOverviewResponse, BuildingOverviewResponse } from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
-import { ApiError, apiRequest } from "../../shared/api/api-client";
+import { ApiError } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DashboardKpiCard,
@@ -31,6 +31,8 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { formatDateTime, t, tf, tx } from "../../app/i18n";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalQueryKey } from "../../shared/query/query-keys";
 import { hasPermission } from "../../shared/rbac/has-permission";
 import { BuildingImageManager } from "./BuildingImageManager";
 
@@ -44,41 +46,45 @@ export function CompanyAreaDetailPage() {
   const { areaId } = useParams();
   const { session } = useAuth();
   const navigate = useNavigate();
-  const [overview, setOverview] = useState<AreaOverviewResponse>();
-  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [opened, setOpened] = useState(false);
   const [name, setName] = useState("");
 
-  const load = async () => {
-    if (!session || !areaId) return;
-    setErrorStatus(null);
-    try {
-      const response = await apiRequest<AreaOverviewResponse>(
-        session,
-        `/company/areas/${areaId}/overview`,
-      );
-      setOverview(response);
-      setName(response.area.name);
-    } catch (error) {
-      setErrorStatus(error instanceof ApiError ? error.status : 500);
-    }
-  };
+  const overviewKey = session
+    ? portalQueryKey(session, "areas", "overview", { areaId })
+    : (["areas", "anonymous", "overview", areaId] as const);
+  const overviewQuery = useApiQuery<AreaOverviewResponse>(
+    session,
+    overviewKey,
+    `/company/areas/${areaId}/overview`,
+    { enabled: Boolean(areaId) },
+  );
+  const overview = overviewQuery.data;
+  const updateMutation = useApiMutation(session, {
+    onSuccess: async () => {
+      await overviewQuery.refetch();
+    },
+  });
 
   useEffect(() => {
-    void load();
-  }, [session, areaId]);
+    if (overview) setName(overview.area.name);
+  }, [overview]);
 
   const save = async () => {
     if (!session || !areaId) return;
-    await apiRequest(session, `/company/areas/${areaId}`, {
-      body: JSON.stringify({ name }),
-      method: "PATCH",
+    await updateMutation.mutateAsync({
+      path: `/company/areas/${areaId}`,
+      options: { body: JSON.stringify({ name }), method: "PATCH" },
     });
     setOpened(false);
-    await load();
   };
 
-  if (!overview && !errorStatus) return <LoadingState title={t("common.loading")} />;
+  const errorStatus =
+    overviewQuery.error instanceof ApiError
+      ? overviewQuery.error.status
+      : overviewQuery.isError
+        ? 500
+        : null;
+  if (!overview && overviewQuery.isLoading) return <LoadingState title={t("common.loading")} />;
   if (errorStatus === 403)
     return (
       <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />
@@ -253,41 +259,45 @@ export function CompanyBuildingDetailPage() {
   const { buildingId } = useParams();
   const { session } = useAuth();
   const navigate = useNavigate();
-  const [overview, setOverview] = useState<BuildingOverviewResponse>();
-  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [opened, setOpened] = useState(false);
   const [title, setTitle] = useState("");
 
-  const load = async () => {
-    if (!session || !buildingId) return;
-    setErrorStatus(null);
-    try {
-      const response = await apiRequest<BuildingOverviewResponse>(
-        session,
-        `/company/buildings/${buildingId}/overview`,
-      );
-      setOverview(response);
-      setTitle(response.building.title);
-    } catch (error) {
-      setErrorStatus(error instanceof ApiError ? error.status : 500);
-    }
-  };
+  const overviewKey = session
+    ? portalQueryKey(session, "buildings", "overview", { buildingId })
+    : (["buildings", "anonymous", "overview", buildingId] as const);
+  const overviewQuery = useApiQuery<BuildingOverviewResponse>(
+    session,
+    overviewKey,
+    `/company/buildings/${buildingId}/overview`,
+    { enabled: Boolean(buildingId) },
+  );
+  const overview = overviewQuery.data;
+  const updateMutation = useApiMutation(session, {
+    onSuccess: async () => {
+      await overviewQuery.refetch();
+    },
+  });
 
   useEffect(() => {
-    void load();
-  }, [session, buildingId]);
+    if (overview) setTitle(overview.building.title);
+  }, [overview]);
 
   const save = async () => {
     if (!session || !buildingId) return;
-    await apiRequest(session, `/company/buildings/${buildingId}`, {
-      body: JSON.stringify({ title }),
-      method: "PATCH",
+    await updateMutation.mutateAsync({
+      path: `/company/buildings/${buildingId}`,
+      options: { body: JSON.stringify({ title }), method: "PATCH" },
     });
     setOpened(false);
-    await load();
   };
 
-  if (!overview && !errorStatus) return <LoadingState title={t("common.loading")} />;
+  const errorStatus =
+    overviewQuery.error instanceof ApiError
+      ? overviewQuery.error.status
+      : overviewQuery.isError
+        ? 500
+        : null;
+  if (!overview && overviewQuery.isLoading) return <LoadingState title={t("common.loading")} />;
   if (errorStatus === 403)
     return (
       <ForbiddenState description={t("common.pageUnavailable")} title={t("common.forbidden")} />

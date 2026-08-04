@@ -31,14 +31,18 @@ import {
 } from "@mantine/core";
 import { IconEdit, IconEye, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 
 import { t, tf } from "../../app/i18n";
-import { apiMultipartRequest, apiRequest } from "../../shared/api/api-client";
+import { apiMultipartRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { useCompanyBranding } from "../../shared/branding/company-branding-context";
 import { CompanyLogoEditor } from "../../shared/branding/CompanyLogoEditor";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalDomainKey, portalQueryKey } from "../../shared/query/query-keys";
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 
 interface RoleFormState {
   key: string;
@@ -50,21 +54,33 @@ const emptyRoleForm: RoleFormState = { key: "", name: "", permissionIds: [] };
 
 export function GssRolesPage() {
   const { session } = useAuth();
-  const [roles, setRoles] = useState<GssRoleRecord[]>();
-  const [permissions, setPermissions] = useState<
-    GssRoleRecord["permissions"][number]["permission"][]
-  >([]);
-  const [error, setError] = useState(false);
+  const queryClient = useQueryClient();
   const [actionError, setActionError] = useState(false);
   const [opened, setOpened] = useState(false);
   const [editingRole, setEditingRole] = useState<GssRoleRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GssRoleRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
+  const collection = useCollectionSearchParams(50);
+  const { page, pageSize } = collection;
   const [form, setForm] = useState<RoleFormState>(emptyRoleForm);
 
+  const rolesQuery = useApiQuery<PaginatedResponse<GssRoleRecord>>(
+    session,
+    session ? portalQueryKey(session, "roles", "list", { page, pageSize }) : ["roles", "anonymous"],
+    `/admin/roles?page=${page}&pageSize=${pageSize}`,
+    { placeholderData: keepPreviousData },
+  );
+  const permissionsQuery = useApiQuery<GssRoleRecord["permissions"][number]["permission"][]>(
+    session,
+    session
+      ? portalQueryKey(session, "roles", "permissions")
+      : ["roles", "anonymous", "permissions"],
+    "/admin/roles/permissions",
+    { enabled: hasPermission(session, "admin-roles.view") },
+  );
+  const roles = rolesQuery.data?.items;
+  const permissions = permissionsQuery.data ?? [];
+  const total = rolesQuery.data?.total ?? 0;
   const groupedPermissions = useMemo(
     () =>
       permissions.reduce<Record<string, NonNullable<(typeof permissions)[number]>[]>>(
@@ -77,34 +93,12 @@ export function GssRolesPage() {
       ),
     [permissions],
   );
-
-  const load = async () => {
-    if (!session) return;
-    setError(false);
-    try {
-      const [nextRoles, nextPermissions] = await Promise.all([
-        apiRequest<PaginatedResponse<GssRoleRecord>>(
-          session,
-          `/admin/roles?page=${page}&pageSize=${pageSize}`,
-        ),
-        hasPermission(session, "admin-roles.view")
-          ? apiRequest<GssRoleRecord["permissions"][number]["permission"][]>(
-              session,
-              "/admin/roles/permissions",
-            )
-          : Promise.resolve([]),
-      ]);
-      setRoles(nextRoles.items);
-      setTotal(nextRoles.total);
-      setPermissions(nextPermissions);
-    } catch {
-      setError(true);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [session, page, pageSize]);
+  const roleMutation = useApiMutation(session, {
+    onSuccess: async () => {
+      if (session)
+        await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, "roles") });
+    },
+  });
 
   const openCreate = () => {
     setActionError(false);
@@ -128,12 +122,11 @@ export function GssRolesPage() {
     if (!session) return;
     setActionError(false);
     try {
-      await apiRequest(session, editingRole ? `/admin/roles/${editingRole.id}` : "/admin/roles", {
-        body: JSON.stringify(form),
-        method: editingRole ? "PATCH" : "POST",
+      await roleMutation.mutateAsync({
+        path: editingRole ? `/admin/roles/${editingRole.id}` : "/admin/roles",
+        options: { body: JSON.stringify(form), method: editingRole ? "PATCH" : "POST" },
       });
       setOpened(false);
-      await load();
     } catch {
       setActionError(true);
     }
@@ -144,9 +137,11 @@ export function GssRolesPage() {
     setActionError(false);
     setDeleting(true);
     try {
-      await apiRequest(session, `/admin/roles/${deleteTarget.id}`, { method: "DELETE" });
+      await roleMutation.mutateAsync({
+        path: `/admin/roles/${deleteTarget.id}`,
+        options: { method: "DELETE" },
+      });
       setDeleteTarget(null);
-      await load();
     } catch {
       setActionError(true);
     } finally {
@@ -163,8 +158,8 @@ export function GssRolesPage() {
     }));
   };
 
-  if (!roles && !error) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if (!roles && rolesQuery.isLoading) return <LoadingState title={t("common.loading")} />;
+  if (rolesQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (
@@ -182,10 +177,9 @@ export function GssRolesPage() {
       {roles?.length ? (
         <Stack gap="sm">
           <CollectionPagination
-            onPageChange={setPage}
+            onPageChange={collection.setPage}
             onPageSizeChange={(value) => {
-              setPageSize(Number(value) as CollectionPageSize);
-              setPage(1);
+              collection.setPageSize(Number(value) as CollectionPageSize);
             }}
             page={page}
             pageSize={pageSize}
@@ -364,18 +358,15 @@ export function GssRolesPage() {
 
 export function AdminSystemSettingsPage() {
   const { session } = useAuth();
-  const [settings, setSettings] = useState<SystemSettingsRecord>();
-  const [error, setError] = useState(false);
+  const settingsQuery = useApiQuery<SystemSettingsRecord>(
+    session,
+    session ? portalQueryKey(session, "settings", "system") : ["settings", "anonymous", "system"],
+    "/admin/settings/system",
+  );
+  const settings = settingsQuery.data;
 
-  useEffect(() => {
-    if (!session) return;
-    void apiRequest<SystemSettingsRecord>(session, "/admin/settings/system")
-      .then(setSettings)
-      .catch(() => setError(true));
-  }, [session]);
-
-  if (!settings && !error) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if (!settings && settingsQuery.isLoading) return <LoadingState title={t("common.loading")} />;
+  if (settingsQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (
@@ -481,37 +472,40 @@ function BooleanStatus({ value }: { value: boolean }) {
 
 export function CompanySettingsPage() {
   const { session } = useAuth();
+  const queryClient = useQueryClient();
   const branding = useCompanyBranding();
   const canManage = hasPermission(session, "settings.company.manage");
-  const [company, setCompany] = useState<CompanyRecord>();
   const [form, setForm] = useState({ address: "", email: "", phone: "" });
   const [error, setError] = useState(false);
   const [saved, setSaved] = useState(false);
-
-  const load = async () => {
-    if (!session) return;
-    try {
-      const next = await apiRequest<CompanyRecord>(session, "/company/settings");
-      setCompany(next);
-      setForm({ address: next.address ?? "", email: next.email ?? "", phone: next.phone ?? "" });
-    } catch {
-      setError(true);
-    }
-  };
+  const companyKey = session
+    ? portalQueryKey(session, "settings", "company")
+    : (["settings", "anonymous", "company"] as const);
+  const companyQuery = useApiQuery<CompanyRecord>(session, companyKey, "/company/settings");
+  const company = companyQuery.data;
+  const companyMutation = useApiMutation<CompanyRecord>(session, {
+    onSuccess: (next) => queryClient.setQueryData(companyKey, next),
+  });
+  const logoMutation = useApiMutation(session);
 
   useEffect(() => {
-    void load();
-  }, [session]);
+    if (company) {
+      setForm({
+        address: company.address ?? "",
+        email: company.email ?? "",
+        phone: company.phone ?? "",
+      });
+    }
+  }, [company]);
 
   const save = async () => {
     if (!session || !canManage) return;
     setSaved(false);
     try {
-      const next = await apiRequest<CompanyRecord>(session, "/company/settings", {
-        body: JSON.stringify(form),
-        method: "PATCH",
+      await companyMutation.mutateAsync({
+        path: "/company/settings",
+        options: { body: JSON.stringify(form), method: "PATCH" },
       });
-      setCompany(next);
       setSaved(true);
     } catch {
       setError(true);
@@ -523,19 +517,26 @@ export function CompanySettingsPage() {
     const body = new FormData();
     body.append("logo", file);
     await apiMultipartRequest(session, "/company/settings/logo", body);
-    setCompany((current) => (current ? { ...current, hasLogo: true } : current));
+    queryClient.setQueryData<CompanyRecord>(companyKey, (current) =>
+      current ? { ...current, hasLogo: true } : current,
+    );
     await branding.refreshLogo();
   };
 
   const removeLogo = async () => {
     if (!session || !canManage) return;
-    await apiRequest(session, "/company/settings/logo", { method: "DELETE" });
-    setCompany((current) => (current ? { ...current, hasLogo: false } : current));
+    await logoMutation.mutateAsync({
+      path: "/company/settings/logo",
+      options: { method: "DELETE" },
+    });
+    queryClient.setQueryData<CompanyRecord>(companyKey, (current) =>
+      current ? { ...current, hasLogo: false } : current,
+    );
     await branding.refreshLogo();
   };
 
-  if (!company && !error) return <LoadingState title={t("common.loading")} />;
-  if (error && !company)
+  if (!company && companyQuery.isLoading) return <LoadingState title={t("common.loading")} />;
+  if ((error || companyQuery.isError) && !company)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (

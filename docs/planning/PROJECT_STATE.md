@@ -557,6 +557,37 @@ No Prisma migration or seed change is required because `LatestNodeState.lastSeen
 indexed. Focused config, API evaluator, Web component and PostgreSQL/Socket.IO monitoring E2E tests
 pass, including 4:59.999 versus 5:00.000, scope isolation, summary propagation and recovery.
 
+## 2026-08-03 frontend state-management architecture
+
+The Web application now uses TanStack Query v5 as the server-state boundary across Companies,
+devices, users/roles/permissions/settings, organizations, alarms/notifications, reports, Archive,
+Dashboard, Sensor History and Admin/Company monitoring. Query keys include auth context, user ID and
+Company ID where applicable; filters and pagination are stable key members. JSON mutations use
+TanStack mutations with resource-scoped invalidation or direct cache replacement. Authorized Blob
+downloads/Object URLs and multipart image/logo uploads remain intentionally imperative and are
+never persisted.
+
+The single root QueryClient has explicit 30-second stale and 10-minute garbage-collection windows,
+focus/reconnect reconciliation, bounded retry and no mutation retry. Query functions forward the
+TanStack AbortSignal. Auth restore, logout, expiry, inactive-session, user change, context change and
+Company identity change clear the cache before another identity can render. The existing cookie and
+single-flight refresh implementation remains authoritative.
+
+Zustand stores only the Admin and Company Monitoring `CARD | TABLE` preferences, with a versioned,
+allowlisted persistence shape and migration from both legacy localStorage keys. Auth, permissions,
+entities, telemetry, errors, jobs and sockets are excluded. Router search params own collection
+pagination/search and the migrated device, monitoring, Sensor History and Archive filters; local
+React state continues to own forms, modals, confirmation and transient selection.
+
+No backend route, DTO, RBAC/scope rule, MQTT/realtime event contract, database schema, migration or
+seed changed. Focused tests prove cache identity isolation, two-Company separation, HTTP retry
+limits, auth expiry/user-switch clearing, URL normalization/history, preference migration and
+sensitive-state exclusion. Frozen install, task-file Prettier, lint, typecheck, `git diff --check`,
+53 unit/component files with 226 tests, production build, 10 API E2E files with 93 PostgreSQL-backed
+tests and all 24 Playwright browser tests pass. The build retains only the known large-chunk
+advisory; all 24 existing migrations are applied in the E2E schema with none pending. Phase 14
+remains not started.
+
 Final verification for this correction:
 
 - `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm i18n:audit`, `pnpm test`

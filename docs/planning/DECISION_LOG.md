@@ -1349,3 +1349,25 @@ reading immediately restores the normally classified state through the existing 
 building/admin severity summaries and Admin dashboard totals. Realtime clients reject older events
 and refetch detail plus summary state after rejoin. The existing `lastSeenAt` index is sufficient;
 there is no migration or seed change. Gateway freshness remains a separate existing convention.
+
+## DEC-2026-08-03-02 — Explicit frontend state ownership and cache identity (ACCEPTED)
+
+**Decision:** TanStack Query v5 owns all Web server state and JSON mutations. Query identity starts
+with the separate GSS Admin or Company portal, includes user ID, includes Company ID for Company
+sessions, and includes the resource filters that determine the response. The QueryClient uses an
+explicit 30-second default stale window, 10-minute garbage-collection window, stale focus and
+reconnect reconciliation, no mutation retry, no retry for 400/401/403/404/409/422, one network
+retry and at most two retryable 5xx attempts. Reference options use a five-minute override and
+active report/archive/deletion jobs alone opt into status-dependent polling.
+
+**Decision:** Zustand owns only the two existing Monitoring card/table preferences. Router search
+params own shareable navigation state. Auth, locale and Company branding remain Context concerns;
+forms and ephemeral UI remain local React state. Backend/PostgreSQL remains authoritative business
+state, and the Query cache is never an authorization source or a persistent credential store.
+
+**Consequences:** Cache is cleared before another auth identity can render after logout, expiry,
+inactive session, user/context change or Company change. Socket node and notification events update
+only identity-scoped cache entries and reconnect invalidates the bounded reconciliation queries.
+Only authorized Blob/Object URL download and multipart media upload lifecycles bypass TanStack
+Query, and neither is persisted. Existing RBAC, scope, API, MQTT, alarm, database and cookie refresh
+contracts do not change; no migration or seed is required.

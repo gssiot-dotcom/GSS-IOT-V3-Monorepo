@@ -1,7 +1,7 @@
 import type { AuthSession } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "./render";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
@@ -91,6 +91,7 @@ function renderApp(path: string) {
     <MantineProvider theme={gssTheme}>
       <App />
     </MantineProvider>,
+    { router: false },
   );
 }
 

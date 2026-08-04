@@ -15,6 +15,7 @@ import type {
   SensorHistoryChartResponse,
   SensorValues,
 } from "@gss-iot/contracts";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   DataTable,
   EntityActionMenu,
@@ -52,23 +53,27 @@ import {
   IconCircleCheck,
   IconRefresh,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 
 import { readWebEnv } from "../../app/env";
 import { formatDateTime, t, tf, tx } from "../../app/i18n";
 import type { TranslationKey } from "../../app/i18n";
-import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { refreshSession } from "../../shared/auth/auth-api";
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { REFERENCE_STALE_TIME, useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalQueryKey, queryKeys } from "../../shared/query/query-keys";
+import { usePortalUiStore } from "../../shared/state/portal-ui-store";
 import { BuildingImageViewerPanel } from "./components/BuildingImageViewer";
 import { NodeDetailDrawer } from "./components/NodeDetailDrawer";
 import { NodeStateCard } from "./components/NodeStateCard";
-import { MonitoringViewToggle, type MonitoringView } from "./components/MonitoringViewToggle";
+import { MonitoringViewToggle } from "./components/MonitoringViewToggle";
 import { useNodeHistoryRange } from "./components/useNodeHistoryRange";
+
+const EMPTY_FAULT_FILTER_NODES: FaultFilterGatewayGroup["nodeTypes"][number]["nodes"] = [];
 
 type RealtimeStatus = "connected" | "offline" | "reconnecting";
 type StateRow = MonitoringNodeStateRecord & { id: string };
@@ -99,18 +104,17 @@ export const nodeTypeText: Record<
 export function CompanyMonitoringIndexPage() {
   const { session } = useAuth();
   const navigate = useNavigate();
-  const [buildings, setBuildings] = useState<BuildingRecord[]>();
-  const [error, setError] = useState(false);
+  const userId = session?.user.id ?? "anonymous";
+  const companyId = session?.user.companyId ?? "missing-company";
+  const buildingsQuery = useApiQuery<PaginatedResponse<BuildingRecord>>(
+    session,
+    queryKeys.company.monitoring(userId, companyId, "buildings", { pageSize: 100 }),
+    "/company/buildings?pageSize=100",
+    { staleTime: REFERENCE_STALE_TIME },
+  );
+  const buildings = buildingsQuery.data?.items;
 
-  useEffect(() => {
-    if (!session) return;
-    setError(false);
-    void apiRequest<PaginatedResponse<BuildingRecord>>(session, "/company/buildings?pageSize=100")
-      .then((response) => setBuildings(response.items))
-      .catch(() => setError(true));
-  }, [session]);
-
-  if (error)
+  if (buildingsQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
   if (!buildings) return <LoadingState title={t("common.loading")} />;
 
@@ -174,21 +178,17 @@ export function BuildingMonitoringPage() {
   const { buildingId } = useParams();
   const { session } = useAuth();
   const navigate = useNavigate();
-  const [overview, setOverview] = useState<MonitoringBuildingOverview>();
-  const [error, setError] = useState(false);
+  const userId = session?.user.id ?? "anonymous";
+  const companyId = session?.user.companyId ?? "missing-company";
+  const overviewQuery = useApiQuery<MonitoringBuildingOverview>(
+    session,
+    queryKeys.company.monitoring(userId, companyId, "building-overview", { buildingId }),
+    `/company/buildings/${buildingId ?? "missing-building"}/monitoring`,
+    { enabled: Boolean(buildingId) },
+  );
+  const overview = overviewQuery.data;
 
-  useEffect(() => {
-    if (!session || !buildingId) return;
-    setError(false);
-    void apiRequest<MonitoringBuildingOverview>(
-      session,
-      `/company/buildings/${buildingId}/monitoring`,
-    )
-      .then(setOverview)
-      .catch(() => setError(true));
-  }, [buildingId, session]);
-
-  if (error)
+  if (overviewQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
   if (!overview || !buildingId) return <LoadingState title={t("common.loading")} />;
 
@@ -220,41 +220,34 @@ export function NodeTypeMonitoringPage() {
   const { buildingId, nodeType } = useParams();
   const canonicalNodeType = isCanonicalNodeType(nodeType) ? nodeType : undefined;
   const { session } = useAuth();
-  const [response, setResponse] = useState<MonitoringNodeTypeResponse>();
-  const [history, setHistory] = useState<PaginatedSensorHistory>();
-  const [historyChart, setHistoryChart] = useState<SensorHistoryChartResponse>();
-  const [historyError, setHistoryError] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [alarmLevels, setAlarmLevels] = useState<BuildingAlarmLevelsResponse>();
-  const [faultFilters, setFaultFilters] = useState<BuildingFaultFiltersResponse>();
+  const queryClient = useQueryClient();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const historyRange = useNodeHistoryRange(selectedNodeId);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize, setHistoryPageSize] = useState<CollectionPageSize>(50);
-  const [view, setView] = useState<MonitoringView>(() => {
-    const stored = window.localStorage.getItem("gss.monitoring.view");
-    return stored === "CARD" ? "CARD" : "TABLE";
-  });
+  const view = usePortalUiStore((state) => state.companyMonitoringView);
+  const setView = usePortalUiStore((state) => state.setCompanyMonitoringView);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("offline");
-  const [error, setError] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<
     "alarm-levels" | "fault-filters" | "history" | "plan-image" | "real-image" | "states"
   >("states");
   const canViewBuildingImages = hasPermission(session, "building-plans.view");
-
-  const loadNodeStates = useCallback(async () => {
-    if (!session || !buildingId || !canonicalNodeType) return;
-    setError(false);
-    try {
-      const data = await apiRequest<MonitoringNodeTypeResponse>(
-        session,
-        `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}`,
-      );
-      setResponse(data);
-    } catch {
-      setError(true);
-    }
-  }, [buildingId, canonicalNodeType, session]);
+  const userId = session?.user.id ?? "anonymous";
+  const companyId = session?.user.companyId ?? "missing-company";
+  const nodeStatesKey = useMemo(
+    () =>
+      queryKeys.company.monitoring(userId, companyId, "node-states", {
+        buildingId,
+        nodeType: canonicalNodeType,
+      }),
+    [buildingId, canonicalNodeType, companyId, userId],
+  );
+  const nodeStatesQuery = useApiQuery<MonitoringNodeTypeResponse>(
+    session,
+    nodeStatesKey,
+    `/company/buildings/${buildingId ?? "missing-building"}/monitoring/${canonicalNodeType ?? "missing-type"}`,
+    { enabled: Boolean(buildingId && canonicalNodeType) },
+  );
 
   useEffect(() => {
     if (
@@ -268,10 +261,6 @@ export function NodeTypeMonitoringPage() {
   useEffect(() => {
     setHistoryPage(1);
   }, [historyRange.range.from, historyRange.range.to, selectedNodeId]);
-
-  useEffect(() => {
-    void loadNodeStates();
-  }, [loadNodeStates]);
 
   useEffect(() => {
     if (!session || !buildingId || !canonicalNodeType) return;
@@ -288,7 +277,7 @@ export function NodeTypeMonitoringPage() {
         { buildingId, nodeType: canonicalNodeType },
         (ack: { ok: boolean }) => {
           if (!ack.ok) setRealtimeStatus("offline");
-          else void loadNodeStates();
+          else void queryClient.invalidateQueries({ queryKey: nodeStatesKey, exact: true });
         },
       );
     });
@@ -304,90 +293,80 @@ export function NodeTypeMonitoringPage() {
     socket.on("disconnect", () => setRealtimeStatus("offline"));
     socket.on("monitoring:node-state", (event: MonitoringNodeStateEvent) => {
       if (event.buildingId !== buildingId || event.nodeType !== canonicalNodeType) return;
-      setResponse((current) =>
-        current
-          ? {
-              ...current,
-              states: upsertState(current.states, event.state),
-            }
-          : current,
-      );
+      queryClient.setQueryData<MonitoringNodeTypeResponse>(nodeStatesKey, (current) => {
+        if (!current) return current;
+        const states = upsertState(current.states, event.state);
+        return states === current.states ? current : { ...current, states };
+      });
     });
     return () => {
+      socket.removeAllListeners?.();
       socket.disconnect();
     };
-  }, [buildingId, canonicalNodeType, loadNodeStates, session]);
+  }, [buildingId, canonicalNodeType, nodeStatesKey, queryClient, session]);
 
-  useEffect(() => {
-    if (!session || !buildingId || !canonicalNodeType || !selectedNodeId) {
-      setHistory(undefined);
-      setHistoryChart(undefined);
-      return;
-    }
-    const query = new URLSearchParams({
-      from: historyRange.range.from,
-      page: String(historyPage),
-      pageSize: String(historyPageSize),
-      to: historyRange.range.to,
-    });
-    const chartQuery = new URLSearchParams({
-      from: historyRange.range.from,
-      to: historyRange.range.to,
-    });
-    setHistoryLoading(true);
-    setHistoryError(false);
-    void Promise.all([
-      apiRequest<PaginatedSensorHistory>(
-        session,
-        `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}/nodes/${selectedNodeId}/history?${query.toString()}`,
-      ),
-      apiRequest<SensorHistoryChartResponse>(
-        session,
-        `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}/nodes/${selectedNodeId}/history/chart?${chartQuery.toString()}`,
-      ),
-    ])
-      .then(([table, chart]) => {
-        setHistory(table);
-        setHistoryChart(chart);
-      })
-      .catch(() => {
-        setHistory(undefined);
-        setHistoryChart(undefined);
-        setHistoryError(true);
-      })
-      .finally(() => setHistoryLoading(false));
-  }, [
-    buildingId,
-    canonicalNodeType,
-    historyRange.range.from,
-    historyRange.range.to,
-    historyPage,
-    historyPageSize,
-    selectedNodeId,
+  const historyParams = new URLSearchParams({
+    from: historyRange.range.from,
+    page: String(historyPage),
+    pageSize: String(historyPageSize),
+    to: historyRange.range.to,
+  });
+  const chartParams = new URLSearchParams({
+    from: historyRange.range.from,
+    to: historyRange.range.to,
+  });
+  const historyEnabled = Boolean(buildingId && canonicalNodeType && selectedNodeId);
+  const historyQuery = useApiQuery<PaginatedSensorHistory>(
     session,
-  ]);
-
-  useEffect(() => {
-    if (!session || !buildingId || !canonicalNodeType) return;
-    void Promise.all([
-      apiRequest<BuildingAlarmLevelsResponse>(
-        session,
-        `/company/buildings/${buildingId}/alarm-levels`,
-      ),
-      apiRequest<BuildingFaultFiltersResponse>(
-        session,
-        `/company/buildings/${buildingId}/alarm-levels/fault-filters`,
-      ),
-    ])
-      .then(([levels, filters]) => {
-        setAlarmLevels(levels);
-        setFaultFilters(filters);
-      })
-      .catch(() => {
-        setAlarmLevels(undefined);
-        setFaultFilters(undefined);
-      });
-  }, [buildingId, canonicalNodeType, session]);
+    queryKeys.company.monitoring(userId, companyId, "node-history", {
+      buildingId,
+      from: historyRange.range.from,
+      nodeId: selectedNodeId,
+      nodeType: canonicalNodeType,
+      page: historyPage,
+      pageSize: historyPageSize,
+      to: historyRange.range.to,
+    }),
+    `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}/nodes/${selectedNodeId}/history?${historyParams.toString()}`,
+    { enabled: historyEnabled, placeholderData: keepPreviousData },
+  );
+  const historyChartQuery = useApiQuery<SensorHistoryChartResponse>(
+    session,
+    queryKeys.company.monitoring(userId, companyId, "node-history-chart", {
+      buildingId,
+      from: historyRange.range.from,
+      nodeId: selectedNodeId,
+      nodeType: canonicalNodeType,
+      to: historyRange.range.to,
+    }),
+    `/company/buildings/${buildingId}/monitoring/${canonicalNodeType}/nodes/${selectedNodeId}/history/chart?${chartParams.toString()}`,
+    { enabled: historyEnabled },
+  );
+  const alarmLevelsKey = queryKeys.company.monitoring(userId, companyId, "alarm-levels", {
+    buildingId,
+  });
+  const alarmLevelsQuery = useApiQuery<BuildingAlarmLevelsResponse>(
+    session,
+    alarmLevelsKey,
+    `/company/buildings/${buildingId ?? "missing-building"}/alarm-levels`,
+    { enabled: Boolean(buildingId && canonicalNodeType) },
+  );
+  const faultFiltersKey = queryKeys.company.monitoring(userId, companyId, "fault-filters", {
+    buildingId,
+  });
+  const faultFiltersQuery = useApiQuery<BuildingFaultFiltersResponse>(
+    session,
+    faultFiltersKey,
+    `/company/buildings/${buildingId ?? "missing-building"}/alarm-levels/fault-filters`,
+    { enabled: Boolean(buildingId && canonicalNodeType) },
+  );
+  const response = nodeStatesQuery.data;
+  const history = historyQuery.data;
+  const historyChart = historyChartQuery.data;
+  const historyError = historyQuery.isError || historyChartQuery.isError;
+  const historyLoading = historyQuery.isPending || historyChartQuery.isPending;
+  const alarmLevels = alarmLevelsQuery.data;
+  const faultFilters = faultFiltersQuery.data;
 
   const rows = useMemo<StateRow[]>(
     () => response?.states.map((state) => ({ ...state, id: state.nodeId })) ?? [],
@@ -398,7 +377,7 @@ export function NodeTypeMonitoringPage() {
     return counts;
   }, {});
 
-  if (error || !canonicalNodeType)
+  if (nodeStatesQuery.isError || !canonicalNodeType)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
   if (!response) return <LoadingState title={t("common.loading")} />;
 
@@ -464,13 +443,7 @@ export function NodeTypeMonitoringPage() {
               value={workspaceTab}
             />
             {workspaceTab === "states" ? (
-              <MonitoringViewToggle
-                onChange={(next) => {
-                  setView(next);
-                  window.localStorage.setItem("gss.monitoring.view", next);
-                }}
-                value={view}
-              />
+              <MonitoringViewToggle onChange={setView} value={view} />
             ) : null}
           </Group>
           {workspaceTab === "plan-image" || workspaceTab === "real-image" ? (
@@ -556,14 +529,14 @@ export function NodeTypeMonitoringPage() {
               buildingId={buildingId!}
               data={alarmLevels}
               nodeType={canonicalNodeType}
-              onRefresh={setAlarmLevels}
+              onRefresh={(next) => queryClient.setQueryData(alarmLevelsKey, next)}
             />
           ) : (
             <FaultFilterPanel
               buildingId={buildingId!}
               data={faultFilters}
               nodeType={canonicalNodeType}
-              onRefresh={setFaultFilters}
+              onRefresh={(next) => queryClient.setQueryData(faultFiltersKey, next)}
             />
           )}
         </Stack>
@@ -614,6 +587,8 @@ function AlarmLevelPanel({
   onRefresh: (data: BuildingAlarmLevelsResponse) => void;
 }) {
   const { session } = useAuth();
+  const queryClient = useQueryClient();
+  const alarmMutation = useApiMutation<BuildingAlarmLevelsResponse>(session);
   const nodeTypeRecord = data?.nodeTypes.find((item) => item.key === nodeType);
   const configuration = data?.configurations.find((item) => item.nodeType.key === nodeType);
   const [enabled, setEnabled] = useState(true);
@@ -654,10 +629,9 @@ function AlarmLevelPanel({
     setSaving(true);
     setMessage(null);
     try {
-      const next = await apiRequest<BuildingAlarmLevelsResponse>(
-        session,
-        `/company/buildings/${buildingId}/alarm-levels/node-types/${nodeTypeRecord.id}`,
-        {
+      const next = await alarmMutation.mutateAsync({
+        path: `/company/buildings/${buildingId}/alarm-levels/node-types/${nodeTypeRecord.id}`,
+        options: {
           body: JSON.stringify({
             cautionThreshold: isDoor ? undefined : cautionThreshold,
             dangerThreshold: isDoor ? undefined : dangerThreshold,
@@ -666,7 +640,7 @@ function AlarmLevelPanel({
           }),
           method: "PATCH",
         },
-      );
+      });
       onRefresh(next);
       setMessage("alarmLevels.saved");
     } catch {
@@ -746,12 +720,9 @@ function AlarmLevelPanel({
             return;
           }
           if (!session) return;
-          onRefresh(
-            await apiRequest<BuildingAlarmLevelsResponse>(
-              session,
-              `/company/buildings/${buildingId}/alarm-levels`,
-            ),
-          );
+          await queryClient.invalidateQueries({
+            queryKey: portalQueryKey(session, "monitoring", "alarm-levels", { buildingId }),
+          });
         }}
       />
     </Stack>
@@ -770,17 +741,16 @@ function GatewayApplicationTable({
   onRefresh: (data?: BuildingAlarmLevelsResponse) => Promise<void>;
 }) {
   const { session } = useAuth();
+  const actionMutation = useApiMutation(session);
+  const alarmMutation = useApiMutation<BuildingAlarmLevelsResponse>(session);
   const [updatingGatewayId, setUpdatingGatewayId] = useState<string | null>(null);
   const [error, setError] = useState(false);
   async function retry(commandId: string | null) {
     if (!session || !commandId) return;
-    await apiRequest(
-      session,
-      `/company/buildings/${buildingId}/alarm-levels/commands/${commandId}/retry`,
-      {
-        method: "POST",
-      },
-    );
+    await actionMutation.mutateAsync({
+      path: `/company/buildings/${buildingId}/alarm-levels/commands/${commandId}/retry`,
+      options: { method: "POST" },
+    });
     await onRefresh();
   }
 
@@ -789,14 +759,13 @@ function GatewayApplicationTable({
     setUpdatingGatewayId(gatewayId);
     setError(false);
     try {
-      const next = await apiRequest<BuildingAlarmLevelsResponse>(
-        session,
-        `/company/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`,
-        {
+      const next = await alarmMutation.mutateAsync({
+        path: `/company/buildings/${buildingId}/alarm-levels/gateways/${gatewayId}`,
+        options: {
           body: JSON.stringify({ enabled, nodeType }),
           method: "PATCH",
         },
-      );
+      });
       await onRefresh(next);
     } catch {
       setError(true);
@@ -913,6 +882,7 @@ function FaultFilterPanel({
   onRefresh: (data: BuildingFaultFiltersResponse) => void;
 }) {
   const { session } = useAuth();
+  const faultMutation = useApiMutation<BuildingFaultFiltersResponse>(session);
   if (!data) return <LoadingState title={t("common.loading")} />;
   const groups = data.gateways.map((gateway) => ({
     gateway: gateway.gateway,
@@ -922,10 +892,9 @@ function FaultFilterPanel({
   async function saveGroup(group: FaultFilterGatewayGroup, selectedNodeIds: string[]) {
     const nodeTypeRecord = group.nodeTypes[0]?.nodeType;
     if (!session || !nodeTypeRecord) return;
-    const next = await apiRequest<BuildingFaultFiltersResponse>(
-      session,
-      `/company/buildings/${buildingId}/alarm-levels/fault-filters`,
-      {
+    const next = await faultMutation.mutateAsync({
+      path: `/company/buildings/${buildingId}/alarm-levels/fault-filters`,
+      options: {
         body: JSON.stringify({
           gatewayId: group.gateway.id,
           nodeIds: selectedNodeIds,
@@ -933,7 +902,7 @@ function FaultFilterPanel({
         }),
         method: "PATCH",
       },
-    );
+    });
     onRefresh(next);
   }
 
@@ -956,7 +925,7 @@ function FaultFilterGatewayEditor({
   group: FaultFilterGatewayGroup;
   onSave: (group: FaultFilterGatewayGroup, selectedNodeIds: string[]) => Promise<void>;
 }) {
-  const nodes = group.nodeTypes[0]?.nodes ?? [];
+  const nodes = group.nodeTypes[0]?.nodes ?? EMPTY_FAULT_FILTER_NODES;
   const [selected, setSelected] = useState<string[]>(() =>
     nodes.filter((node) => node.desiredEnabled).map((node) => node.nodeId),
   );

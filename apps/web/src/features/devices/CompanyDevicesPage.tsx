@@ -1,4 +1,5 @@
 import type { CollectionPageSize, CompanyDeviceInventoryResponse } from "@gss-iot/contracts";
+import { keepPreviousData } from "@tanstack/react-query";
 import {
   CollectionPagination,
   DataTable,
@@ -11,11 +12,13 @@ import {
   WorkspaceTabs,
 } from "@gss-iot/ui";
 import { Stack, Text, TextInput } from "@mantine/core";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { nodeTypeLabel, t, tf } from "../../app/i18n";
-import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { useApiQuery } from "../../shared/query/api-query";
+import { queryKeys } from "../../shared/query/query-keys";
 import {
   deviceConnectivityBadge,
   deviceLifecycleBadge,
@@ -25,29 +28,50 @@ import {
 
 export function CompanyDevicesPage() {
   const { session } = useAuth();
-  const [snapshot, setSnapshot] = useState<CompanyDeviceInventoryResponse>();
-  const [error, setError] = useState(false);
-  const [gatewaySearch, setGatewaySearch] = useState("");
-  const [nodeSearch, setNodeSearch] = useState("");
-  const [tab, setTab] = useState<"gateways" | "nodes">("gateways");
-  const [gatewayPage, setGatewayPage] = useState(1);
-  const [nodePage, setNodePage] = useState(1);
-  const [gatewayPageSize, setGatewayPageSize] = useState<CollectionPageSize>(50);
-  const [nodePageSize, setNodePageSize] = useState<CollectionPageSize>(50);
-
-  useEffect(() => {
-    if (!session) return;
-    setError(false);
-    const params = new URLSearchParams({
-      gatewayPage: String(gatewayPage),
-      gatewayPageSize: String(gatewayPageSize),
-      nodePage: String(nodePage),
-      nodePageSize: String(nodePageSize),
+  const [searchParams, setSearchParams] = useSearchParams();
+  const readPage = (key: string) => {
+    const value = Number(searchParams.get(key));
+    return Number.isSafeInteger(value) && value > 0 ? value : 1;
+  };
+  const readPageSize = (key: string): CollectionPageSize =>
+    searchParams.get(key) === "100" ? 100 : 50;
+  const gatewaySearch = searchParams.get("gatewaySearch") ?? "";
+  const nodeSearch = searchParams.get("nodeSearch") ?? "";
+  const tab = searchParams.get("tab") === "nodes" ? "nodes" : "gateways";
+  const gatewayPage = readPage("gatewayPage");
+  const nodePage = readPage("nodePage");
+  const gatewayPageSize = readPageSize("gatewayPageSize");
+  const nodePageSize = readPageSize("nodePageSize");
+  const updateParams = (values: Record<string, number | string>) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      Object.entries(values).forEach(([key, value]) => {
+        if (value === "") next.delete(key);
+        else next.set(key, String(value));
+      });
+      return next;
     });
-    void apiRequest<CompanyDeviceInventoryResponse>(session, `/company/devices?${params}`)
-      .then(setSnapshot)
-      .catch(() => setError(true));
-  }, [gatewayPage, gatewayPageSize, nodePage, nodePageSize, session]);
+  };
+  const params = new URLSearchParams({
+    gatewayPage: String(gatewayPage),
+    gatewayPageSize: String(gatewayPageSize),
+    nodePage: String(nodePage),
+    nodePageSize: String(nodePageSize),
+  });
+  const userId = session?.user.id ?? "anonymous";
+  const companyId = session?.user.companyId ?? "missing-company";
+  const snapshotQuery = useApiQuery<CompanyDeviceInventoryResponse>(
+    session,
+    queryKeys.company.devices(userId, companyId, "inventory", {
+      gatewayPage,
+      gatewayPageSize,
+      nodePage,
+      nodePageSize,
+    }),
+    `/company/devices?${params}`,
+    { placeholderData: keepPreviousData },
+  );
+  const snapshot = snapshotQuery.data;
 
   const gateways = useMemo(() => {
     const query = gatewaySearch.trim().toLowerCase();
@@ -72,7 +96,7 @@ export function CompanyDevicesPage() {
     });
   }, [nodeSearch, snapshot?.nodes.items]);
 
-  if (error)
+  if (snapshotQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
   if (!snapshot) return <LoadingState title={t("common.loading")} />;
 
@@ -88,16 +112,15 @@ export function CompanyDevicesPage() {
           { label: t("devices.gatewaysTitle"), value: "gateways" },
           { label: t("devices.nodesTitle"), value: "nodes" },
         ]}
-        onChange={(value) => setTab(value as "gateways" | "nodes")}
+        onChange={(value) => updateParams({ tab: value })}
         value={tab}
       />
       {tab === "gateways" ? (
         <Stack gap="sm">
           <CollectionPagination
-            onPageChange={setGatewayPage}
+            onPageChange={(value) => updateParams({ gatewayPage: value })}
             onPageSizeChange={(value) => {
-              setGatewayPageSize(Number(value) as CollectionPageSize);
-              setGatewayPage(1);
+              updateParams({ gatewayPage: 1, gatewayPageSize: value });
             }}
             page={gatewayPage}
             pageSize={gatewayPageSize}
@@ -112,7 +135,9 @@ export function CompanyDevicesPage() {
           <DataToolbar>
             <TextInput
               aria-label={t("devices.searchGateways")}
-              onChange={(event) => setGatewaySearch(event.currentTarget.value)}
+              onChange={(event) =>
+                updateParams({ gatewayPage: 1, gatewaySearch: event.currentTarget.value })
+              }
               placeholder={t("devices.searchGateways")}
               value={gatewaySearch}
             />
@@ -171,10 +196,9 @@ export function CompanyDevicesPage() {
       ) : (
         <Stack gap="sm">
           <CollectionPagination
-            onPageChange={setNodePage}
+            onPageChange={(value) => updateParams({ nodePage: value })}
             onPageSizeChange={(value) => {
-              setNodePageSize(Number(value) as CollectionPageSize);
-              setNodePage(1);
+              updateParams({ nodePage: 1, nodePageSize: value });
             }}
             page={nodePage}
             pageSize={nodePageSize}
@@ -189,7 +213,9 @@ export function CompanyDevicesPage() {
           <DataToolbar>
             <TextInput
               aria-label={t("devices.searchNodes")}
-              onChange={(event) => setNodeSearch(event.currentTarget.value)}
+              onChange={(event) =>
+                updateParams({ nodePage: 1, nodeSearch: event.currentTarget.value })
+              }
               placeholder={t("devices.searchNodes")}
               value={nodeSearch}
             />

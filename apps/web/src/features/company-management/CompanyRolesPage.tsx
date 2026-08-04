@@ -4,8 +4,8 @@ import type {
   CompanyRoleRecord,
   PaginatedResponse,
 } from "@gss-iot/contracts";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { Can } from "../../shared/rbac/Can";
-import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
@@ -26,10 +26,13 @@ import {
 } from "@gss-iot/ui";
 import { Button, Checkbox, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { IconEdit, IconShieldLock, IconTrash } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { t, tf } from "../../app/i18n";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalDomainKey, queryKeys } from "../../shared/query/query-keys";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 
 interface RoleFormState {
   key: string;
@@ -41,20 +44,48 @@ const emptyForm: RoleFormState = { key: "", name: "", permissionIds: [] };
 
 export function CompanyRolesPage() {
   const { session } = useAuth();
-  const [roles, setRoles] = useState<CompanyRoleRecord[]>();
-  const [permissions, setPermissions] = useState<CompanyPermissionRecord[]>([]);
-  const [error, setError] = useState(false);
+  const queryClient = useQueryClient();
   const [opened, setOpened] = useState(false);
   const [editingRole, setEditingRole] = useState<CompanyRoleRecord | null>(null);
   const [form, setForm] = useState<RoleFormState>(emptyForm);
-  const [roleSearch, setRoleSearch] = useState("");
+  const collection = useCollectionSearchParams(50);
+  const roleSearch = collection.search;
   const [permissionSearch, setPermissionSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<CompanyRoleRecord>();
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
+  const page = collection.page;
+  const pageSize = collection.pageSize as CollectionPageSize;
+  const rolesKey = session?.user.companyId
+    ? queryKeys.company.resource(session.user.id, session.user.companyId, "roles", "list", {
+        page,
+        pageSize,
+      })
+    : (["company", "anonymous", "roles"] as const);
+  const permissionsKey = session?.user.companyId
+    ? queryKeys.company.resource(session.user.id, session.user.companyId, "permissions", "options")
+    : (["company", "anonymous", "permissions"] as const);
+  const rolesQuery = useApiQuery<PaginatedResponse<CompanyRoleRecord>>(
+    session,
+    rolesKey,
+    `/company/roles?page=${page}&pageSize=${pageSize}`,
+    { placeholderData: keepPreviousData },
+  );
+  const permissionsQuery = useApiQuery<CompanyPermissionRecord[]>(
+    session,
+    permissionsKey,
+    "/company/permissions/options",
+    { enabled: hasPermission(session, "company-permissions.view") },
+  );
+  const roles = rolesQuery.data?.items;
+  const permissions = permissionsQuery.data ?? [];
+  const total = rolesQuery.data?.total ?? 0;
+  const roleMutation = useApiMutation<unknown, { path: string; options: RequestInit }>(session, {
+    onSuccess: async () => {
+      if (!session) return;
+      await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, "roles") });
+    },
+  });
 
   const groupedPermissions = useMemo(() => {
     return permissions.reduce<Record<string, CompanyPermissionRecord[]>>((groups, permission) => {
@@ -62,36 +93,6 @@ export function CompanyRolesPage() {
       return groups;
     }, {});
   }, [permissions]);
-
-  const load = async () => {
-    if (!session) return;
-    setError(false);
-    try {
-      const response = await apiRequest<PaginatedResponse<CompanyRoleRecord>>(
-        session,
-        `/company/roles?page=${page}&pageSize=${pageSize}`,
-      );
-      setRoles(response.items);
-      setTotal(response.total);
-      if (hasPermission(session, "company-permissions.view")) {
-        try {
-          setPermissions(
-            await apiRequest<CompanyPermissionRecord[]>(session, "/company/permissions/options"),
-          );
-        } catch {
-          setPermissions([]);
-        }
-      } else {
-        setPermissions([]);
-      }
-    } catch {
-      setError(true);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [session, page, pageSize]);
 
   const openCreate = () => {
     setEditingRole(null);
@@ -113,23 +114,27 @@ export function CompanyRolesPage() {
     if (!session) return;
     const payload = JSON.stringify(form);
     if (editingRole) {
-      await apiRequest(session, `/company/roles/${editingRole.id}`, {
-        body: payload,
-        method: "PATCH",
+      await roleMutation.mutateAsync({
+        path: `/company/roles/${editingRole.id}`,
+        options: { body: payload, method: "PATCH" },
       });
     } else {
-      await apiRequest(session, "/company/roles", { body: payload, method: "POST" });
+      await roleMutation.mutateAsync({
+        path: "/company/roles",
+        options: { body: payload, method: "POST" },
+      });
     }
     setOpened(false);
     setEditingRole(null);
     setForm(emptyForm);
-    await load();
   };
 
   const deleteRole = async (roleId: string) => {
     if (!session) return;
-    await apiRequest(session, `/company/roles/${roleId}`, { method: "DELETE" });
-    await load();
+    await roleMutation.mutateAsync({
+      path: `/company/roles/${roleId}`,
+      options: { method: "DELETE" },
+    });
   };
 
   const closeEditor = () => {
@@ -212,8 +217,8 @@ export function CompanyRolesPage() {
     }));
   };
 
-  if (!roles && !error) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if (!roles && rolesQuery.isLoading) return <LoadingState title={t("common.loading")} />;
+  if (rolesQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (
@@ -231,10 +236,9 @@ export function CompanyRolesPage() {
       {filteredRoles?.length ? (
         <>
           <CollectionPagination
-            onPageChange={setPage}
+            onPageChange={collection.setPage}
             onPageSizeChange={(value) => {
-              setPageSize(Number(value) as CollectionPageSize);
-              setPage(1);
+              collection.setPageSize(Number(value) as CollectionPageSize);
             }}
             page={page}
             pageSize={pageSize}
@@ -249,7 +253,7 @@ export function CompanyRolesPage() {
           <DataToolbar>
             <TextInput
               aria-label={t("management.roleName")}
-              onChange={(event) => setRoleSearch(event.currentTarget.value)}
+              onChange={(event) => collection.setSearch(event.currentTarget.value)}
               placeholder={t("management.roleName")}
               value={roleSearch}
             />

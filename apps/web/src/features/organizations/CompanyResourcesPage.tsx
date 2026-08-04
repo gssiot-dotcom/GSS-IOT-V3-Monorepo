@@ -5,7 +5,7 @@ import type {
   PaginatedResponse,
 } from "@gss-iot/contracts";
 import { Can } from "../../shared/rbac/Can";
-import { ApiError, apiRequest } from "../../shared/api/api-client";
+import { ApiError } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
@@ -31,19 +31,21 @@ import {
   IconPlugConnected,
   IconTrash,
 } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 
 import { t, tf } from "../../app/i18n";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalDomainKey, portalQueryKey } from "../../shared/query/query-keys";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 import { OrganizationResourceCard } from "./OrganizationResourceCard";
 
 export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildings" }) {
   const { session } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [rows, setRows] = useState<Array<AreaRecord | BuildingRecord>>();
-  const [areas, setAreas] = useState<AreaRecord[]>([]);
-  const [error, setError] = useState(false);
   const [opened, setOpened] = useState(false);
   const [name, setName] = useState("");
   const [areaId, setAreaId] = useState<string | null>(null);
@@ -56,60 +58,53 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
   } | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const [mutationError, setMutationError] = useState<string>();
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
+  const collection = useCollectionSearchParams(50);
+  const { page, pageSize } = collection;
   const isAreas = resource === "areas";
   const createPermission = isAreas ? "areas.create" : "buildings.create";
 
-  const load = async () => {
-    if (!session) return;
-    setError(false);
-    try {
-      const records = isAreas
-        ? await apiRequest<PaginatedResponse<AreaRecord>>(
-            session,
-            `/company/areas?page=${page}&pageSize=${pageSize}`,
-          )
-        : await apiRequest<PaginatedResponse<BuildingRecord>>(
-            session,
-            `/company/buildings?page=${page}&pageSize=${pageSize}`,
-          );
-      setRows(records.items);
-      setTotal(records.total);
-      if (!isAreas) {
-        const areaOptions = await apiRequest<PaginatedResponse<AreaRecord>>(
-          session,
-          "/company/areas?pageSize=100",
-        );
-        setAreas(areaOptions.items);
-      }
-    } catch {
-      setError(true);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [session, resource, page, pageSize]);
+  const rowsQuery = useApiQuery<PaginatedResponse<AreaRecord | BuildingRecord>>(
+    session,
+    session
+      ? portalQueryKey(session, resource, "list", { page, pageSize })
+      : [resource, "anonymous"],
+    `/company/${resource}?page=${page}&pageSize=${pageSize}`,
+    { placeholderData: keepPreviousData },
+  );
+  const areasQuery = useApiQuery<PaginatedResponse<AreaRecord>>(
+    session,
+    session ? portalQueryKey(session, "areas", "options") : ["areas", "anonymous", "options"],
+    "/company/areas?pageSize=100",
+    { enabled: !isAreas },
+  );
+  const rows = rowsQuery.data?.items;
+  const areas = areasQuery.data?.items ?? [];
+  const total = rowsQuery.data?.total ?? 0;
+  const resourceMutation = useApiMutation(session, {
+    onSuccess: async () => {
+      if (!session) return;
+      await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, resource) });
+      if (!isAreas)
+        await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, "areas") });
+    },
+  });
 
   const create = async () => {
     if (!session) return;
     if (isAreas) {
-      await apiRequest(session, "/company/areas", {
-        body: JSON.stringify({ name }),
-        method: "POST",
+      await resourceMutation.mutateAsync({
+        path: "/company/areas",
+        options: { body: JSON.stringify({ name }), method: "POST" },
       });
     } else if (areaId) {
-      await apiRequest(session, `/company/areas/${areaId}/buildings`, {
-        body: JSON.stringify({ title: name }),
-        method: "POST",
+      await resourceMutation.mutateAsync({
+        path: `/company/areas/${areaId}/buildings`,
+        options: { body: JSON.stringify({ title: name }), method: "POST" },
       });
     }
     setOpened(false);
     setName("");
     setAreaId(null);
-    await load();
   };
 
   const mutateLifecycle = async () => {
@@ -118,17 +113,16 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
     setMutationError(undefined);
     try {
       const base = `/company/${isAreas ? "areas" : "buildings"}/${pendingMutation.id}`;
-      await apiRequest(
-        session,
-        pendingMutation.action === "DELETE" ? base : `${base}/status`,
-        pendingMutation.action === "DELETE"
-          ? { method: "DELETE" }
-          : {
-              body: JSON.stringify({ status: pendingMutation.status }),
-              method: "PATCH",
-            },
-      );
-      await load();
+      await resourceMutation.mutateAsync({
+        path: pendingMutation.action === "DELETE" ? base : `${base}/status`,
+        options:
+          pendingMutation.action === "DELETE"
+            ? { method: "DELETE" }
+            : {
+                body: JSON.stringify({ status: pendingMutation.status }),
+                method: "PATCH",
+              },
+      });
       setPendingMutation(null);
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
@@ -143,8 +137,8 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
   const deletePermission = isAreas ? "areas.delete" : "buildings.delete";
   const updatePermission = isAreas ? "areas.update" : "buildings.update";
 
-  if (!rows && !error) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if (!rows && rowsQuery.isLoading) return <LoadingState title={t("common.loading")} />;
+  if (rowsQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   const title = isAreas ? t("organizations.areasTitle") : t("organizations.buildingsTitle");
@@ -163,10 +157,9 @@ export function CompanyResourcesPage({ resource }: { resource: "areas" | "buildi
       {rows?.length ? (
         <Stack gap="md">
           <CollectionPagination
-            onPageChange={setPage}
+            onPageChange={collection.setPage}
             onPageSizeChange={(value) => {
-              setPageSize(Number(value) as CollectionPageSize);
-              setPage(1);
+              collection.setPageSize(Number(value) as CollectionPageSize);
             }}
             page={page}
             pageSize={pageSize}

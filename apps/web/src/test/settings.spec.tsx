@@ -6,7 +6,7 @@ import type {
 } from "@gss-iot/contracts";
 import { MantineProvider } from "@mantine/core";
 import { gssTheme } from "@gss-iot/ui";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "./render";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
@@ -108,6 +108,7 @@ function renderRoute(path: string) {
     <MantineProvider theme={gssTheme}>
       <App />
     </MantineProvider>,
+    { router: false },
   );
 }
 

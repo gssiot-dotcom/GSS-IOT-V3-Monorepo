@@ -4,6 +4,7 @@ import type {
   CompanyPermissionRecord,
   PaginatedResponse,
 } from "@gss-iot/contracts";
+import { keepPreviousData } from "@tanstack/react-query";
 import {
   DataTable,
   CollectionPagination,
@@ -16,11 +17,14 @@ import {
 } from "@gss-iot/ui";
 import { Badge, Box, Group, Paper, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { IconKey, IconSearch } from "@tabler/icons-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { hasTranslationKey, t, tf } from "../../app/i18n";
-import { ApiError, apiRequest } from "../../shared/api/api-client";
+import { ApiError } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
+import { useApiQuery } from "../../shared/query/api-query";
+import { portalQueryKey } from "../../shared/query/query-keys";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 
 type CatalogContext = Extract<AuthContext, "gss-admin" | "company-user">;
 
@@ -40,32 +44,26 @@ function permissionDescription(permission: CompanyPermissionRecord) {
 
 export function PermissionCatalogPage({ context }: { context: CatalogContext }) {
   const { session } = useAuth();
-  const [permissions, setPermissions] = useState<CompanyPermissionRecord[]>();
-  const [errorStatus, setErrorStatus] = useState<number>();
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
+  const { page, pageSize, search, setPage, setPageSize, setSearch } = useCollectionSearchParams();
   const endpoint = context === "gss-admin" ? "/admin/permissions" : "/company/permissions";
-
-  const load = useCallback(() => {
-    if (!session) return;
-    setErrorStatus(undefined);
-    setPermissions(undefined);
-    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-    if (search.trim()) params.set("search", search.trim());
-    void apiRequest<PaginatedResponse<CompanyPermissionRecord>>(
-      session,
-      `${endpoint}?${params.toString()}`,
-    )
-      .then((response) => {
-        setPermissions(response.items);
-        setTotal(response.total);
-      })
-      .catch((error: unknown) => setErrorStatus(error instanceof ApiError ? error.status : 500));
-  }, [endpoint, page, pageSize, search, session]);
-
-  useEffect(() => load(), [load]);
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (search.trim()) params.set("search", search.trim());
+  const permissionsQuery = useApiQuery<PaginatedResponse<CompanyPermissionRecord>>(
+    session,
+    session
+      ? portalQueryKey(session, "permissions", "catalog", { page, pageSize, search: search.trim() })
+      : [context, "anonymous", "permissions"],
+    `${endpoint}?${params.toString()}`,
+    { placeholderData: keepPreviousData },
+  );
+  const permissions = permissionsQuery.data?.items;
+  const total = permissionsQuery.data?.total ?? 0;
+  const errorStatus =
+    permissionsQuery.error instanceof ApiError
+      ? permissionsQuery.error.status
+      : permissionsQuery.isError
+        ? 500
+        : undefined;
 
   const filtered = useMemo(() => permissions ?? [], [permissions]);
 
@@ -83,7 +81,7 @@ export function PermissionCatalogPage({ context }: { context: CatalogContext }) 
     return (
       <ErrorState
         description={t("common.errorDescription")}
-        onRetry={load}
+        onRetry={() => void permissionsQuery.refetch()}
         retryLabel={t("common.retry")}
         title={t("permissions.loadError")}
       />
@@ -106,7 +104,6 @@ export function PermissionCatalogPage({ context }: { context: CatalogContext }) 
             leftSection={<IconSearch aria-hidden="true" size={16} />}
             onChange={(event) => {
               setSearch(event.currentTarget.value);
-              setPage(1);
             }}
             placeholder={t("permissions.searchPlaceholder")}
             value={search}
@@ -121,7 +118,6 @@ export function PermissionCatalogPage({ context }: { context: CatalogContext }) 
         onPageChange={setPage}
         onPageSizeChange={(value) => {
           setPageSize(Number(value) as CollectionPageSize);
-          setPage(1);
         }}
         page={page}
         pageSize={pageSize}

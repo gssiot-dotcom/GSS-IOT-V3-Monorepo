@@ -12,6 +12,7 @@ import type {
   NodeTypeRecord,
   PaginatedResponse,
 } from "@gss-iot/contracts";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   CollectionPagination,
   ConfirmActionModal,
@@ -53,14 +54,17 @@ import {
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { formatDateTime, nodeTypeLabel, t, tf, tx } from "../../app/i18n";
-import { ApiError, apiRequest } from "../../shared/api/api-client";
+import { ApiError } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { Can } from "../../shared/rbac/Can";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { portalDomainKey, portalQueryKey } from "../../shared/query/query-keys";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 
 type BasePath = "/admin" | "/company";
 
@@ -242,12 +246,10 @@ export function CompanyNotificationsPage() {
 
 function AlarmsPage({ basePath }: { basePath: BasePath }) {
   const { session } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [alarms, setAlarms] = useState<AlarmEventRecord[]>();
-  const [error, setError] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
+  const collection = useCollectionSearchParams(50);
+  const { page, pageSize } = collection;
   const [archiveTarget, setArchiveTarget] = useState<AlarmEventRecord | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
@@ -255,36 +257,34 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
   const [mutationError, setMutationError] = useState<string>();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const load = useCallback(async () => {
-    if (!session) return;
-    setError(false);
-    try {
-      const response = await apiRequest<ListResponse<AlarmEventRecord>>(
-        session,
-        endpoint(basePath, `/alarms?page=${page}&pageSize=${pageSize}`),
-      );
-      setAlarms(response.items);
-      setTotal(response.total);
-      setSelectedIds((current) =>
-        current.filter((id) =>
-          response.items.some((item) => item.id === id && item.status === "RESOLVED"),
-        ),
-      );
-    } catch {
-      setError(true);
-    }
-  }, [basePath, page, pageSize, session]);
+  const alarmsKey = session
+    ? portalQueryKey(session, "alarms", "list", { page, pageSize })
+    : (["alarms", "anonymous"] as const);
+  const alarmsQuery = useApiQuery<ListResponse<AlarmEventRecord>>(
+    session,
+    alarmsKey,
+    endpoint(basePath, `/alarms?page=${page}&pageSize=${pageSize}`),
+    { placeholderData: keepPreviousData },
+  );
+  const alarms = alarmsQuery.data?.items ?? [];
+  const total = alarmsQuery.data?.total ?? 0;
+  const alarmMutation = useApiMutation(session, {
+    onSuccess: async () => {
+      if (session)
+        await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, "alarms") });
+    },
+  });
 
   const archive = async () => {
     if (!session || !archiveTarget || archiving) return;
     setMutationError(undefined);
     setArchiving(true);
     try {
-      await apiRequest(session, endpoint(basePath, `/alarms/${archiveTarget.id}`), {
-        method: "DELETE",
+      await alarmMutation.mutateAsync({
+        path: endpoint(basePath, `/alarms/${archiveTarget.id}`),
+        options: { method: "DELETE" },
       });
       setArchiveTarget(null);
-      await load();
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
@@ -297,14 +297,13 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
     setMutationError(undefined);
     setArchiving(true);
     try {
-      await apiRequest(session, endpoint(basePath, "/alarms/bulk-archive"), {
-        body: JSON.stringify({ ids: [...bulkArchiveIds] }),
-        method: "POST",
+      await alarmMutation.mutateAsync({
+        path: endpoint(basePath, "/alarms/bulk-archive"),
+        options: { body: JSON.stringify({ ids: [...bulkArchiveIds] }), method: "POST" },
       });
       setBulkArchiveOpen(false);
       setBulkArchiveIds([]);
       setSelectedIds([]);
-      await load();
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
@@ -313,11 +312,15 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
   };
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!alarms) return;
+    setSelectedIds((current) =>
+      current.filter((id) => alarms.some((item) => item.id === id && item.status === "RESOLVED")),
+    );
+  }, [alarms]);
 
-  if (!alarms) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if (!alarmsQuery.data && alarmsQuery.isLoading)
+    return <LoadingState title={t("common.loading")} />;
+  if (alarmsQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   const selectableIds = alarms.filter((alarm) => alarm.status === "RESOLVED").map(({ id }) => id);
@@ -363,10 +366,9 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
                 </Group>
               ) : undefined
             }
-            onPageChange={setPage}
+            onPageChange={collection.setPage}
             onPageSizeChange={(value) => {
-              setPageSize(Number(value) as CollectionPageSize);
-              setPage(1);
+              collection.setPageSize(Number(value) as CollectionPageSize);
             }}
             page={page}
             pageSize={pageSize}
@@ -509,51 +511,47 @@ function AlarmsPage({ basePath }: { basePath: BasePath }) {
 function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
   const { alarmId } = useParams();
   const { session } = useAuth();
-  const [alarm, setAlarm] = useState<
-    AlarmEventRecord & {
-      notifications?: AlarmNotificationRecord[];
-      policyTriggers?: Array<{
-        countIntervalSeconds?: number;
-        id: string;
-        policy?: AlarmPolicyRecord;
-        triggerOccurrenceCount?: number;
-        triggeredAt?: string;
-      }>;
-    }
-  >();
-  const [error, setError] = useState(false);
+  const queryClient = useQueryClient();
+  type AlarmDetailRecord = AlarmEventRecord & {
+    notifications?: AlarmNotificationRecord[];
+    policyTriggers?: Array<{
+      countIntervalSeconds?: number;
+      id: string;
+      policy?: AlarmPolicyRecord;
+      triggerOccurrenceCount?: number;
+      triggeredAt?: string;
+    }>;
+  };
   const [mutation, setMutation] = useState<"acknowledge" | "resolve" | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<"notifications" | "triggers">("triggers");
 
-  const load = useCallback(async () => {
-    if (!session || !alarmId) return;
-    setError(false);
-    try {
-      setAlarm(await apiRequest(session, endpoint(basePath, `/alarms/${alarmId}`)));
-    } catch {
-      setError(true);
-    }
-  }, [alarmId, basePath, session]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const alarmKey = session
+    ? portalQueryKey(session, "alarms", "detail", { alarmId })
+    : (["alarms", "anonymous", "detail", alarmId] as const);
+  const alarmQuery = useApiQuery<AlarmDetailRecord>(
+    session,
+    alarmKey,
+    endpoint(basePath, `/alarms/${alarmId}`),
+    { enabled: Boolean(alarmId) },
+  );
+  const alarm = alarmQuery.data;
+  const alarmMutation = useApiMutation<AlarmEventRecord>(session, {
+    onSuccess: (updated) =>
+      queryClient.setQueryData<AlarmDetailRecord>(alarmKey, (current) =>
+        current ? { ...current, ...updated } : current,
+      ),
+  });
 
   const mutate = async (action: "acknowledge" | "resolve") => {
     if (!session || !alarmId || mutation) return;
     setMutation(action);
     setMutationError(null);
     try {
-      const updated = await apiRequest<AlarmEventRecord>(
-        session,
-        endpoint(basePath, `/alarms/${alarmId}/${action}`),
-        {
-          body: JSON.stringify({ note: "" }),
-          method: "PATCH",
-        },
-      );
-      setAlarm((current) => ({ ...current, ...updated }));
+      await alarmMutation.mutateAsync({
+        path: endpoint(basePath, `/alarms/${alarmId}/${action}`),
+        options: { body: JSON.stringify({ note: "" }), method: "PATCH" },
+      });
     } catch (caught) {
       const backendMessage =
         caught instanceof ApiError && caught.status >= 400 && caught.status < 500
@@ -577,8 +575,10 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
     }
   };
 
-  if (!alarm) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if (!alarm && alarmQuery.isLoading) return <LoadingState title={t("common.loading")} />;
+  if (alarmQuery.isError)
+    return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
+  if (!alarm)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (
@@ -673,9 +673,7 @@ function AlarmDetailPage({ basePath }: { basePath: BasePath }) {
 
 function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
   const { session } = useAuth();
-  const [rules, setRules] = useState<AlarmRuleRecord[]>();
-  const [options, setOptions] = useState<RuleOptions>();
-  const [providers, setProviders] = useState<ProviderStatus>();
+  const queryClient = useQueryClient();
   const [opened, setOpened] = useState(false);
   const [policyRule, setPolicyRule] = useState<AlarmRuleRecord | null>(null);
   const [editingPolicy, setEditingPolicy] = useState<AlarmPolicyRecord | null>(null);
@@ -688,10 +686,8 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
   const [policySaving, setPolicySaving] = useState(false);
   const [ruleNameError, setRuleNameError] = useState<string | null>(null);
   const [ruleFormError, setRuleFormError] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
+  const collection = useCollectionSearchParams(50);
+  const { page, pageSize } = collection;
   const [lifecycleTarget, setLifecycleTarget] = useState<{
     action: "ARCHIVE" | "STATUS";
     id: string;
@@ -701,36 +697,39 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
   } | null>(null);
   const [mutating, setMutating] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!session) return;
-    setError(false);
-    try {
-      const [loadedRules, loadedOptions] = await Promise.all([
-        apiRequest<ListResponse<AlarmRuleRecord>>(
-          session,
-          endpoint(basePath, `/alarm-rules?page=${page}&pageSize=${pageSize}`),
-        ),
-        apiRequest<RuleOptions>(session, endpoint(basePath, "/alarm-rules/options")),
-      ]);
-      setRules(loadedRules.items);
-      setTotal(loadedRules.total);
-      setOptions(loadedOptions);
-      if (hasPermission(session, "notifications.manage")) {
-        setProviders(
-          await apiRequest<ProviderStatus>(
-            session,
-            endpoint(basePath, "/notifications/providers/status"),
-          ),
-        );
-      }
-    } catch {
-      setError(true);
-    }
-  }, [basePath, page, pageSize, session]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const rulesQuery = useApiQuery<ListResponse<AlarmRuleRecord>>(
+    session,
+    session
+      ? portalQueryKey(session, "alarm-rules", "list", { page, pageSize })
+      : ["alarm-rules", "anonymous"],
+    endpoint(basePath, `/alarm-rules?page=${page}&pageSize=${pageSize}`),
+    { placeholderData: keepPreviousData },
+  );
+  const optionsQuery = useApiQuery<RuleOptions>(
+    session,
+    session
+      ? portalQueryKey(session, "alarm-rules", "options")
+      : ["alarm-rules", "anonymous", "options"],
+    endpoint(basePath, "/alarm-rules/options"),
+  );
+  const providersQuery = useApiQuery<ProviderStatus>(
+    session,
+    session
+      ? portalQueryKey(session, "notifications", "provider-status")
+      : ["notifications", "anonymous", "provider-status"],
+    endpoint(basePath, "/notifications/providers/status"),
+    { enabled: hasPermission(session, "notifications.manage") },
+  );
+  const rules = rulesQuery.data?.items ?? [];
+  const total = rulesQuery.data?.total ?? 0;
+  const options = optionsQuery.data;
+  const providers = providersQuery.data;
+  const rulesMutation = useApiMutation(session, {
+    onSuccess: async () => {
+      if (session)
+        await queryClient.invalidateQueries({ queryKey: portalDomainKey(session, "alarm-rules") });
+    },
+  });
 
   const building = options?.buildings.find((item) => item.id === policyDraft.buildingId);
   const targetPositions =
@@ -776,17 +775,19 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
       return;
     }
     try {
-      await apiRequest(session, endpoint(basePath, "/alarm-rules"), {
-        body: JSON.stringify({
-          buildingId: ruleDraft.buildingId,
-          name,
-          nodeTypeId: ruleDraft.nodeTypeId,
-          severity: ruleDraft.severity,
-        }),
-        method: "POST",
+      await rulesMutation.mutateAsync({
+        path: endpoint(basePath, "/alarm-rules"),
+        options: {
+          body: JSON.stringify({
+            buildingId: ruleDraft.buildingId,
+            name,
+            nodeTypeId: ruleDraft.nodeTypeId,
+            severity: ruleDraft.severity,
+          }),
+          method: "POST",
+        },
       });
       closeCreateRule();
-      await load();
     } catch {
       setRuleFormError(t("alarms.ruleSaveFailed"));
     }
@@ -800,22 +801,24 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
       const path = editingPolicy
         ? `/alarm-policies/${editingPolicy.id}`
         : `/alarm-rules/${policyRule.id}/policies`;
-      await apiRequest(session, endpoint(basePath, path), {
-        body: JSON.stringify({
-          channel: policyDraft.channel,
-          countIntervalSeconds: policyDraft.countIntervalSeconds,
-          positionId: policyDraft.targetType === "POSITION" ? policyDraft.positionId : undefined,
-          requiredOccurrenceCount: policyDraft.requiredOccurrenceCount,
-          specificUserId:
-            policyDraft.targetType === "SPECIFIC_USER" ? policyDraft.specificUserId : undefined,
-          targetType: policyDraft.targetType,
-        }),
-        method: editingPolicy ? "PATCH" : "POST",
+      await rulesMutation.mutateAsync({
+        path: endpoint(basePath, path),
+        options: {
+          body: JSON.stringify({
+            channel: policyDraft.channel,
+            countIntervalSeconds: policyDraft.countIntervalSeconds,
+            positionId: policyDraft.targetType === "POSITION" ? policyDraft.positionId : undefined,
+            requiredOccurrenceCount: policyDraft.requiredOccurrenceCount,
+            specificUserId:
+              policyDraft.targetType === "SPECIFIC_USER" ? policyDraft.specificUserId : undefined,
+            targetType: policyDraft.targetType,
+          }),
+          method: editingPolicy ? "PATCH" : "POST",
+        },
       });
       setPolicyRule(null);
       setEditingPolicy(null);
       setPolicyDraft(createEmptyPolicyDraft());
-      await load();
     } catch (error) {
       setPolicyFormError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
@@ -834,16 +837,15 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
           lifecycleTarget.action === "ARCHIVE" ? "" : "/status"
         }`,
       );
-      await apiRequest(
-        session,
+      await rulesMutation.mutateAsync({
         path,
-        lifecycleTarget.action === "ARCHIVE"
-          ? { method: "DELETE" }
-          : { body: JSON.stringify({ isActive: !lifecycleTarget.isActive }), method: "PATCH" },
-      );
+        options:
+          lifecycleTarget.action === "ARCHIVE"
+            ? { method: "DELETE" }
+            : { body: JSON.stringify({ isActive: !lifecycleTarget.isActive }), method: "PATCH" },
+      });
       setViewingPolicy(null);
       setLifecycleTarget(null);
-      await load();
     } finally {
       setMutating(false);
     }
@@ -864,8 +866,11 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
         viewingPolicy.specificUserId)
     : null;
 
-  if (!rules || !options) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if ((!rulesQuery.data || !options) && (rulesQuery.isLoading || optionsQuery.isLoading))
+    return <LoadingState title={t("common.loading")} />;
+  if (rulesQuery.isError || optionsQuery.isError)
+    return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
+  if (!options)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (
@@ -882,10 +887,9 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
         }
       />
       <CollectionPagination
-        onPageChange={setPage}
+        onPageChange={collection.setPage}
         onPageSizeChange={(value) => {
-          setPageSize(Number(value) as CollectionPageSize);
-          setPage(1);
+          collection.setPageSize(Number(value) as CollectionPageSize);
         }}
         page={page}
         pageSize={pageSize}
@@ -1395,90 +1399,98 @@ function AlarmRulesPage({ basePath }: { basePath: BasePath }) {
 
 function NotificationsPage({ basePath }: { basePath: BasePath }) {
   const { session } = useAuth();
-  const [notifications, setNotifications] = useState<AlarmNotificationRecord[]>();
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [error, setError] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
+  const queryClient = useQueryClient();
+  const { page, pageSize, setPage, setPageSize } = useCollectionSearchParams();
   const [deleteTarget, setDeleteTarget] = useState<AlarmNotificationRecord | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const load = useCallback(async () => {
-    if (!session) return;
-    setError(false);
-    try {
-      const [items, count] = await Promise.all([
-        apiRequest<ListResponse<AlarmNotificationRecord>>(
-          session,
-          endpoint(basePath, `/notifications?page=${page}&pageSize=${pageSize}`),
-        ),
-        apiRequest<{ unreadCount: number }>(
-          session,
-          endpoint(basePath, "/notifications/unread-count"),
-        ),
-      ]);
-      setNotifications(items.items);
-      setTotal(items.total);
-      setUnreadCount(count.unreadCount);
-      setSelectedIds((current) =>
-        current.filter((id) => items.items.some((item) => item.id === id)),
-      );
-    } catch {
-      setError(true);
-    }
-  }, [basePath, page, pageSize, session]);
+  const listKey = session
+    ? portalQueryKey(session, "notifications", "list", { page, pageSize })
+    : [basePath, "anonymous", "notifications"];
+  const unreadKey = session
+    ? portalQueryKey(session, "notifications", "unread-count")
+    : [basePath, "anonymous", "notifications", "unread-count"];
+  const notificationsQuery = useApiQuery<ListResponse<AlarmNotificationRecord>>(
+    session,
+    listKey,
+    endpoint(basePath, `/notifications?page=${page}&pageSize=${pageSize}`),
+    { placeholderData: keepPreviousData },
+  );
+  const unreadQuery = useApiQuery<{ unreadCount: number }>(
+    session,
+    unreadKey,
+    endpoint(basePath, "/notifications/unread-count"),
+  );
+  const notifications = notificationsQuery.data?.items;
+  const total = notificationsQuery.data?.total ?? 0;
+  const unreadCount = unreadQuery.data?.unreadCount ?? 0;
+  const mutation = useApiMutation(session, {
+    onSuccess: async () => {
+      if (session) {
+        await queryClient.invalidateQueries({
+          queryKey: portalDomainKey(session, "notifications"),
+        });
+      }
+    },
+  });
+  const deleting = mutation.isPending;
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!notifications) return;
+    setSelectedIds((current) =>
+      current.filter((id) => notifications.some((item) => item.id === id)),
+    );
+  }, [notifications]);
 
   const markRead = async (id: string) => {
     if (!session) return;
-    await apiRequest(session, endpoint(basePath, `/notifications/${id}/read`), { method: "PATCH" });
-    await load();
+    await mutation.mutateAsync({
+      path: endpoint(basePath, `/notifications/${id}/read`),
+      options: { method: "PATCH" },
+    });
   };
 
   const markAll = async () => {
     if (!session) return;
-    await apiRequest(session, endpoint(basePath, "/notifications/read-all"), { method: "PATCH" });
-    await load();
+    await mutation.mutateAsync({
+      path: endpoint(basePath, "/notifications/read-all"),
+      options: { method: "PATCH" },
+    });
   };
 
   const archiveNotification = async () => {
     if (!session || !deleteTarget || deleting) return;
-    setDeleting(true);
     try {
-      await apiRequest(session, endpoint(basePath, `/notifications/${deleteTarget.id}`), {
-        method: "DELETE",
+      await mutation.mutateAsync({
+        path: endpoint(basePath, `/notifications/${deleteTarget.id}`),
+        options: { method: "DELETE" },
       });
       setDeleteTarget(null);
-      await load();
     } finally {
-      setDeleting(false);
+      mutation.reset();
     }
   };
 
   const bulkArchiveNotifications = async () => {
     if (!session || !selectedIds.length || deleting) return;
-    setDeleting(true);
     try {
-      await apiRequest(session, endpoint(basePath, "/notifications/bulk-archive"), {
-        body: JSON.stringify({ ids: selectedIds }),
-        method: "POST",
+      await mutation.mutateAsync({
+        path: endpoint(basePath, "/notifications/bulk-archive"),
+        options: {
+          body: JSON.stringify({ ids: selectedIds }),
+          method: "POST",
+        },
       });
       setBulkDeleteOpen(false);
       setSelectedIds([]);
-      await load();
     } finally {
-      setDeleting(false);
+      mutation.reset();
     }
   };
 
   if (!notifications) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if (notificationsQuery.isError || unreadQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (
@@ -1533,7 +1545,6 @@ function NotificationsPage({ basePath }: { basePath: BasePath }) {
         onPageChange={setPage}
         onPageSizeChange={(value) => {
           setPageSize(Number(value) as CollectionPageSize);
-          setPage(1);
         }}
         page={page}
         pageSize={pageSize}

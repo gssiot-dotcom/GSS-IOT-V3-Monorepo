@@ -1,6 +1,7 @@
 import type { CollectionPageSize, CompanyRecord, PaginatedResponse } from "@gss-iot/contracts";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { Can } from "../../shared/rbac/Can";
-import { ApiError, apiRequest } from "../../shared/api/api-client";
+import { ApiError } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import {
   DataTable,
@@ -26,29 +27,28 @@ import {
   IconPlayerPlay,
   IconTrash,
 } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { t, tf } from "../../app/i18n";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { useApiMutation, useApiQuery } from "../../shared/query/api-query";
+import { queryKeys } from "../../shared/query/query-keys";
+import { useCollectionSearchParams } from "../../shared/url/collection-search-params";
 import { CompanyIdentityCard } from "./CompanyIdentityCard";
 
 export function CompaniesPage() {
   const { session } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [companies, setCompanies] = useState<CompanyRecord[]>();
-  const [error, setError] = useState(false);
   const [opened, setOpened] = useState(false);
   const [name, setName] = useState("");
   const [managerName, setManagerName] = useState("");
   const [managerEmail, setManagerEmail] = useState("");
   const [managerPassword, setManagerPassword] = useState("");
   const [formError, setFormError] = useState<string>();
-  const [isSaving, setIsSaving] = useState(false);
   const [view, setView] = useState("cards");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<CollectionPageSize>(50);
-  const [total, setTotal] = useState(0);
+  const { page, pageSize, setPage, setPageSize } = useCollectionSearchParams();
   const [editTarget, setEditTarget] = useState<CompanyRecord>();
   const [editForm, setEditForm] = useState({
     address: "",
@@ -61,24 +61,22 @@ export function CompaniesPage() {
   const [deleteTarget, setDeleteTarget] = useState<CompanyRecord>();
   const [mutationError, setMutationError] = useState<string>();
 
-  const load = async () => {
-    if (!session) return;
-    setError(false);
-    try {
-      const response = await apiRequest<PaginatedResponse<CompanyRecord>>(
-        session,
-        `/admin/companies?page=${page}&pageSize=${pageSize}`,
-      );
-      setCompanies(response.items);
-      setTotal(response.total);
-    } catch {
-      setError(true);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [session, page, pageSize]);
+  const userId = session?.user.id ?? "anonymous";
+  const companiesKey = queryKeys.admin.companies(userId, { page, pageSize });
+  const companiesQuery = useApiQuery<PaginatedResponse<CompanyRecord>>(
+    session,
+    companiesKey,
+    `/admin/companies?page=${page}&pageSize=${pageSize}`,
+    { placeholderData: keepPreviousData },
+  );
+  const companies = companiesQuery.data?.items;
+  const total = companiesQuery.data?.total ?? 0;
+  const mutation = useApiMutation(session, {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.admin.companiesRoot(userId) });
+    },
+  });
+  const isSaving = mutation.isPending;
 
   const create = async () => {
     if (!session) return;
@@ -91,25 +89,26 @@ export function CompaniesPage() {
       return;
     }
     setFormError(undefined);
-    setIsSaving(true);
     try {
-      await apiRequest(session, "/admin/companies", {
-        method: "POST",
-        body: JSON.stringify({
-          name: name.trim(),
-          platformManager: {
-            email: managerEmail.trim(),
-            name: managerName.trim(),
-            password: managerPassword,
-          },
-        }),
+      await mutation.mutateAsync({
+        path: "/admin/companies",
+        options: {
+          method: "POST",
+          body: JSON.stringify({
+            name: name.trim(),
+            platformManager: {
+              email: managerEmail.trim(),
+              name: managerName.trim(),
+              password: managerPassword,
+            },
+          }),
+        },
       });
       setOpened(false);
       setName("");
       setManagerName("");
       setManagerEmail("");
       setManagerPassword("");
-      await load();
     } catch (error) {
       setFormError(
         error instanceof ApiError && error.status === 409
@@ -117,7 +116,7 @@ export function CompaniesPage() {
           : t("common.errorDescription"),
       );
     } finally {
-      setIsSaving(false);
+      mutation.reset();
     }
   };
 
@@ -135,60 +134,63 @@ export function CompaniesPage() {
 
   const saveEdit = async () => {
     if (!session || !editTarget || !editForm.name.trim() || isSaving) return;
-    setIsSaving(true);
     setMutationError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${editTarget.id}`, {
-        body: JSON.stringify({
-          address: editForm.address.trim() || undefined,
-          code: editForm.code.trim() || undefined,
-          email: editForm.email.trim() || undefined,
-          name: editForm.name.trim(),
-          phone: editForm.phone.trim() || undefined,
-        }),
-        method: "PATCH",
+      await mutation.mutateAsync({
+        path: `/admin/companies/${editTarget.id}`,
+        options: {
+          body: JSON.stringify({
+            address: editForm.address.trim() || undefined,
+            code: editForm.code.trim() || undefined,
+            email: editForm.email.trim() || undefined,
+            name: editForm.name.trim(),
+            phone: editForm.phone.trim() || undefined,
+          }),
+          method: "PATCH",
+        },
       });
       setEditTarget(undefined);
-      await load();
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
-      setIsSaving(false);
+      mutation.reset();
     }
   };
 
   const changeStatus = async () => {
     if (!session || !statusTarget || isSaving) return;
-    setIsSaving(true);
     setMutationError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${statusTarget.id}/status`, {
-        body: JSON.stringify({ status: statusTarget.status === "ACTIVE" ? "INACTIVE" : "ACTIVE" }),
-        method: "PATCH",
+      await mutation.mutateAsync({
+        path: `/admin/companies/${statusTarget.id}/status`,
+        options: {
+          body: JSON.stringify({
+            status: statusTarget.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+          }),
+          method: "PATCH",
+        },
       });
       setStatusTarget(undefined);
-      await load();
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
-      setIsSaving(false);
+      mutation.reset();
     }
   };
 
   const remove = async () => {
     if (!session || !deleteTarget || isSaving) return;
-    setIsSaving(true);
     setMutationError(undefined);
     try {
-      await apiRequest(session, `/admin/companies/${deleteTarget.id}`, {
-        method: "DELETE",
+      await mutation.mutateAsync({
+        path: `/admin/companies/${deleteTarget.id}`,
+        options: { method: "DELETE" },
       });
       setDeleteTarget(undefined);
-      await load();
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : t("common.errorDescription"));
     } finally {
-      setIsSaving(false);
+      mutation.reset();
     }
   };
 
@@ -238,8 +240,8 @@ export function CompaniesPage() {
       : []),
   ];
 
-  if (!companies && !error) return <LoadingState title={t("common.loading")} />;
-  if (error)
+  if (companiesQuery.isPending) return <LoadingState title={t("common.loading")} />;
+  if (companiesQuery.isError)
     return <ErrorState description={t("common.errorDescription")} title={t("common.errorTitle")} />;
 
   return (

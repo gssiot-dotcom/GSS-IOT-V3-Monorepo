@@ -29,13 +29,13 @@ import {
   IconUserCircle,
 } from "@tabler/icons-react";
 import type { AuthContext } from "@gss-iot/contracts";
-import { useEffect, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 
 import { readWebEnv } from "../../app/env";
 import { LanguageSelector, t, tf } from "../../app/i18n";
-import { apiRequest } from "../../shared/api/api-client";
 import { useAuth } from "../../shared/auth/auth-context";
 import { refreshSession } from "../../shared/auth/auth-api";
 import {
@@ -44,6 +44,8 @@ import {
 } from "../../shared/branding/company-branding-context";
 import { filterSidebarItems } from "../../shared/rbac/filter-sidebar-items";
 import { hasPermission } from "../../shared/rbac/has-permission";
+import { useApiQuery } from "../../shared/query/api-query";
+import { portalQueryKey } from "../../shared/query/query-keys";
 import {
   GssIconButton,
   GssPlatformBrand,
@@ -65,8 +67,8 @@ export function PortalLayout({ children, context }: { children: ReactNode; conte
 
 function PortalShell({ children, context }: { children: ReactNode; context: AuthContext }) {
   const [opened, { close, toggle }] = useDisclosure();
-  const [unreadCount, setUnreadCount] = useState(0);
   const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("idle");
+  const queryClient = useQueryClient();
   const { logout, session } = useAuth();
   const { setColorScheme } = useMantineColorScheme({ keepTransitions: true });
   const computedColorScheme = useComputedColorScheme("light", {
@@ -81,6 +83,21 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
     allItems.find((item) => location.pathname.startsWith(`${item.path}/`))?.titleKey;
   const shellTitle = context === "gss-admin" ? t("shell.admin") : t("shell.company");
   const canViewNotifications = Boolean(session && hasPermission(session, "notifications.view"));
+  const basePath = context === "gss-admin" ? "/admin" : "/company";
+  const unreadKey = useMemo(
+    () =>
+      session
+        ? portalQueryKey(session, "notifications", "unread-count")
+        : [context, "anonymous", "notifications", "unread-count"],
+    [context, session],
+  );
+  const unreadQuery = useApiQuery<{ unreadCount: number }>(
+    session,
+    unreadKey,
+    `${basePath}/notifications/unread-count`,
+    { enabled: canViewNotifications },
+  );
+  const unreadCount = unreadQuery.data?.unreadCount ?? 0;
   const sections = items.reduce<
     Array<{ key: string; titleKey: ShellNavItem["sectionKey"]; items: typeof items }>
   >((result, item) => {
@@ -95,20 +112,10 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
 
   useEffect(() => {
     if (!session || !canViewNotifications) {
-      setUnreadCount(0);
       setRealtimeState("idle");
       return;
     }
     setRealtimeState("connecting");
-    const basePath = context === "gss-admin" ? "/admin" : "/company";
-    let cancelled = false;
-    void apiRequest<{ unreadCount: number }>(session, `${basePath}/notifications/unread-count`)
-      .then((response) => {
-        if (!cancelled) setUnreadCount(response.unreadCount);
-      })
-      .catch(() => {
-        if (!cancelled) setUnreadCount(0);
-      });
     const socket = io(readWebEnv().apiBaseUrl, {
       transports: ["websocket"],
       withCredentials: true,
@@ -117,6 +124,7 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
     socket.on("connect", () => {
       setRealtimeState("connected");
       socket.emit("notifications:join");
+      void queryClient.invalidateQueries({ queryKey: unreadKey, exact: true });
     });
     socket.on("disconnect", () => setRealtimeState("offline"));
     socket.on("connect_error", () => {
@@ -131,11 +139,10 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
     socket.io.on("reconnect", () => setRealtimeState("connected"));
     socket.on("notifications:update", (event: { unreadCount?: number }) => {
       if (typeof event.unreadCount === "number") {
-        setUnreadCount(event.unreadCount);
+        queryClient.setQueryData(unreadKey, { unreadCount: event.unreadCount });
       }
     });
     return () => {
-      cancelled = true;
       socket.off("connect");
       socket.off("disconnect");
       socket.off("connect_error");
@@ -144,7 +151,7 @@ function PortalShell({ children, context }: { children: ReactNode; context: Auth
       socket.io.off("reconnect");
       socket.close();
     };
-  }, [canViewNotifications, context, session?.user.id]);
+  }, [canViewNotifications, queryClient, session, unreadKey]);
 
   return (
     <AppShell

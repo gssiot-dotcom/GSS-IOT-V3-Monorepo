@@ -408,6 +408,29 @@ Phase 14 remains not started.
 
 Phase 14 remains not started by this correction.
 
+## 2026-08-03 frontend state-management architecture
+
+- [x] Add the root TanStack Query v5 provider, explicit production defaults and fresh no-retry test
+      clients with AbortSignal-aware API queries.
+- [x] Add typed Admin/Company/user/Company-isolated query keys and targeted invalidation helpers.
+- [x] Migrate frontend JSON server reads and mutations, active-job polling, monitoring realtime and
+      notification unread synchronization to TanStack Query.
+- [x] Keep authorized Blob/Object URL downloads and multipart image/logo uploads imperative and out
+      of persistent stores.
+- [x] Clear server cache on auth restore boundaries, logout, expiry, inactive session, user/context
+      change and Company identity change while preserving cookie single-flight refresh.
+- [x] Add a versioned Zustand store containing only Admin/Company Monitoring view preferences and
+      safely migrate the two legacy localStorage keys.
+- [x] Move collection pagination/search plus device, monitoring, Sensor History and Archive filters
+      to validated Router search params without moving forms/modals/selection global.
+- [x] Add focused cache isolation, retry, auth clear, URL history and Zustand persistence tests and
+      adapt existing component tests to fresh QueryClient wrappers.
+- [ ] Consider moving the remaining report-builder draft filters to the URL in a separate UX task;
+      they remain an unapplied local form draft until report submission and are not cached server
+      state.
+
+No database migration, schema or seed work is required. Phase 14 remains not started.
+
 ## 2026-08-03 header and Node heartbeat correction
 
 - [x] Remove the duplicate `portal / current route` caption from the shared Admin/Company header.

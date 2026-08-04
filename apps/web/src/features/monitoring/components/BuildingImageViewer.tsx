@@ -21,8 +21,10 @@ import {
 } from "react";
 
 import { t, tf } from "../../../app/i18n";
-import { ApiError, apiBlob, apiRequest } from "../../../shared/api/api-client";
+import { ApiError, apiBlob } from "../../../shared/api/api-client";
 import { useAuth } from "../../../shared/auth/auth-context";
+import { useApiQuery } from "../../../shared/query/api-query";
+import { portalQueryKey } from "../../../shared/query/query-keys";
 import { hasPermission } from "../../../shared/rbac/has-permission";
 
 const MIN_ZOOM = 1;
@@ -83,31 +85,24 @@ export function BuildingImageViewerPanel({
 }) {
   const { session } = useAuth();
   const canView = hasPermission(session, "building-plans.view");
-  const [images, setImages] = useState<BuildingPlanImageRecord[]>();
   const [selectedByKind, setSelectedByKind] = useState<Partial<Record<"PLAN" | "REAL", string>>>(
     {},
   );
-  const [status, setStatus] = useState<number>();
-
-  useEffect(() => {
-    if (!session || !canView) return;
-    let active = true;
-    setImages(undefined);
-    setStatus(undefined);
-    void apiRequest<BuildingPlanImageRecord[]>(
-      session,
-      `${basePath}/buildings/${buildingId}/images`,
-    )
-      .then((records) => {
-        if (active) setImages(records);
-      })
-      .catch((error) => {
-        if (active) setStatus(error instanceof ApiError ? error.status : 500);
-      });
-    return () => {
-      active = false;
-    };
-  }, [basePath, buildingId, canView, session?.user.id]);
+  const imagesQuery = useApiQuery<BuildingPlanImageRecord[]>(
+    session,
+    session
+      ? portalQueryKey(session, "building-images", buildingId)
+      : ["building-images", "anonymous", buildingId],
+    `${basePath}/buildings/${buildingId}/images`,
+    { enabled: canView },
+  );
+  const images = imagesQuery.data;
+  const status =
+    imagesQuery.error instanceof ApiError
+      ? imagesQuery.error.status
+      : imagesQuery.isError
+        ? 500
+        : undefined;
 
   const current = useMemo(
     () => (images ?? []).filter((image) => image.kind === kind),
