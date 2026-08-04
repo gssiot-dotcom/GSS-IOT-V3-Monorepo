@@ -61,6 +61,15 @@ jobs:
           tags: ${{ steps.images.outputs.prefix }}-api:${{ steps.images.outputs.tag }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
+      - name: Verify API runtime payload
+        env:
+          API_IMAGE: ${{ steps.images.outputs.prefix }}-api:${{ steps.images.outputs.tag }}
+        run: |
+          docker pull "$API_IMAGE"
+          docker run --rm --entrypoint node "$API_IMAGE" \
+            -e "const contracts=require('@gss-iot/contracts'); if (!contracts.HEALTH_STATUS || typeof contracts.parseNodeNumberInput !== 'function') process.exit(1)"
+          docker run --rm --entrypoint sh "$API_IMAGE" -c \
+            'find /app/node_modules -type f -name "libquery_engine-debian-openssl-3.0.x.so.node" -print -quit | grep -q .'
       - name: Publish Web image
         uses: docker/build-push-action@v6
         with:

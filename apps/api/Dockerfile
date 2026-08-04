@@ -5,7 +5,11 @@ FROM node:22-bookworm-slim AS workspace
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes openssl \
+    && rm -rf /var/lib/apt/lists/* \
+    && corepack enable \
+    && corepack prepare pnpm@9.15.9 --activate
 
 WORKDIR /workspace
 
