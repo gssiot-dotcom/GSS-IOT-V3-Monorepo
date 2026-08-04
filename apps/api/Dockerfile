@@ -32,7 +32,8 @@ RUN pnpm --filter @gss-iot/config build \
     && pnpm --filter api prisma:generate \
     && pnpm --filter api build \
     && pnpm --filter api deploy /opt/api \
-    && pnpm --dir /opt/api exec prisma generate --schema /opt/api/prisma/schema.prisma
+    && pnpm --dir /opt/api exec prisma generate --schema /opt/api/prisma/schema.prisma \
+    && test -f /opt/api/src/modules/company-management/default-company-roles.ts
 
 FROM node:22-bookworm-slim AS runtime
 

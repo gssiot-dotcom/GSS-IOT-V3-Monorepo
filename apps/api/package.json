@@ -4,7 +4,8 @@
   "private": true,
   "files": [
     "dist",
-    "prisma"
+    "prisma",
+    "src/modules/company-management/default-company-roles.ts"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
