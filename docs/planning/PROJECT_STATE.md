@@ -727,3 +727,35 @@ pending in both the E2E and local development schemas. `git diff --check` passes
 line-ending warnings only. Repository-wide `pnpm format:check` still reports 117 pre-existing,
 task-unrelated files; they were not bulk-reformatted as part of this deployment slice. Phase 14
 remains in progress until real cloud/provider acceptance is recorded.
+
+## 2026-08-04 live production release acceptance
+
+GitHub `production` now contains the deployment variables and 14 secrets. Release
+`sha-8643ba6116ad` was published successfully after the workflow verified both the CommonJS
+contracts runtime import and the packaged `debian-openssl-3.0.x` Prisma engine. GitHub deployment
+run `30907817970` completed successfully after a verified PostgreSQL backup, idempotent
+`prisma migrate deploy`, API/Web replacement and public HTTPS health, CSRF and Web-shell checks.
+
+App EC2 reports both `gss-iot-v3-api-1` and `gss-iot-v3-web-1` healthy on the immutable release.
+Prisma reports all 24 committed migrations and an up-to-date production schema. Public
+`https://apiv3.infogssiot.com/health`, `/auth/csrf` with the Web Origin and
+`https://infogssiot.com/` return HTTP 200. Nest completed startup, connected to the unchanged
+external MQTT broker and subscribed to the configured `GATE_RES`, `GATE_PUB`, `GATE_ANG` and
+`GATE_FORM` filters. This is broker connectivity evidence, not yet a real sensor-message or
+hardware command/ACK acceptance claim.
+
+The first clean Linux release exposed and corrected four packaging/deployment defects: Web
+workspace dependencies now build before the Web package; remote script modes are applied as root;
+the migration container invokes its packaged Prisma binary directly; and the API image builds
+contracts as CommonJS with OpenSSL 3 available during Prisma generation. These corrections add no
+schema or seed change. Initial production migration applied the preserved 24 migrations once;
+subsequent deployments reported no pending migrations.
+
+Production S3 acceptance remains blocked at IAM policy attachment. Both runtime keys authenticate
+as their intended asset/report users, but real object PUT requests return AWS `AccessDenied`
+because no identity-based `s3:PutObject` policy is attached. No smoke object was created. Attach the
+documented per-bucket object CRUD policies and rerun PUT/GET/DELETE acceptance before claiming logo,
+building-plan or report storage complete. The originally supplied Docker Hub read-only PAT also
+could not pull the private API repository; `DOCKERHUB_READ_TOKEN` temporarily contains the working
+push-capable PAT so production can run. Replace it with a newly verified read-only PAT after the
+release.

@@ -269,8 +269,17 @@
       separate Docker Hub CI push and App EC2 read tokens.
 - [x] Upload all deployment secrets and variables to the GitHub `production` Environment with the
       redaction-safe operator script.
-- [ ] Confirm the external MQTT firewall, publish immutable images, deploy and record real
-      provider/hardware acceptance.
+- [x] Publish immutable API/Web images and deploy release `sha-8643ba6116ad` to App EC2 with a
+      verified PostgreSQL backup, all 24 migrations, healthy containers and public HTTPS
+      health/CSRF/Web smoke checks.
+- [x] Confirm the external MQTT path from production: the API connected to
+      `mqtt://gssiot.iptime.org:10200` and subscribed to the configured four gateway topic filters.
+- [ ] Attach the documented object CRUD identity policies to `gss-iot-v3-assets-prod` and
+      `gss-iot-v3-reports-prod`, then rerun production S3 PUT/GET/DELETE acceptance; current keys
+      authenticate but S3 returns `AccessDenied` because no identity-based `s3:PutObject` policy is
+      attached.
+- [ ] Record real sensor-message ingestion and live hardware command/ACK acceptance; broker
+      connectivity/subscriptions alone do not claim hardware acceptance.
 - [ ] Approve and verify off-host backup retention, legal hold, restore RTO/RPO, permanent S3
       version/delete-marker cleanup and purge SLA.
 - [ ] Only after those decisions, enable and verify destructive sensor retention/archive purge;

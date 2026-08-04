@@ -1519,3 +1519,30 @@ recommended operational hardening step after the initial deployment. No schema, 
 shape changes are introduced.
 
 **Files affected:** Shared environment validation/tests and planning state.
+
+## DEC-2026-08-04-07 — Clean-container runtime packaging and live release boundary (ACCEPTED)
+
+**Context:** The first real Linux image publication and App EC2 deployment exposed clean-build and
+runtime assumptions that local generated output did not reproduce: Web workspace packages were not
+built before Web TypeScript, the API's CommonJS output consumed an ESNext contracts package, Prisma
+generation selected the OpenSSL 1.1 engine because OpenSSL was absent in the build stage, Corepack
+could not write under the non-root runtime user during migration, and the non-root SSH shell could
+not expand script globs below the root-owned deploy directory.
+
+**Decision:** Build Web workspace dependencies explicitly; emit `@gss-iot/contracts` as CommonJS
+for the CommonJS Nest runtime; install OpenSSL in the API build stage; invoke the packaged Prisma
+binary directly for `migrate deploy`; and apply transferred script modes through root-owned
+`find`. The image publication workflow must execute the contracts runtime import and verify the
+OpenSSL 3 Prisma engine before publishing the Web image. Continue using immutable tags and rerun
+the idempotent backup/migration/deploy path after each correction.
+
+**Consequences:** Release `sha-8643ba6116ad` is live with healthy API/Web containers, public HTTPS
+smoke checks, an up-to-date 24-migration schema and external MQTT connectivity/subscriptions. No
+migration or seed was added, removed or rewritten. The original read-only Docker Hub PAT did not
+authorize the private API pull, so the protected `DOCKERHUB_READ_TOKEN` secret temporarily holds
+the verified push-capable PAT; a newly verified read-only replacement remains required. Asset and
+report S3 object acceptance remains open because both IAM users currently lack attached
+identity-based object CRUD policies; credentials alone do not complete provider acceptance.
+
+**Files affected:** API/Web Dockerfiles, contracts TypeScript build mode, publish/deploy workflows,
+deployment scripts and planning state.
