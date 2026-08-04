@@ -65,7 +65,7 @@ docker compose --env-file "$candidate_release_file" --file "$compose_file" pull
 docker run --rm \
   --env-file "$api_env_file" \
   "$api_image" \
-  pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+  ./node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma
 
 docker compose --env-file "$candidate_release_file" --file "$compose_file" \
   up --detach --remove-orphans
