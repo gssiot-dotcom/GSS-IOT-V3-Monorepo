@@ -692,7 +692,8 @@ Private production buckets `gss-iot-v3-prod-assets-796973490873` and
 all S3 Block Public Access controls enabled, versioning enabled and default SSE-S3 encryption.
 The production env example now names those deployed buckets. Separate least-privilege asset/report
 runtime identities and access keys plus separate Docker Hub CI push/App read tokens have been
-created; transfer into the protected GitHub Environment and live S3 verification remain pending.
+created and transferred into the protected GitHub Environment. Both production S3 identities now
+pass real scoped PUT/GET/DELETE object round trips from the API container.
 The Windows operator flow now includes a redaction-safe GitHub Environment configurator that
 requires repository `ADMIN`, verifies the recorded App EC2 ED25519 fingerprint, reads ignored local
 credentials, prompts securely for the production database password and leaves the local development
@@ -700,7 +701,7 @@ credentials, prompts securely for the production database password and leaves th
 
 The operator successfully applied the configurator to the GitHub `production` Environment. It
 created or updated all 14 deployment secrets and the exact workflow variables without logging
-secret values. Immutable image publication and the first App EC2 deployment remain pending.
+secret values. Immutable image publication and App EC2 deployment are operational.
 
 The operator-required production bootstrap credential exposed a previous 12-character validation
 conflict during the final release gate. `GSS_SUPER_ADMIN_PASSWORD` now has an explicitly accepted
@@ -730,10 +731,11 @@ remains in progress until real cloud/provider acceptance is recorded.
 
 ## 2026-08-04 live production release acceptance
 
-GitHub `production` now contains the deployment variables and 14 secrets. Release
-`sha-8643ba6116ad` was published successfully after the workflow verified both the CommonJS
-contracts runtime import and the packaged `debian-openssl-3.0.x` Prisma engine. GitHub deployment
-run `30907817970` completed successfully after a verified PostgreSQL backup, idempotent
+GitHub `production` now contains the deployment variables and 14 secrets. Initial release
+`sha-8643ba6116ad` and current release `sha-423a65644900` were published successfully after the
+workflow verified both the CommonJS contracts runtime import and the packaged
+`debian-openssl-3.0.x` Prisma engine. Current publish run `30909287672` and deployment run
+`30909679012` completed successfully after a verified PostgreSQL backup, idempotent
 `prisma migrate deploy`, API/Web replacement and public HTTPS health, CSRF and Web-shell checks.
 
 App EC2 reports both `gss-iot-v3-api-1` and `gss-iot-v3-web-1` healthy on the immutable release.
@@ -744,18 +746,22 @@ external MQTT broker and subscribed to the configured `GATE_RES`, `GATE_PUB`, `G
 `GATE_FORM` filters. This is broker connectivity evidence, not yet a real sensor-message or
 hardware command/ACK acceptance claim.
 
-The first clean Linux release exposed and corrected four packaging/deployment defects: Web
+The clean Linux releases exposed and corrected five packaging/deployment defects: Web
 workspace dependencies now build before the Web package; remote script modes are applied as root;
 the migration container invokes its packaged Prisma binary directly; and the API image builds
-contracts as CommonJS with OpenSSL 3 available during Prisma generation. These corrections add no
-schema or seed change. Initial production migration applied the preserved 24 migrations once;
-subsequent deployments reported no pending migrations.
+contracts as CommonJS with OpenSSL 3 available during Prisma generation; and the production API
+package now includes the single source dependency required by the explicit TypeScript seed. These
+corrections add no schema, migration or seed-content change. Initial production migration applied
+the preserved 24 migrations once; subsequent deployments reported no pending migrations.
 
-Production S3 acceptance remains blocked at IAM policy attachment. Both runtime keys authenticate
-as their intended asset/report users, but real object PUT requests return AWS `AccessDenied`
-because no identity-based `s3:PutObject` policy is attached. No smoke object was created. Attach the
-documented per-bucket object CRUD policies and rerun PUT/GET/DELETE acceptance before claiming logo,
-building-plan or report storage complete. The originally supplied Docker Hub read-only PAT also
-could not pull the private API repository; `DOCKERHUB_READ_TOKEN` temporarily contains the working
-push-capable PAT so production can run. Replace it with a newly verified read-only PAT after the
-release.
+The explicit idempotent production seed completed on current release `sha-423a65644900`. Database
+verification confirms the configured bootstrap account is active, belongs to the protected
+`gss_super_admin` role and matches the protected environment password. A public-origin login smoke
+passed with CSRF HTTP 200, login HTTP 201, the exact Web CORS origin and session cookies issued.
+
+Production S3 provider acceptance now passes. After the scoped identity policies were attached,
+the live API container completed and cleaned up real PUT/GET/DELETE smoke objects in both the asset
+and report buckets. Because the buckets are versioned, normal retained versions/delete markers
+remain governed by the still-open cleanup/retention decision. The originally supplied Docker Hub
+read-only PAT could not pull the private API repository; `DOCKERHUB_READ_TOKEN` temporarily contains
+the working push-capable PAT so production can run. Replace it with a newly verified read-only PAT.

@@ -1546,3 +1546,29 @@ identity-based object CRUD policies; credentials alone do not complete provider 
 
 **Files affected:** API/Web Dockerfiles, contracts TypeScript build mode, publish/deploy workflows,
 deployment scripts and planning state.
+
+## DEC-2026-08-04-08 — Explicit production seed packaging and live provider acceptance (ACCEPTED)
+
+**Context:** The first production schema deploy correctly preserved and applied all 24 migrations,
+but seeds are intentionally excluded from the automatic release path. The explicit seed command
+then exposed that its imported default-company-role helper was not present in the deployed API
+package. Separately, the asset and report credentials authenticated but required their scoped
+identity object policies before live provider acceptance could pass.
+
+**Decision:** Keep seed execution explicit and idempotent. Package the exact source helper imported
+by `prisma/seed.ts`, assert its presence during the API image build, publish/deploy a new immutable
+release, then run the production seed once as an operator action. Accept the bootstrap only after
+database role/password verification and a public CSRF/login/session-cookie smoke. Accept each S3
+provider only after a live API-container PUT/GET/DELETE round trip succeeds with its separate IAM
+identity; do not make either bucket public.
+
+**Consequences:** Release `sha-423a65644900` is live. The configured bootstrap user is active in
+the protected `gss_super_admin` role and the protected environment password matches its stored
+hash; the public login flow issues session cookies. Both private versioned production buckets pass
+real object CRUD acceptance. No migration was added, deleted or rewritten, and seed contents did
+not change. Phase 14 remains in progress for live sensor/command ACK evidence, approved
+backup/legal-hold/version-cleanup policy, destructive retention enablement, legacy migration and
+remaining performance/observability acceptance. The Docker Hub read-token replacement also remains
+an operational hardening follow-up.
+
+**Files affected:** API package/image payload and planning state.
