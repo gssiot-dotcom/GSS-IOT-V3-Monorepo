@@ -9,7 +9,8 @@
     "format:check": "prettier --check .",
     "i18n:audit": "node scripts/audit-i18n.mjs",
     "lint": "eslint . --max-warnings=0",
-    "test": "pnpm -r --if-present test:unit",
+    "test": "pnpm -r --if-present test:unit && pnpm test:deployment",
+    "test:deployment": "node --test deploy/scripts/render-api-env.test.mjs",
     "test:e2e": "pnpm --filter api test:e2e && pnpm --filter web test:e2e",
     "typecheck": "tsc -b tsconfig.json --pretty false"
   },

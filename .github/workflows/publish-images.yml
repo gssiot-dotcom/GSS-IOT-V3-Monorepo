@@ -1,0 +1,81 @@
+name: Publish production images
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment that supplies the Web build variables
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: Immutable image tag; defaults to sha-<12 characters>
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve immutable image coordinates
+        id: images
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+        run: |
+          dockerhub_username="${DOCKERHUB_USERNAME,,}"
+          if [[ ! "$dockerhub_username" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
+            echo "Invalid or missing Docker Hub username/namespace." >&2
+            exit 1
+          fi
+          image_prefix="$dockerhub_username/gss-iot-v3"
+          image_tag="${REQUESTED_TAG:-sha-${GITHUB_SHA:0:12}}"
+          if [[ ! "$image_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid OCI image tag: $image_tag" >&2
+            exit 1
+          fi
+          echo "namespace=$dockerhub_username" >> "$GITHUB_OUTPUT"
+          echo "prefix=$image_prefix" >> "$GITHUB_OUTPUT"
+          echo "tag=$image_tag" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ steps.images.outputs.namespace }}
+          password: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
+      - name: Publish API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          provenance: true
+          sbom: true
+          tags: ${{ steps.images.outputs.prefix }}-api:${{ steps.images.outputs.tag }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Publish Web image
+        uses: docker/build-push-action@v6
+        with:
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+            VITE_AUTH_CSRF_COOKIE_NAME=${{ vars.VITE_AUTH_CSRF_COOKIE_NAME || 'gss_csrf' }}
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          provenance: true
+          sbom: true
+          tags: ${{ steps.images.outputs.prefix }}-web:${{ steps.images.outputs.tag }}
+          cache-from: type=gha,scope=web-${{ inputs.environment }}
+          cache-to: type=gha,mode=max,scope=web-${{ inputs.environment }}
+      - name: Release coordinates
+        run: |
+          echo "API_IMAGE=${{ steps.images.outputs.prefix }}-api:${{ steps.images.outputs.tag }}"
+          echo "WEB_IMAGE=${{ steps.images.outputs.prefix }}-web:${{ steps.images.outputs.tag }}"

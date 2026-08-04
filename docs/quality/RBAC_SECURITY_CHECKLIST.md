@@ -150,3 +150,12 @@ The checklist remains partially open because report/export scope enforcement, al
       Buildings and Devices sections require their own effective view permission.
 - [x] Overview totals are independent database counts, previews are bounded to 100, and one user is
       deduplicated even when owner, direct-area and direct-building access overlap.
+
+## 2026-08-04 V3/legacy hostname isolation
+
+- [x] V3 access, refresh and CSRF cookies omit `Domain` and remain host-only to
+      `apiv3.infogssiot.com`; they are not sent to the preserved `api.infogssiot.com` legacy host.
+- [x] The Web uses the existing `/auth/csrf` response-body token for the double-submit header and
+      does not require JavaScript access to the API host's CSRF cookie.
+- [x] The production env renderer omits an empty cookie domain and rejects any explicit
+      `AUTH_COOKIE_DOMAIN`, preventing a GitHub variable from widening the cookie boundary.

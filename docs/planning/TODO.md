@@ -18,7 +18,8 @@
 - [x] Scaffold apps/packages.
 - [x] Add strict TypeScript, lint, format, unit and E2E tooling.
 - [x] Add environment validation and `.env.example` files.
-- [x] Add Docker Compose for PostgreSQL, Redis and local MQTT broker.
+- [x] Add local PostgreSQL Docker Compose; remove unused Redis and local MQTT services when the
+      approved production topology moved to an external DB/broker.
 - [x] Create legacy source inventory report.
 - [x] Verify source files and node images checksums.
 - [x] Confirm package/runtime versions from official documentation.
@@ -242,12 +243,46 @@
 - [x] Close Phase 13 after the browser evidence and existing focused web/API report security, scope, lifecycle, download and cleanup tests passed. Keep unsupported permission/security claims tied to automated evidence rather than claiming them as browser observations.
 - [x] Keep undocumented legacy report layouts, direct-file access and unsafe storage behavior out of the product; no unsafe parity was added.
 - [x] Record Phase 13 local private storage and expiry/cleanup verification. Production S3 execution and standalone worker deployment were not executed.
-- [ ] Phase 14 (deferred; not started): configure and verify production S3 storage, production worker deployment, deployment manifests, migration/rollback runbooks and production acceptance.
-- [ ] Phase 14 (deferred; not started): implement and verify long-term sensor retention, partitioning, archival and purge behavior.
+- [x] Phase 14 deployment baseline: add production API/Web images, App-EC2-only Compose, external
+      DB/MQTT configuration, Nginx/Certbot topology, immutable image publishing, migration-before-
+      start, backup, smoke, rollback and restore-rehearsal tooling.
+- [x] Preserve all 24 forward migrations, select private Docker Hub API plus public static Web
+      repositories, pin the existing `mqtt://gssiot.iptime.org:10200` endpoint and document the
+      guided AWS/GitHub/S3 setup.
+- [x] Provision App EC2 `i-01b813d151385f76d`, attach Elastic IP `13.209.142.179`, and verify SSH,
+      Nginx, Docker Engine/Compose and container execution.
+- [x] Configure the V3 apex and `apiv3.infogssiot.com` DNS records while preserving the legacy
+      `api.infogssiot.com` record.
+- [x] Verify both V3 names resolve to the App Elastic IP from both Hostinger authoritative DNS
+      servers and return Nginx over HTTP.
+- [x] Configure the final V3 Nginx vhosts; issue trusted Certbot TLS for `infogssiot.com` plus
+      `apiv3.infogssiot.com`; verify HTTP redirects and a successful renewal dry-run.
+- [x] Select the no-public-IP DB EC2 baseline with a temporary, immediately disabled maintenance
+      public IPv4 instead of a continuously billed NAT Gateway.
+- [x] Provision DB EC2 `i-08b36ea98ccd64956`; verify bastion SSH, PostgreSQL 16.14, UTC, reboot and
+      loopback-only initial listener state.
+- [x] Configure private PostgreSQL TLS/SCRAM access and application database; verify
+      `gss_app` App-to-DB connectivity over `172.31.37.205:5432` with UTC and TLS active.
+- [x] Disable the DB temporary public IPv4 after the completed private connectivity verification.
+- [x] Provision private versioned asset and report S3 buckets with Block Public Access enabled.
+- [x] Provision separate least-privilege asset/report S3 runtime identities and access keys; create
+      separate Docker Hub CI push and App EC2 read tokens.
+- [x] Upload all deployment secrets and variables to the GitHub `production` Environment with the
+      redaction-safe operator script.
+- [ ] Confirm the external MQTT firewall, publish immutable images, deploy and record real
+      provider/hardware acceptance.
+- [ ] Approve and verify off-host backup retention, legal hold, restore RTO/RPO, permanent S3
+      version/delete-marker cleanup and purge SLA.
+- [ ] Only after those decisions, enable and verify destructive sensor retention/archive purge;
+      production defaults remain disabled and dry-run-safe.
+- [ ] Complete the remaining Phase 14 legacy-data migration, performance/observability and final
+      production acceptance scope.
 
 ## Deferred
 
-Reports, exports, partitioning, archival, migration, deployment, live cmd 4/cmd 5 hardware verification and real external delivery vendors remain deferred according to the approved 2nd-step execution order and open provider decisions.
+Production execution, destructive partitioning/retention, legacy migration, live cmd 4/cmd 5
+hardware verification and real external delivery vendors remain pending according to the approved
+Phase 14 order and open provider decisions.
 
 ## Pre-Phase-14 refactor wave (3rd step)
 

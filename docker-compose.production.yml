@@ -1,0 +1,44 @@
+name: gss-iot-v3
+
+# App EC2 only: PostgreSQL runs on DB EC2 and MQTT runs on the external physical server.
+services:
+  api:
+    image: ${API_IMAGE:?API_IMAGE is required}
+    env_file:
+      - path: ${API_ENV_FILE:-/etc/gss-iot/api.env}
+        format: raw
+    init: true
+    ports:
+      - "127.0.0.1:${API_BIND_PORT:-3000}:3000"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    image: ${WEB_IMAGE:?WEB_IMAGE is required}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WEB_BIND_PORT:-8080}:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true

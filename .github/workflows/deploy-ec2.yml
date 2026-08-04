@@ -1,0 +1,171 @@
+name: Deploy App EC2
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Protected GitHub Environment to deploy
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: Existing immutable Docker Hub tag from Publish production images
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release coordinates
+        id: release
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [[ ! "$REQUESTED_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid OCI image tag: $REQUESTED_TAG" >&2
+            exit 1
+          fi
+          dockerhub_username="${DOCKERHUB_USERNAME,,}"
+          if [[ ! "$dockerhub_username" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
+            echo "Invalid or missing Docker Hub username/namespace." >&2
+            exit 1
+          fi
+          echo "namespace=$dockerhub_username" >> "$GITHUB_OUTPUT"
+          echo "prefix=$dockerhub_username/gss-iot-v3" >> "$GITHUB_OUTPUT"
+
+      - name: Render validated API environment
+        env:
+          NODE_ENV: production
+          PORT: ${{ vars.PORT || '3000' }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DELETION_WORKER_ENABLED: ${{ vars.DELETION_WORKER_ENABLED || 'false' }}
+          DELETION_WORKER_INTERVAL_MS: ${{ vars.DELETION_WORKER_INTERVAL_MS || '5000' }}
+          DELETION_WORKER_BATCH_SIZE: ${{ vars.DELETION_WORKER_BATCH_SIZE || '250' }}
+          DELETION_WORKER_HEARTBEAT_MS: ${{ vars.DELETION_WORKER_HEARTBEAT_MS || '5000' }}
+          DELETION_WORKER_LEASE_MS: ${{ vars.DELETION_WORKER_LEASE_MS || '30000' }}
+          ASSET_STORAGE_PROVIDER: ${{ vars.ASSET_STORAGE_PROVIDER || 's3' }}
+          ASSET_S3_ENDPOINT: ${{ vars.ASSET_S3_ENDPOINT }}
+          ASSET_S3_REGION: ${{ vars.ASSET_S3_REGION }}
+          ASSET_S3_BUCKET: ${{ vars.ASSET_S3_BUCKET }}
+          ASSET_S3_ACCESS_KEY_ID: ${{ secrets.ASSET_S3_ACCESS_KEY_ID }}
+          ASSET_S3_SECRET_ACCESS_KEY: ${{ secrets.ASSET_S3_SECRET_ACCESS_KEY }}
+          ASSET_S3_FORCE_PATH_STYLE: ${{ vars.ASSET_S3_FORCE_PATH_STYLE || 'false' }}
+          REPORT_STORAGE_PROVIDER: ${{ vars.REPORT_STORAGE_PROVIDER || 's3' }}
+          REPORT_S3_ENDPOINT: ${{ vars.REPORT_S3_ENDPOINT }}
+          REPORT_S3_REGION: ${{ vars.REPORT_S3_REGION }}
+          REPORT_S3_BUCKET: ${{ vars.REPORT_S3_BUCKET }}
+          REPORT_S3_ACCESS_KEY_ID: ${{ secrets.REPORT_S3_ACCESS_KEY_ID }}
+          REPORT_S3_SECRET_ACCESS_KEY: ${{ secrets.REPORT_S3_SECRET_ACCESS_KEY }}
+          REPORT_S3_FORCE_PATH_STYLE: ${{ vars.REPORT_S3_FORCE_PATH_STYLE || 'false' }}
+          REPORT_WORKER_ENABLED: ${{ vars.REPORT_WORKER_ENABLED || 'true' }}
+          REPORT_WORKER_INTERVAL_MS: ${{ vars.REPORT_WORKER_INTERVAL_MS || '30000' }}
+          REPORT_WORKER_BATCH_SIZE: ${{ vars.REPORT_WORKER_BATCH_SIZE || '10' }}
+          REPORT_CLEANUP_ENABLED: ${{ vars.REPORT_CLEANUP_ENABLED || 'true' }}
+          REPORT_CLEANUP_INTERVAL_MS: ${{ vars.REPORT_CLEANUP_INTERVAL_MS || '300000' }}
+          REPORT_CLEANUP_BATCH_SIZE: ${{ vars.REPORT_CLEANUP_BATCH_SIZE || '100' }}
+          MQTT_BROKER_URL: ${{ vars.MQTT_BROKER_URL }}
+          MQTT_CLIENT_ID: ${{ vars.MQTT_CLIENT_ID }}
+          MQTT_COMMAND_ACK_TIMEOUT_MS: ${{ vars.MQTT_COMMAND_ACK_TIMEOUT_MS || '30000' }}
+          MQTT_COMMAND_EXPIRES_IN_SECONDS: ${{ vars.MQTT_COMMAND_EXPIRES_IN_SECONDS || '300' }}
+          MQTT_ENABLED: ${{ vars.MQTT_ENABLED || 'true' }}
+          MQTT_FAKE_ACK: ${{ vars.MQTT_FAKE_ACK || 'false' }}
+          MQTT_MAX_PUBLISH_ATTEMPTS: ${{ vars.MQTT_MAX_PUBLISH_ATTEMPTS || '3' }}
+          MQTT_PASSWORD: ${{ secrets.MQTT_PASSWORD }}
+          MQTT_PUBLISH_TIMEOUT_MS: ${{ vars.MQTT_PUBLISH_TIMEOUT_MS || '5000' }}
+          MQTT_TOPIC_BASE: ${{ vars.MQTT_TOPIC_BASE }}
+          MQTT_USERNAME: ${{ secrets.MQTT_USERNAME }}
+          NODE_OFFLINE_BATCH_SIZE: ${{ vars.NODE_OFFLINE_BATCH_SIZE || '250' }}
+          NODE_OFFLINE_EVALUATOR_ENABLED: ${{ vars.NODE_OFFLINE_EVALUATOR_ENABLED || 'true' }}
+          NODE_OFFLINE_SWEEP_INTERVAL_MS: ${{ vars.NODE_OFFLINE_SWEEP_INTERVAL_MS || '10000' }}
+          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_EXPIRES_IN: ${{ vars.JWT_ACCESS_EXPIRES_IN || '900' }}
+          JWT_REFRESH_EXPIRES_IN: ${{ vars.JWT_REFRESH_EXPIRES_IN || '2592000' }}
+          AUTH_COOKIE_SECURE: ${{ vars.AUTH_COOKIE_SECURE || 'true' }}
+          AUTH_COOKIE_SAME_SITE: ${{ vars.AUTH_COOKIE_SAME_SITE || 'lax' }}
+          AUTH_ACCESS_COOKIE_NAME: ${{ vars.AUTH_ACCESS_COOKIE_NAME || 'gss_access' }}
+          AUTH_REFRESH_COOKIE_NAME: ${{ vars.AUTH_REFRESH_COOKIE_NAME || 'gss_refresh' }}
+          AUTH_CSRF_COOKIE_NAME: ${{ vars.AUTH_CSRF_COOKIE_NAME || 'gss_csrf' }}
+          GSS_SUPER_ADMIN_EMAIL: ${{ vars.GSS_SUPER_ADMIN_EMAIL }}
+          GSS_SUPER_ADMIN_PASSWORD: ${{ secrets.GSS_SUPER_ADMIN_PASSWORD }}
+          SENSOR_RETENTION_BATCH_SIZE: ${{ vars.SENSOR_RETENTION_BATCH_SIZE || '1000' }}
+          SENSOR_RETENTION_DAYS: ${{ vars.SENSOR_RETENTION_DAYS || '180' }}
+          SENSOR_RETENTION_DRY_RUN: ${{ vars.SENSOR_RETENTION_DRY_RUN || 'true' }}
+          SENSOR_RETENTION_ENABLED: ${{ vars.SENSOR_RETENTION_ENABLED || 'false' }}
+          SENSOR_RETENTION_INTERVAL_MS: ${{ vars.SENSOR_RETENTION_INTERVAL_MS || '3600000' }}
+          SENSOR_RETENTION_MAX_ROWS_PER_CYCLE: ${{ vars.SENSOR_RETENTION_MAX_ROWS_PER_CYCLE || '10000' }}
+        run: node deploy/scripts/render-api-env.mjs .deploy/api.env
+
+      - name: Build candidate release and transfer bundle
+        env:
+          API_SMOKE_URL: ${{ vars.VITE_API_BASE_URL }}
+          WEB_SMOKE_URL: ${{ vars.WEB_SMOKE_URL }}
+          APP_EC2_HOST: ${{ vars.APP_EC2_HOST }}
+          APP_EC2_USER: ${{ vars.APP_EC2_USER }}
+          APP_EC2_SSH_PORT: ${{ vars.APP_EC2_SSH_PORT || '22' }}
+          APP_EC2_SSH_PRIVATE_KEY: ${{ secrets.APP_EC2_SSH_PRIVATE_KEY }}
+          APP_EC2_SSH_KNOWN_HOSTS: ${{ secrets.APP_EC2_SSH_KNOWN_HOSTS }}
+          IMAGE_PREFIX: ${{ steps.release.outputs.prefix }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [[ -z "$API_SMOKE_URL" || -z "$WEB_SMOKE_URL" || -z "$APP_EC2_HOST" || -z "$APP_EC2_USER" || -z "$APP_EC2_SSH_KNOWN_HOSTS" ]]; then
+            echo "Deployment host and smoke URL variables are required." >&2
+            exit 1
+          fi
+          cat > .deploy/candidate-release.env <<EOF
+          API_IMAGE=$IMAGE_PREFIX-api:$IMAGE_TAG
+          WEB_IMAGE=$IMAGE_PREFIX-web:$IMAGE_TAG
+          API_ENV_FILE=/etc/gss-iot/api.env
+          API_BIND_PORT=3000
+          WEB_BIND_PORT=8080
+          API_SMOKE_URL=$API_SMOKE_URL
+          WEB_SMOKE_URL=$WEB_SMOKE_URL
+          BACKUP_DIR=/var/backups/gss-iot
+          EOF
+          tar -czf .deploy/gss-iot-deploy.tgz docker-compose.production.yml deploy/scripts deploy/systemd
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$APP_EC2_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_gss_iot"
+          chmod 0600 "$HOME/.ssh/id_gss_iot"
+          printf '%s\n' "$APP_EC2_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+          remote="$APP_EC2_USER@$APP_EC2_HOST"
+          ssh -i "$HOME/.ssh/id_gss_iot" -p "$APP_EC2_SSH_PORT" "$remote" \
+            'rm -f /tmp/gss-iot-deploy.tgz /tmp/gss-iot-api.env /tmp/gss-iot-candidate.env'
+          scp -i "$HOME/.ssh/id_gss_iot" -P "$APP_EC2_SSH_PORT" \
+            .deploy/gss-iot-deploy.tgz "$remote:/tmp/gss-iot-deploy.tgz"
+          scp -i "$HOME/.ssh/id_gss_iot" -P "$APP_EC2_SSH_PORT" \
+            .deploy/api.env "$remote:/tmp/gss-iot-api.env"
+          scp -i "$HOME/.ssh/id_gss_iot" -P "$APP_EC2_SSH_PORT" \
+            .deploy/candidate-release.env "$remote:/tmp/gss-iot-candidate.env"
+          ssh -i "$HOME/.ssh/id_gss_iot" -p "$APP_EC2_SSH_PORT" "$remote" \
+            'sudo install -d -m 0750 /opt/gss-iot && sudo install -d -m 0700 /etc/gss-iot /var/backups/gss-iot && sudo tar -xzf /tmp/gss-iot-deploy.tgz -C /opt/gss-iot && sudo install -m 0600 /tmp/gss-iot-api.env /etc/gss-iot/api.env && sudo install -m 0600 /tmp/gss-iot-candidate.env /opt/gss-iot/candidate-release.env && sudo chmod 0750 /opt/gss-iot/deploy/scripts/*.sh && rm -f /tmp/gss-iot-deploy.tgz /tmp/gss-iot-api.env /tmp/gss-iot-candidate.env'
+
+      - name: Authenticate Docker Hub and deploy
+        env:
+          APP_EC2_HOST: ${{ vars.APP_EC2_HOST }}
+          APP_EC2_USER: ${{ vars.APP_EC2_USER }}
+          APP_EC2_SSH_PORT: ${{ vars.APP_EC2_SSH_PORT || '22' }}
+          DOCKERHUB_USERNAME: ${{ steps.release.outputs.namespace }}
+          DOCKERHUB_READ_TOKEN: ${{ secrets.DOCKERHUB_READ_TOKEN }}
+        run: |
+          remote="$APP_EC2_USER@$APP_EC2_HOST"
+          printf '%s' "$DOCKERHUB_READ_TOKEN" | ssh -i "$HOME/.ssh/id_gss_iot" \
+            -p "$APP_EC2_SSH_PORT" "$remote" \
+            "sudo docker login docker.io --username '$DOCKERHUB_USERNAME' --password-stdin"
+          ssh -i "$HOME/.ssh/id_gss_iot" -p "$APP_EC2_SSH_PORT" "$remote" \
+            'sudo /opt/gss-iot/deploy/scripts/deploy.sh'

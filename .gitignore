@@ -14,7 +14,11 @@ test-results/
 .vscode/
 .idea/
 .codex-log/
+.codex-audit-runtime/
+.playwright-cli/
 .tmp/
 tmp/
+output/
+apps/*/output/
 apps/api/uploads/
 apps/api/.data/

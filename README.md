@@ -33,3 +33,26 @@ Bu paket yangi GSS IoT V3 repositorysini Codex bilan xavfsiz va izchil boshlash 
 5. Source code va tests
 
 Eski ZIP fayllar reference hisoblanadi. Ularning arxitekturasi yangi loyihaga ko‘chirib olinmaydi.
+
+## Development infrastructure
+
+`docker-compose.yml` faqat lokal PostgreSQL'ni ko‘taradi. API Redis ishlatmaydi va lokal MQTT
+broker yaratmaydi; kerak bo‘lsa `.env` ichidagi `MQTT_BROKER_URL` tashqi brokerga yo‘naltiriladi.
+
+```bash
+docker compose up -d
+pnpm install --frozen-lockfile
+pnpm --filter api prisma:generate
+pnpm --filter api exec prisma migrate deploy
+pnpm --filter api dev
+pnpm --filter web dev
+```
+
+## Production deployment
+
+Production modeli: App EC2 (`api` + `web` container), alohida DB EC2 va doimiy tashqi fizik MQTT
+broker. App EC2 ichida DB, Redis yoki MQTT container yo‘q. Dockerfiles,
+`docker-compose.production.yml`, GitHub Actions, Nginx/Certbot, backup, migration, smoke va rollback
+flow'i [EC2 deployment runbook](docs/deployment/EC2_DEPLOYMENT_RUNBOOK.md) ichida yozilgan.
+AWS, private S3, Docker Hub va GitHub Environment'larni birma-bir tayyorlash uchun
+[infrastructure setup guide](docs/deployment/INFRASTRUCTURE_SETUP_GUIDE.md) dan foydalaning.

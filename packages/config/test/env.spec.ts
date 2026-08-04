@@ -3,6 +3,23 @@ import { describe, expect, it } from "vitest";
 import { loadApiEnv } from "../src";
 
 describe("loadApiEnv", () => {
+  it("accepts the approved eight-character super-admin minimum and rejects shorter values", () => {
+    const base = {
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
+      GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
+      JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+      JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
+      MQTT_BROKER_URL: "mqtt://localhost:1883",
+      MQTT_TOPIC_BASE: "GSSIOT/test",
+      NODE_ENV: "test",
+    };
+
+    expect(
+      loadApiEnv({ ...base, GSS_SUPER_ADMIN_PASSWORD: "12345678" }).GSS_SUPER_ADMIN_PASSWORD,
+    ).toBe("12345678");
+    expect(() => loadApiEnv({ ...base, GSS_SUPER_ADMIN_PASSWORD: "1234567" })).toThrow();
+  });
+
   it("validates required infrastructure configuration", () => {
     const env = loadApiEnv({
       DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
@@ -14,7 +31,6 @@ describe("loadApiEnv", () => {
       MQTT_BROKER_URL: "mqtt://localhost:1883",
       MQTT_TOPIC_BASE: "GSSIOT/01030369081",
       NODE_ENV: "test",
-      REDIS_URL: "redis://localhost:6379",
     });
 
     expect(env.PORT).toBe(3000);
@@ -44,7 +60,6 @@ describe("loadApiEnv", () => {
       MQTT_BROKER_URL: "mqtt://localhost:1883",
       MQTT_TOPIC_BASE: "GSSIOT/test",
       NODE_ENV: "test",
-      REDIS_URL: "redis://localhost:6379",
     };
     expect(() => loadApiEnv(base)).toThrow("must be different");
     expect(() =>
@@ -67,7 +82,6 @@ describe("loadApiEnv", () => {
         MQTT_BROKER_URL: "mqtt://localhost:1883",
         MQTT_TOPIC_BASE: "GSSIOT/test",
         NODE_ENV: "test",
-        REDIS_URL: "redis://localhost:6379",
         SENSOR_RETENTION_BATCH_SIZE: "1000",
         SENSOR_RETENTION_MAX_ROWS_PER_CYCLE: "500",
       }),
@@ -87,7 +101,6 @@ describe("loadApiEnv", () => {
         MQTT_BROKER_URL: "mqtt://localhost:1883",
         MQTT_TOPIC_BASE: "GSSIOT/test",
         NODE_ENV: "test",
-        REDIS_URL: "redis://localhost:6379",
       }),
     ).toThrow("DELETION_WORKER_LEASE_MS");
   });
@@ -103,7 +116,6 @@ describe("loadApiEnv", () => {
       MQTT_BROKER_URL: "mqtt://localhost:1883",
       MQTT_TOPIC_BASE: "GSSIOT/01030369081",
       NODE_ENV: "development",
-      REDIS_URL: "redis://localhost:6379",
     });
 
     expect(env.CORS_ALLOWED_ORIGINS).toEqual(["http://localhost:5173", "http://127.0.0.1:5173"]);
@@ -127,7 +139,6 @@ describe("loadApiEnv", () => {
       REPORT_S3_BUCKET: "report-bucket",
       REPORT_S3_REGION: "ap-northeast-2",
       REPORT_S3_SECRET_ACCESS_KEY: "secret-key",
-      REDIS_URL: "redis://localhost:6379",
     });
 
     expect(env.CORS_ALLOWED_ORIGINS).toEqual([]);
@@ -151,7 +162,6 @@ describe("loadApiEnv", () => {
         MQTT_BROKER_URL: "mqtt://localhost:1883",
         MQTT_TOPIC_BASE: "GSSIOT/01030369081",
         NODE_ENV: "production",
-        REDIS_URL: "redis://localhost:6379",
       }),
     ).toThrow("REPORT_S3_BUCKET is required");
   });
@@ -171,7 +181,6 @@ describe("loadApiEnv", () => {
         REPORT_S3_BUCKET: "report-bucket",
         REPORT_S3_REGION: "ap-northeast-2",
         REPORT_S3_SECRET_ACCESS_KEY: "secret-key",
-        REDIS_URL: "redis://localhost:6379",
       }),
     ).toThrow("ASSET_S3_BUCKET is required");
   });
@@ -188,7 +197,6 @@ describe("loadApiEnv", () => {
         MQTT_BROKER_URL: "mqtt://localhost:1883",
         MQTT_TOPIC_BASE: "GSSIOT/01030369081",
         NODE_ENV: "development",
-        REDIS_URL: "redis://localhost:6379",
       }),
     ).toThrow("Invalid CORS origin");
   });

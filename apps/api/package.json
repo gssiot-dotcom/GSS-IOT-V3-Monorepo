@@ -2,6 +2,10 @@
   "name": "api",
   "version": "0.0.0",
   "private": true,
+  "files": [
+    "dist",
+    "prisma"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/main.ts",

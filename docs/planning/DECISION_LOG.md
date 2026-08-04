@@ -1371,3 +1371,151 @@ only identity-scoped cache entries and reconnect invalidates the bounded reconci
 Only authorized Blob/Object URL download and multipart media upload lifecycles bypass TanStack
 Query, and neither is persisted. Existing RBAC, scope, API, MQTT, alarm, database and cookie refresh
 contracts do not change; no migration or seed is required.
+
+## DEC-2026-08-04-01 — App EC2, DB EC2 and external MQTT production topology (ACCEPTED)
+
+**Context:** Phase 14 requires reproducible deployment. PostgreSQL will run on a dedicated DB EC2,
+while the MQTT broker already runs continuously on a separately operated physical server. The
+repository's original local Compose still created Redis and Mosquitto even though Redis has no
+runtime consumer and production must only connect to the external broker.
+
+**Decision:** Deploy one App EC2 containing separate API and static Web containers behind host
+Nginx/Certbot. Deploy no database, Redis or MQTT container on App EC2. Bind container ports only to
+loopback, connect the API outbound to private DB EC2 and the external MQTT broker, and expose only
+HTTPS Web/API domains. Sibling domains use host-only API auth cookies, exact Web-origin CORS and
+secure cookie settings. Production private assets and reports use S3.
+
+Build immutable API/Web images in GitHub Actions. Application GitHub Environment values retain the
+exact validated `.env` names. Every release runs verified PostgreSQL backup, forward Prisma
+migration, API/Web switch and public smoke checks; rollback changes application images only and
+retains additive forward schema. Seeds are explicit bootstrap/catalog operations, never an
+automatic release step.
+
+**Consequences:** The API remains the only MQTT client and preserves Phase 8 command correlation,
+strict ACK, numeric payload and outbox behavior; `MQTT_FAKE_ACK` is forbidden in production. The
+external broker must allow the App EC2 egress address, and App EC2 has no inbound MQTT port. Current
+open backup/legal-hold/S3 cleanup/purge decisions keep deletion and sensor retention disabled with
+dry-run-safe defaults. Production infrastructure, restore rehearsal, real S3/MQTT smoke and final
+acceptance remain operational evidence tasks, so Phase 14 is in progress rather than complete.
+
+**Files affected:** API/Web Dockerfiles, production/local Compose, deploy scripts and host configs,
+GitHub workflows, environment validation/examples, deployment runbook and planning state.
+
+## DEC-2026-08-04-02 — Preserve migrations, private scoped assets and Docker Hub delivery (ACCEPTED)
+
+**Context:** Production preparation raised whether old Prisma migrations should be deleted or a new
+migration should be generated on EC2, requested public S3 delivery for company logos and building
+plans, selected Docker Hub for images, and confirmed that the existing physical broker remains at
+`mqtt://gssiot.iptime.org:10200` with unchanged credentials. The building-image and company-logo
+architecture stores both object classes behind authenticated API reads in one asset storage
+boundary. Publicizing that bucket would bypass Company/building scope for plan images and conflict
+with the accepted private-asset architecture.
+
+**Decision:** Preserve all 24 committed forward Prisma migrations unchanged. Production deploys run
+only `prisma migrate deploy`, which applies pending committed history and never creates or squashes
+migrations on EC2. Keep both the shared asset bucket and report bucket private with Block Public
+Access enabled; authenticated API endpoints remain the only delivery boundary. A future public-logo
+requirement must use a separately approved public-delivery bucket or CloudFront design and must not
+include building plans.
+
+Publish immutable API/Web images to private Docker Hub repositories using separate GitHub push and
+EC2 read-only tokens. Store `MQTT_BROKER_URL=mqtt://gssiot.iptime.org:10200` as a GitHub Environment
+variable and preserve the existing username/password as secrets. App EC2 runs no broker and opens
+no inbound MQTT port.
+
+**Consequences:** No Prisma folder, migration SQL, schema or seed is changed. Existing production
+data can be upgraded deterministically and `_prisma_migrations` remains auditable. Scoped building
+plans cannot be fetched as anonymous S3 objects. Plaintext `mqtt://` traffic continues because the
+external broker endpoint is unchanged, so a TLS broker endpoint remains separate infrastructure
+hardening rather than an unreviewed application-side substitution. The operator setup guide now
+defines AWS, private S3, Docker Hub and GitHub Environment preparation without embedding secrets.
+
+**Files affected:** Docker image workflows, deployment environment examples/runbook/setup guide and
+planning state.
+
+## DEC-2026-08-04-03 — Mixed Docker Hub image visibility (ACCEPTED)
+
+**Context:** The selected Docker Hub namespace is `gssiot2026`. The account can keep the API
+repository private but has reached its private-repository limit, so the Web repository was created
+as public. The production workflow already derives `gssiot2026/gss-iot-v3-api` and
+`gssiot2026/gss-iot-v3-web` from a namespace-only variable.
+
+**Decision:** Keep `gssiot2026/gss-iot-v3-api` private and allow
+`gssiot2026/gss-iot-v3-web` to be public. Set `DOCKERHUB_USERNAME=gssiot2026`. Continue using a
+read/write push token in GitHub and a read-only EC2 token because the API pull requires
+authentication. Do not place application secrets, API runtime env or credentials in Web build
+arguments; only the public API base URL and CSRF cookie name are embedded in the browser bundle.
+
+**Consequences:** No workflow, Dockerfile, application, database, migration or seed change is
+required. Public users can pull the same static Web/Nginx image whose JavaScript is already delivered
+to browsers, while the NestJS API image and all runtime secrets remain private. If server-only data
+is ever added to the Web image build context or arguments, public visibility must be reassessed
+before publishing.
+
+**Files affected:** Deployment runbook/setup guide and planning state.
+
+## DEC-2026-08-04-04 — V3 production Web and API hostnames (ACCEPTED)
+
+**Context:** The existing `api.infogssiot.com` hostname must continue serving the legacy API while
+the V3 App EC2 is introduced. The App EC2 Elastic IP is `13.209.142.179`, and replacing the legacy
+API DNS record would cause an avoidable cutover outage.
+
+**Decision:** Serve the V3 Web application at `https://infogssiot.com` and the V3 API plus
+Socket.IO endpoint at `https://apiv3.infogssiot.com`. Preserve `api.infogssiot.com` unchanged and
+outside the V3 deployment. Use `CORS_ALLOWED_ORIGINS=https://infogssiot.com`,
+`VITE_API_BASE_URL=https://apiv3.infogssiot.com`, omit `AUTH_COOKIE_DOMAIN`, and issue one Certbot
+certificate covering only the two V3 names. The existing `/auth/csrf` response-body token supports
+double-submit CSRF without making the readable CSRF cookie available to the Web hostname.
+
+**Consequences:** The new deployment does not require a coordinated legacy API DNS cutover. Nginx,
+GitHub Environment values, public smoke URLs and Socket.IO all use the same explicit V3 hostname
+contract. Access, refresh and CSRF cookies remain host-only to `apiv3.infogssiot.com` and are not
+sent to the legacy API. The production env renderer rejects an explicit `AUTH_COOKIE_DOMAIN`. TLS
+must not be requested until both V3 names resolve consistently from the authoritative DNS servers.
+
+**Files affected:** Production env examples, deployment runbook/setup guide and planning state.
+
+## DEC-2026-08-04-05 — No-public-IP DB EC2 with temporary maintenance IPv4 (ACCEPTED)
+
+**Context:** The default VPC does not currently provide a private-subnet NAT path, and a permanent
+NAT Gateway adds an ongoing cost. PostgreSQL installation and later operating-system maintenance
+still require bounded outbound package access. A temporary public IPv4 can provide that access only
+while the instance is in a subnet whose route table reaches an Internet Gateway.
+
+**Decision:** Launch DB EC2 in the existing `ap-northeast-2c` default/public-route subnet with
+`Auto-assign public IP` disabled. Attach only `gss-db-sg`; its inbound SSH `22` and PostgreSQL
+`5432` rules reference `gss-app-sg`, with no Internet CIDR rule. Enable a temporary public IPv4 on
+the primary network interface only during reviewed installation or maintenance windows, use it for
+outbound package access rather than direct operator SSH, then disable the assignment immediately.
+Operators continue to SSH through App EC2 to the DB private IP. The initial DB launch received an
+auto-assigned public IPv4 from the default subnet; it is accepted only for the current installation
+window and must be removed after connectivity verification.
+
+**Consequences:** DB EC2 normally has no public IPv4 address and cannot initiate Internet access,
+while App-to-DB traffic remains private inside the VPC. Maintenance requires an explicit temporary
+public-IP enable/update/disable procedure and cannot be silently automated as continuous Internet egress.
+Security-group isolation remains mandatory even during the temporary EIP window. A future NAT
+Gateway/private-subnet migration may replace this cost-aware baseline without changing the
+application `DATABASE_URL`, provided the DB private address/endpoint contract is migrated safely.
+
+**Files affected:** Deployment runbook/setup guide and planning state; no application, schema,
+migration or seed change.
+
+## DEC-2026-08-04-06 — Eight-character super-admin password compatibility floor (ACCEPTED)
+
+**Context:** The operator explicitly requires preserving the selected production bootstrap
+super-admin password. Its length satisfies an eight-character floor but not the previous
+twelve-character startup validation, which blocks unit tests and would prevent the production API
+from starting even though the secret is supplied through the protected GitHub Environment.
+
+**Decision:** Lower only `GSS_SUPER_ADMIN_PASSWORD` startup validation from 12 to 8 characters and
+add an exact boundary test. Keep the separate JWT 32-character requirements, secure cookie posture,
+GitHub Environment secret handling and all authentication/RBAC behavior unchanged. Do not record
+the password value in source or documentation.
+
+**Consequences:** The operator-selected bootstrap credential is deployment-compatible, but the
+minimum password-strength posture is weaker. Rotation to a longer unique credential remains the
+recommended operational hardening step after the initial deployment. No schema, migration or seed
+shape changes are introduced.
+
+**Files affected:** Shared environment validation/tests and planning state.

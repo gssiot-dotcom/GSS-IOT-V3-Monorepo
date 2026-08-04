@@ -2,7 +2,7 @@ import type { AuthSession } from "@gss-iot/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { apiRequest } from "../shared/api/api-client";
-import { authSessionExpiredEvent } from "../shared/auth/auth-api";
+import { authSessionExpiredEvent, ensureCsrfToken } from "../shared/auth/auth-api";
 
 vi.mock("../app/env", () => ({
   readWebEnv: () => ({ apiBaseUrl: "http://api.test", csrfCookieName: "gss_csrf" }),
@@ -92,5 +92,24 @@ describe("cookie API authentication", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(expired).toHaveBeenCalledTimes(1);
     window.removeEventListener(authSessionExpiredEvent, expired);
+  });
+
+  it("bootstraps CSRF from the API response when the cookie is host-only", async () => {
+    document.cookie = "gss_csrf=; Max-Age=0; Path=/";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ csrfToken: "host-only-api-csrf" }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(ensureCsrfToken()).resolves.toBe("host-only-api-csrf");
+    expect(fetchMock).toHaveBeenCalledWith("http://api.test/auth/csrf", {
+      credentials: "include",
+      headers: { "accept-language": "en-US" },
+    });
+
+    document.cookie = "gss_csrf=test-csrf-token; Path=/; SameSite=Lax";
   });
 });

@@ -4,7 +4,11 @@
 
 `PHASE_13_COMPLETE`
 
-`PRE_PHASE_14_REFACTOR_COMPLETE` as of 2026-07-22. `PHASE_14_NOT_STARTED` remains unchanged.
+`PRE_PHASE_14_REFACTOR_COMPLETE` as of 2026-07-22.
+
+`PHASE_14_IN_PROGRESS_DEPLOYMENT_BASELINE_COMPLETE` as of 2026-08-04. Production infrastructure
+acceptance, legacy-data migration, approved destructive retention/purge enablement and live provider
+verification remain pending.
 
 ## Last completed milestone
 
@@ -601,3 +605,125 @@ Final verification for this correction:
   1280×800 and 390×844.
 - Task-changed files pass Prettier and `git diff --check`. No production deployment, commit, push,
   pull request, offline notification, firmware or Phase 14 work was performed.
+
+## 2026-08-04 Phase 14 App EC2 + DB EC2 deployment baseline
+
+Phase 14 has started with a bounded deployment-readiness slice. Production now has separate API and
+Web Dockerfiles, an App-EC2-only Compose manifest, loopback container bindings, host Nginx and
+Certbot topology, immutable Docker Hub image publishing, protected staging/production deployment,
+migration-before-start, verified pre-deploy PostgreSQL backup, public health/CSRF/Web smoke checks,
+application image rollback and isolated restore-rehearsal tooling.
+
+The deployment topology is App EC2 plus a private DB EC2 and the already-operated external physical
+MQTT broker. No PostgreSQL, Redis or MQTT container is included on App EC2. The API remains the MQTT
+client and preserves the exact Phase 8 `requestId`, numeric wire payload, durable outbox and strict
+ACK behavior. Its broker endpoint remains `mqtt://gssiot.iptime.org:10200`; the existing username,
+password and topic contract are unchanged. GitHub Environment application values use the exact
+validated `.env` keys; SSH/Docker Hub deployment credentials remain separate. Production rendering enforces S3, secure cookies,
+`MQTT_ENABLED=true`, `MQTT_FAKE_ACK=false`, `DELETION_WORKER_ENABLED=false`,
+`SENSOR_RETENTION_ENABLED=false` and `SENSOR_RETENTION_DRY_RUN=true`.
+
+Local infrastructure now starts only PostgreSQL because Redis has no runtime consumer and local
+Mosquitto contradicts the approved external-broker topology. Stale template env files and generated
+browser/log artifacts are excluded from source and Docker contexts; the mandatory legacy node-type
+assets and `reference/source-materials` remain preserved. No Prisma migration, seed execution,
+production deployment, credential provisioning or live broker/S3/database acceptance is claimed by
+this repository slice.
+
+Repository verification passes frozen install, Prisma generate/validate, lint, typecheck, the
+1,040-key i18n audit, 53 unit/component/deployment files with 228 tests, production build, 10 API
+E2E files with 93 PostgreSQL-backed tests and the four-test Playwright bootstrap smoke. All 24 E2E
+migrations are applied with none pending. Production Compose config, Bash syntax, the 57-key raw env
+renderer/schema integration and a clean PNPM deploy/Prisma runtime packaging probe pass. Docker
+Desktop was not running locally, so the actual Linux image build is delegated to the new mandatory
+CI container-build gate and is not falsely claimed as local evidence.
+
+The production preparation clarification preserves all 24 committed migration directories and
+documents `prisma migrate deploy` as the only EC2 schema command. EC2 does not generate migrations.
+The asset and report S3 buckets remain private: company logos and scope-protected building plans
+currently share the authenticated asset boundary, so making the bucket public would bypass the
+accepted Company/building authorization model. Docker image delivery targets private
+`gssiot2026/gss-iot-v3-api` and public `gssiot2026/gss-iot-v3-web` repositories with separate
+push/read tokens. The public Web image contains only Nginx and the static browser bundle; API runtime
+code and secrets remain private. The step-by-step infrastructure guide records the AWS, S3, Docker
+Hub, DNS/Certbot and GitHub Environment setup; the original repository slice did not itself create
+cloud resources or credentials.
+
+Operational provisioning has now started in `ap-northeast-2`. App EC2
+`i-01b813d151385f76d` is running as `t3.medium` with Elastic IP `13.209.142.179`; SSH, Nginx,
+Docker Engine 29.7.1, Docker Compose 5.4.0 and a test container have been verified. Hostinger DNS
+is configured for the apex Web name and `apiv3.infogssiot.com`, while the legacy
+`api.infogssiot.com` record remains unchanged. Both Hostinger authoritative nameservers now resolve
+the V3 names to the Elastic IP. The final Nginx vhosts are active, Certbot issued one ECDSA
+certificate for `infogssiot.com` plus `apiv3.infogssiot.com`, and the renewal dry-run succeeded.
+External checks confirm HTTP `301` redirects, trusted TLS and the expected HTTPS `502` while the
+API/Web containers are not yet deployed. V3 auth cookies are host-only to the
+`apiv3.infogssiot.com` API; the renderer rejects a shared `AUTH_COOKIE_DOMAIN` so credentials are
+not sent to the preserved legacy API hostname. DB EC2 PostgreSQL provisioning, private App-to-DB
+acceptance and public-IPv4 removal are complete. The private versioned asset/report S3 buckets are
+created with Block Public Access enabled; IAM credentials, GitHub Environment configuration, image
+publication and application deployment are not yet complete.
+
+Focused hostname/cookie verification passes the two-case production env renderer test, the four-case
+Web cookie/CSRF test, all nine config environment tests, repository lint, monorepo typecheck,
+task-file Prettier and `git diff --check`.
+
+TLS operational evidence records certificate expiry at `2026-11-02 06:40:49 UTC`, successful
+Certbot renewal simulation, public resolution to `13.209.142.179`, and preservation of the legacy
+`api.infogssiot.com` address at `13.209.7.74`.
+
+DB networking uses the accepted cost-aware baseline: launch in the existing `ap-northeast-2c`
+default/public-route subnet with automatic public IPv4 disabled and only `gss-db-sg`. A temporary
+public IPv4 is allowed solely for outbound package installation and reviewed maintenance, after
+which it is disabled. Operator SSH remains through App EC2 to the DB private IP; DB `22` and `5432`
+are never opened to an Internet CIDR.
+
+DB EC2 `i-08b36ea98ccd64956` is running as `t3.medium` in subnet
+`subnet-0851ebafe2486f95d`, Availability Zone `ap-northeast-2c`, with private IP
+`172.31.37.205`, required IMDSv2 and the approved key pair. PostgreSQL 16.14 is active after package
+upgrade/reboot and reports `Etc/UTC`. PostgreSQL now accepts only the approved TLS/SCRAM application
+path for database `gss_iot_v3` and role `gss_app`; direct DB-host and App-EC2 tests both returned
+`gss_app|gss_iot_v3|Etc/UTC|true` over `sslmode=require`, with the App using private DB address
+`172.31.37.205:5432`. The default subnet-assigned temporary public IPv4 `3.39.11.24` was removed
+after the private connectivity check.
+
+Private production buckets `gss-iot-v3-prod-assets-796973490873` and
+`gss-iot-v3-prod-reports-796973490873` are now provisioned in `ap-northeast-2` with ACLs disabled,
+all S3 Block Public Access controls enabled, versioning enabled and default SSE-S3 encryption.
+The production env example now names those deployed buckets. Separate least-privilege asset/report
+runtime identities and access keys plus separate Docker Hub CI push/App read tokens have been
+created; transfer into the protected GitHub Environment and live S3 verification remain pending.
+The Windows operator flow now includes a redaction-safe GitHub Environment configurator that
+requires repository `ADMIN`, verifies the recorded App EC2 ED25519 fingerprint, reads ignored local
+credentials, prompts securely for the production database password and leaves the local development
+`DATABASE_URL` unchanged.
+
+The operator successfully applied the configurator to the GitHub `production` Environment. It
+created or updated all 14 deployment secrets and the exact workflow variables without logging
+secret values. Immutable image publication and the first App EC2 deployment remain pending.
+
+The operator-required production bootstrap credential exposed a previous 12-character validation
+conflict during the final release gate. `GSS_SUPER_ADMIN_PASSWORD` now has an explicitly accepted
+eight-character minimum with boundary coverage; JWT secrets retain their separate 32-character
+minimums. No credential value is recorded in source or planning documentation.
+
+The same release gate exposed nondeterministic repeated `prisma migrate deploy` calls from isolated
+Vitest E2E setup workers. E2E migration now runs once in Vitest global setup before the serial suite
+files; per-file setup retains only the guarded schema reset. This changes test orchestration only,
+not production migration order or application behavior.
+
+Final pre-commit release evidence passes frozen install, lint, typecheck, production build, all 53
+unit/component files with 228 tests, both deployment renderer tests and all 93 PostgreSQL-backed API
+E2E assertions. The first post-harness E2E run passed 92/93 and hit one local-load Prisma
+interactive-transaction timeout; the complete RBAC file then passed 17/17 in isolation. Added-line
+secret scanning confirms no ignored AWS, Docker, JWT, MQTT password or bootstrap credential was
+introduced into the release diff.
+
+Verification for this clarification passes frozen install, lint, typecheck, the 1,040-key i18n
+audit, targeted deployment-file Prettier, raw production env renderer tests, production Compose
+config, 53 unit/component/deployment files with 228 tests, production build and 10 API E2E files
+with 93 PostgreSQL-backed tests. Prisma reports all 24 committed migrations applied with none
+pending in both the E2E and local development schemas. `git diff --check` passes with Windows
+line-ending warnings only. Repository-wide `pnpm format:check` still reports 117 pre-existing,
+task-unrelated files; they were not bulk-reformatted as part of this deployment slice. Phase 14
+remains in progress until real cloud/provider acceptance is recorded.
