@@ -70,6 +70,14 @@ export class SecurityOfficeAlarmService implements OnModuleInit, OnModuleDestroy
   private readonly logger = new Logger(SecurityOfficeAlarmService.name);
   private readonly inFlight = new Map<string, Promise<void>>();
   private readonly dirtyAreas = new Set<string>();
+  /**
+   * Start of each Area's current continuous alarm episode as observed by this API instance. It is
+   * not persisted: after a restart an episode that has not woken its office gateway yet waits the
+   * full activation delay again (DEC-2026-11-25-01).
+   */
+  private readonly alarmSince = new Map<string, Date>();
+  private readonly activationTimers = new Map<string, NodeJS.Timeout>();
+  private activationDelayMs = 0;
   private sweeping = false;
   private timer?: NodeJS.Timeout;
 
@@ -82,6 +90,7 @@ export class SecurityOfficeAlarmService implements OnModuleInit, OnModuleDestroy
 
   onModuleInit(): void {
     const env = loadApiEnv();
+    this.activationDelayMs = env.SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS;
     if (!env.SECURITY_OFFICE_ALARM_SWEEP_ENABLED) return;
     this.timer = setInterval(() => {
       void this.sweep().catch((error: unknown) => {
@@ -93,6 +102,8 @@ export class SecurityOfficeAlarmService implements OnModuleInit, OnModuleDestroy
 
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
+    for (const timer of this.activationTimers.values()) clearTimeout(timer);
+    this.activationTimers.clear();
   }
 
   /** Fire-and-forget request; concurrent requests for one area collapse into one rerun. */
@@ -170,14 +181,22 @@ export class SecurityOfficeAlarmService implements OnModuleInit, OnModuleDestroy
       where: officeGatewayWhere(areaId),
     });
     if (officeGateways.length === 0) {
+      this.endAlarmEpisode(areaId);
       return { areaId, desired: null, gateways: [] };
     }
 
     const desired = await this.computeAreaState(areaId);
+    const alarmSince = this.trackAlarmEpisode(areaId, desired, now);
     const gateways: SecurityOfficeAreaSyncResult["gateways"] = [];
     for (const gateway of officeGateways) {
       try {
-        const result = await this.commands.applySecurityOfficeAlarmState(gateway.id, desired, now);
+        const result = await this.commands.applySecurityOfficeAlarmState(gateway.id, desired, now, {
+          activationDelayMs: this.activationDelayMs,
+          alarmSince,
+        });
+        if (result.decision.reason === "activation-delay") {
+          this.scheduleActivationSync(areaId, result.decision.sendAt, now);
+        }
         if (result.commandId) {
           this.logger.log(
             `Security-office cmd 3 queued gateway=${gateway.serialNumber} areaId=${areaId} reason=${result.decision.reason} alarmActive=${desired.alarmActive} alertLevel=${desired.alertLevel} commandId=${result.commandId}`,
@@ -277,6 +296,44 @@ export class SecurityOfficeAlarmService implements OnModuleInit, OnModuleDestroy
         .filter((state) => !disabledKeys.has(alarmIntentKey(state)))
         .map((state) => state.severity),
     );
+  }
+
+  private trackAlarmEpisode(
+    areaId: string,
+    desired: SecurityOfficeAlarmState,
+    now: Date,
+  ): Date | null {
+    if (!desired.alarmActive) {
+      this.endAlarmEpisode(areaId);
+      return null;
+    }
+    const since = this.alarmSince.get(areaId) ?? now;
+    this.alarmSince.set(areaId, since);
+    return since;
+  }
+
+  private endAlarmEpisode(areaId: string): void {
+    this.alarmSince.delete(areaId);
+    const timer = this.activationTimers.get(areaId);
+    if (timer) clearTimeout(timer);
+    this.activationTimers.delete(areaId);
+  }
+
+  /**
+   * Re-syncs the Area when a delayed activation becomes due. Door nodes report only on change, so
+   * no further reading may arrive to trigger the activation; the 30 s sweep is the fallback.
+   */
+  private scheduleActivationSync(areaId: string, sendAt: Date, now: Date): void {
+    if (this.activationTimers.has(areaId)) return;
+    const timer = setTimeout(
+      () => {
+        this.activationTimers.delete(areaId);
+        this.requestAreaSync(areaId);
+      },
+      Math.max(0, sendAt.getTime() - now.getTime()),
+    );
+    timer.unref?.();
+    this.activationTimers.set(areaId, timer);
   }
 
   private async pendingCommandId(gatewayId: string): Promise<string | null> {

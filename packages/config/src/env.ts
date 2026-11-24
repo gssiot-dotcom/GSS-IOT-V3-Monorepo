@@ -97,6 +97,12 @@ const rawApiEnvSchema = z
     REPORT_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
     REPORT_WORKER_ENABLED: optionalBooleanStringSchema,
     REPORT_WORKER_INTERVAL_MS: z.coerce.number().int().min(1_000).default(30_000),
+    SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(300_000)
+      .default(20_000),
     SECURITY_OFFICE_ALARM_SWEEP_ENABLED: optionalBooleanStringSchema,
     SECURITY_OFFICE_ALARM_SWEEP_INTERVAL_MS: z.coerce
       .number()

@@ -16,6 +16,10 @@ Phase 12 notifications and alarm operations UI is `PHASE_12_COMPLETE` as of 2026
 
 ## Current repository status
 
+- 2026-11-25 security-office activation delay: an idle office gateway is woken only after its Area
+  has been alarming for `SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS` (default 20 s). A site alarm
+  that clears within the delay never reaches the office; escalation and clear of a ringing office
+  gateway stay immediate. See DEC-2026-11-25-01. No migration or seed change.
 - 2026-11-24 security-office gateway linkage: `SECURITY_OFFICE_GATEWAY` devices now mirror the
   highest caution/warning/danger state of every eligible node in their construction site (Area)
   through system-originated cmd 3 commands (levels 1/2/3, clear = `alarmActive=false`,
@@ -131,7 +135,8 @@ Phase 12 notifications and alarm operations UI is `PHASE_12_COMPLETE` as of 2026
 ## Open decisions
 
 - Security-office gateway: whether the device reports its local button press over MQTT, and live
-  cmd 3 payload/ACK verification on a real office gateway.
+  verification of escalation and the local button on a real office gateway (activation, clear and
+  ACK were verified live on 2026-11-25).
 - Exact SMS/Telegram/email/web-push providers, credentials and SLA rules for real external delivery.
 - Production hosting and storage provider; production S3 execution and deployment acceptance are deferred to Phase 14.
 - Physical SensorReading purge job, PostgreSQL partition interval and archival implementation after the Phase 6 default 180-day retention target; deferred to Phase 14.
@@ -790,3 +795,22 @@ advisory only), task-file Prettier and `git diff --check` pass. The new PostgreS
 `apps/api/test/e2e/security-office-alarm.e2e-spec.ts` was not run locally because no local
 database was started; it is delegated to the CI `api-e2e` job and must pass before this slice is
 considered verified. Live office-gateway hardware acceptance is pending.
+
+## 2026-11-25 security-office activation delay
+
+Live check before the change (production API, MQTT broker log, 2026-11-25 01:29–02:43 KST): with
+door node `236` on node gateway `0020`, later `0040`, and `0030` registered as the Area's
+`SECURITY_OFFICE_GATEWAY`, every door-open reading produced a system cmd 3
+`{alarmActive: true, alertLevel: 3}` to `GRM22JU22P0030` within the same second, and every
+door-close produced `{alarmActive: false, alertLevel: 0}`. The device answered each with
+`resp: success` and the office buzzer sounded together with the site gateway. The product owner
+then asked for a 20-second delay (DEC-2026-11-25-01).
+
+Local verification on 2026-11-25 (Node 22.23.5 portable, pnpm 9.15.9, PostgreSQL 16 portable):
+`pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test` (contracts 5,
+config 11, UI 14, API 87 including the new activation-delay suite, Web 127, deployment renderer),
+`pnpm build`, task-file Prettier and `git diff --check` pass. The PostgreSQL-backed
+`pnpm --filter api test:e2e` was run locally against PostgreSQL 16; the security-office suite now
+runs with a 1-second delay so every activation in it goes through the scheduled re-sync, and it
+fails when that re-sync is removed. Production acceptance of the 20-second delay on a real office
+gateway is pending deployment.

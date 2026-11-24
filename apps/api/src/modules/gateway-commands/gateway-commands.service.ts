@@ -31,6 +31,7 @@ import {
 import type {
   SecurityOfficeAlarmState,
   SecurityOfficeDecision,
+  SecurityOfficeTiming,
 } from "../security-office-alarm/security-office-alarm.policy";
 import type {
   ListGatewayCommandsQueryDto,
@@ -1193,6 +1194,7 @@ export class GatewayCommandsService {
     gatewayId: string,
     desired: SecurityOfficeAlarmState,
     now: Date = new Date(),
+    timing: SecurityOfficeTiming = {},
   ): Promise<{ commandId: string | null; decision: SecurityOfficeDecision }> {
     return this.prisma.$transaction(async (tx) => {
       await this.lockGateway(gatewayId, tx);
@@ -1206,6 +1208,7 @@ export class GatewayCommandsService {
         desired,
         last && lastState ? { ...lastState, status: last.status, updatedAt: last.updatedAt } : null,
         now,
+        timing,
       );
       if (decision.kind === "none") {
         return { commandId: null, decision };

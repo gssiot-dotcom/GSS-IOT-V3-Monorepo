@@ -48,6 +48,7 @@ const definitions = [
   ["NODE_OFFLINE_SWEEP_INTERVAL_MS", { defaultValue: "10000" }],
   ["SECURITY_OFFICE_ALARM_SWEEP_ENABLED", { defaultValue: "true" }],
   ["SECURITY_OFFICE_ALARM_SWEEP_INTERVAL_MS", { defaultValue: "30000" }],
+  ["SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS", { defaultValue: "20000" }],
   ["JWT_ACCESS_SECRET", { required: true }],
   ["JWT_REFRESH_SECRET", { required: true }],
   ["JWT_ACCESS_EXPIRES_IN", { defaultValue: "900" }],

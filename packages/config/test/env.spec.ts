@@ -40,6 +40,17 @@ describe("loadApiEnv", () => {
     expect(() =>
       loadApiEnv({ ...base, SECURITY_OFFICE_ALARM_SWEEP_INTERVAL_MS: "1000" }),
     ).toThrow();
+    expect(loadApiEnv(base).SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS).toBe(20_000);
+    expect(
+      loadApiEnv({ ...base, SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS: "0" })
+        .SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS,
+    ).toBe(0);
+    expect(() =>
+      loadApiEnv({ ...base, SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS: "-1" }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnv({ ...base, SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS: "300001" }),
+    ).toThrow();
   });
 
   it("validates required infrastructure configuration", () => {

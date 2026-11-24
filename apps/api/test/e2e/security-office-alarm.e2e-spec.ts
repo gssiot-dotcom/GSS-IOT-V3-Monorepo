@@ -23,9 +23,14 @@ describe("security-office gateway alarm linkage e2e", () => {
   let otherAreaOfficeGatewayId: string;
   let doorNodeId: string;
   let messageSequence = 0;
+  let previousActivationDelay: string | undefined;
   const base = process.env.MQTT_TOPIC_BASE ?? "GSSIOT/test";
+  // Short activation delay so every activation goes through the delayed wake-up path.
+  const ACTIVATION_DELAY_MS = 1_000;
 
   beforeAll(async () => {
+    previousActivationDelay = process.env.SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS;
+    process.env.SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS = String(ACTIVATION_DELAY_MS);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     configureApiApp(app, loadApiEnv());
@@ -39,6 +44,11 @@ describe("security-office gateway alarm linkage e2e", () => {
   afterAll(async () => {
     await securityOffice?.whenIdle();
     await app?.close();
+    if (previousActivationDelay === undefined) {
+      delete process.env.SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS;
+    } else {
+      process.env.SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS = previousActivationDelay;
+    }
   });
 
   beforeEach(async () => {
@@ -46,6 +56,8 @@ describe("security-office gateway alarm linkage e2e", () => {
     await prisma.gatewayAlarmLevelApplication.deleteMany();
     await prisma.latestNodeState.deleteMany();
     await prisma.gatewayCommand.deleteMany();
+    // Ends the in-memory alarm episode and pending activation left by the previous test.
+    await securityOffice.syncArea(siteAreaId);
   });
 
   it("rings the office gateway of the same site once and clears it when the site is safe", async () => {
@@ -113,6 +125,37 @@ describe("security-office gateway alarm linkage e2e", () => {
     await sendDoor(1);
     await settle();
     expect(await officeCommands()).toHaveLength(0);
+    // The activation delay alone would also keep the office quiet here; prove the node is excluded.
+    const result = await securityOffice.syncArea(siteAreaId);
+    expect(result.desired).toEqual({ alarmActive: false, alertLevel: 0 });
+  });
+
+  it("wakes the office gateway only after the site has alarmed for the activation delay", async () => {
+    const openedAt = Date.now();
+    await sendDoor(1);
+    await securityOffice.whenIdle();
+    expect(await officeCommands()).toHaveLength(0);
+
+    // Door nodes report only on change, so the scheduled re-sync must wake the office by itself.
+    const [activation] = await waitForOfficeCommands(1);
+    expect(activation!.createdAt.getTime() - openedAt).toBeGreaterThanOrEqual(ACTIVATION_DELAY_MS);
+    expect(activation!.payload).toMatchObject({ alarmActive: true, alertLevel: 3 });
+  });
+
+  it("does not wake the office gateway when the site recovers within the activation delay", async () => {
+    await sendDoor(1);
+    await sendDoor(0);
+    await new Promise((resolve) => setTimeout(resolve, ACTIVATION_DELAY_MS + 250));
+    await securityOffice.whenIdle();
+    expect(await officeCommands()).toHaveLength(0);
+
+    // The next opening starts a fresh delay instead of reusing the recovered episode.
+    const reopenedAt = Date.now();
+    await sendDoor(1);
+    const [activation] = await waitForOfficeCommands(1);
+    expect(activation!.createdAt.getTime() - reopenedAt).toBeGreaterThanOrEqual(
+      ACTIVATION_DELAY_MS,
+    );
   });
 
   it("keeps ringing while the alarming node is offline instead of treating silence as safe", async () => {

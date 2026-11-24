@@ -297,12 +297,27 @@
 - [x] Request a coalesced Area sync after each accepted reading and add the
       `SECURITY_OFFICE_ALARM_SWEEP_*` reconciliation sweep with env/renderer/workflow defaults.
 - [x] Add decision unit coverage and pass lint, typecheck, workspace unit tests and build locally.
-- [ ] Pass `apps/api/test/e2e/security-office-alarm.e2e-spec.ts` and the full API E2E suite in CI.
-- [ ] Verify cmd 3 activation, escalation, clear and ACK on a real office gateway, including the
-      local button behavior.
+- [x] Pass `apps/api/test/e2e/security-office-alarm.e2e-spec.ts` and the full API E2E suite in CI
+      (`api-e2e` passed for `4e5e9aa`; that run's `web-smoke` failure is unrelated).
+- [x] Verify cmd 3 activation, clear and ACK on a real office gateway (2026-11-25, `0030`).
+- [ ] Verify cmd 3 escalation and the local button behavior on a real office gateway.
 - [ ] Decide whether the office device reports its button press over MQTT (`OPEN_DECISION`).
 - [ ] Exclude `SECURITY_OFFICE_GATEWAY` from building alarm-level cmd 4 fan-out and node
       provisioning selectors (separate follow-up).
+
+## 2026-11-25 security-office activation delay
+
+- [x] Confirm with the product owner: office gateways sound 20 s after the site alarm starts, by
+      default for every office gateway, and not at all when the site recovers within 20 s.
+- [x] Add `SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS` (default 20 000) with env, renderer,
+      workflow and GitHub environment defaults.
+- [x] Delay only idle-office activation in the decision policy; keep escalation, clear and
+      re-delivery immediate; schedule a per-Area re-sync when the activation is due.
+- [x] Add decision unit coverage and delayed-activation E2E coverage; pass lint, typecheck,
+      workspace unit tests, build and the API E2E suite locally.
+- [ ] Pass the API E2E suite in CI.
+- [ ] Deploy and verify on a real office gateway that it sounds 20 s after the site gateway and stays
+      silent for a door opened for less than 20 s.
 
 ## Deferred
 
