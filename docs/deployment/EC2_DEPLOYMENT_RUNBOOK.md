@@ -72,7 +72,9 @@ Variables:
   `ASSET_S3_FORCE_PATH_STYLE`
 - `REPORT_S3_ENDPOINT`, `REPORT_S3_REGION`, `REPORT_S3_BUCKET`,
   `REPORT_S3_FORCE_PATH_STYLE` and all `REPORT_*` worker/cleanup values
-- all `NODE_OFFLINE_*`, `DELETION_WORKER_*` and `SENSOR_RETENTION_*` values
+- all `NODE_OFFLINE_*`, `SECURITY_OFFICE_ALARM_SWEEP_*`, `DELETION_WORKER_*` and
+  `SENSOR_RETENTION_*` values (the security-office sweep defaults to enabled every 30 seconds
+  when the variables are absent)
 - `VITE_API_BASE_URL`, `VITE_AUTH_CSRF_COOKIE_NAME`
 
 Deployment-control credentials are not application env values: `APP_EC2_HOST`, `APP_EC2_USER`,

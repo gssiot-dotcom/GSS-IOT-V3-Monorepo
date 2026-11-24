@@ -30,6 +30,7 @@ import { MqttPayloadParserService } from "../mqtt/mqtt-payload-parser.service";
 import type { ParsedSensorMessage } from "../mqtt/mqtt-payload-parser.service";
 import { MqttTopicService } from "../mqtt/mqtt-topic.service";
 import { PermissionResolverService } from "../rbac/permission-resolver.service";
+import { SecurityOfficeAlarmService } from "../security-office-alarm/security-office-alarm.service";
 import { mapLatestState, mapSensorReading, toPrismaStatus } from "./monitoring-mappers";
 import { MonitoringRealtimeService } from "./monitoring-realtime.service";
 
@@ -111,6 +112,8 @@ export class MonitoringService implements OnModuleInit {
     @Inject(AlarmDomainEventsService)
     private readonly alarmEvents: AlarmDomainEventsService,
     @Inject(MonitoringRealtimeService) private readonly realtime: MonitoringRealtimeService,
+    @Inject(SecurityOfficeAlarmService)
+    private readonly securityOfficeAlarm: SecurityOfficeAlarmService,
   ) {}
 
   onModuleInit(): void {
@@ -459,6 +462,7 @@ export class MonitoringService implements OnModuleInit {
         const mapped = mapLatestState(result.state);
         this.realtime.emitNodeState(mapped);
         result.alarmEvents.forEach((event) => this.alarmEvents.emitPolicyTriggered(event));
+        this.securityOfficeAlarm.requestAreaSync(context.areaId);
         return { deduplicated: false, ignored: false, state: mapped };
       } catch (error) {
         if (this.isSensorDedupeError(error)) {

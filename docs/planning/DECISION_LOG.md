@@ -1572,3 +1572,49 @@ remaining performance/observability acceptance. The Docker Hub read-token replac
 an operational hardening follow-up.
 
 **Files affected:** API package/image payload and planning state.
+
+## DEC-2026-11-24-01 — Security-office gateway mirrors its construction-site alarm state (ACCEPTED)
+
+**Context:** Operators register `SECURITY_OFFICE_GATEWAY` devices (경비실 게이트웨이) expecting
+them to sound together with the site gateways. V3 only exposed a manual
+`POST /admin/gateway-commands/wake-security` cmd 3 endpoint; nothing linked node alarms to the
+office device. The legacy V2 reference also only had manual wake-up endpoints (one variant looked
+up office gateways in the same building), so the linkage rule was not defined in any source of
+truth and was confirmed with the product owner on 2026-11-24.
+
+**Decision:**
+
+- Scope: an office gateway reacts to every node in the construction site (Area) that contains the
+  building it is actively assigned to.
+- Trigger: immediate, matching the site gateway firmware rather than the occurrence-count policy.
+  A node contributes when it is actively assigned through an active gateway in that area, is not
+  fault filtered, its gateway + building + node-type alarm intent
+  (`GatewayAlarmLevelApplication.desiredEnabled`) is not disabled, and it is classified
+  caution/warning/danger. OFFLINE nodes keep their last classified severity; silence is not
+  evidence of safety.
+- Payload: cmd 3 `{ alarmActive: true, alertLevel }` with caution=1, warning=2, danger=3 using the
+  highest contributing severity; `{ alarmActive: false, alertLevel: 0 }` once nothing contributes.
+- Transitions only: publish on inactive→active, on escalation and on active→inactive. Repeated
+  readings and de-escalation inside one alarm episode do not re-publish, so the physical button on
+  the office device can silence it locally without being overridden. A FAILED/EXPIRED identical
+  state is re-sent after 60 seconds; a changed state supersedes (CANCELLED, reason recorded) any
+  still-active cmd 3 for that gateway inside the same gateway-locked transaction.
+- Commands are system-originated `GatewayCommand` rows (`requesterType = SYSTEM`) through the
+  existing outbox, requestId and audit path. Accepted readings request a coalesced per-area sync
+  after their monitoring transaction commits; `SECURITY_OFFICE_ALARM_SWEEP_*` (default enabled,
+  30 s) reconciles configuration/assignment changes and crash gaps from persisted state.
+
+**Consequences:** No schema migration or seed change. The Phase 11 invariant that occurrence
+evaluation itself creates no GatewayCommand is preserved; the linkage is a separate module fed by
+persisted LatestNodeState. While the MQTT broker is disconnected, a pending cmd 3 is published by the
+next sync once the broker is back or re-sent after expiry. An office gateway that is unassigned or
+whose area is archived while ringing receives no automatic clear.
+
+**OPEN_DECISION:** whether the office device reports its button press over MQTT (topic/payload);
+the backend currently needs no such report. Live hardware verification of cmd 3 payload/ACK on a
+real office gateway is pending.
+
+**Files affected:** `apps/api/src/modules/security-office-alarm/*`,
+`apps/api/src/modules/gateway-commands/gateway-commands.service.ts`,
+`apps/api/src/modules/monitoring/*`, `packages/config/src/env.ts`, env examples and deployment
+renderer/workflow, unit and E2E tests, planning documents.

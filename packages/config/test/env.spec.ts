@@ -20,6 +20,28 @@ describe("loadApiEnv", () => {
     expect(() => loadApiEnv({ ...base, GSS_SUPER_ADMIN_PASSWORD: "1234567" })).toThrow();
   });
 
+  it("enables the security-office alarm sweep outside tests unless explicitly disabled", () => {
+    const base = {
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
+      GSS_SUPER_ADMIN_EMAIL: "admin@example.com",
+      GSS_SUPER_ADMIN_PASSWORD: "change-this-super-admin-password",
+      JWT_ACCESS_SECRET: "test-only-access-secret-that-is-at-least-32-characters",
+      JWT_REFRESH_SECRET: "test-only-refresh-secret-that-is-at-least-32-characters",
+      MQTT_BROKER_URL: "mqtt://localhost:1883",
+      MQTT_TOPIC_BASE: "GSSIOT/test",
+      NODE_ENV: "development",
+    };
+
+    expect(loadApiEnv(base).SECURITY_OFFICE_ALARM_SWEEP_ENABLED).toBe(true);
+    expect(
+      loadApiEnv({ ...base, SECURITY_OFFICE_ALARM_SWEEP_ENABLED: "false" })
+        .SECURITY_OFFICE_ALARM_SWEEP_ENABLED,
+    ).toBe(false);
+    expect(() =>
+      loadApiEnv({ ...base, SECURITY_OFFICE_ALARM_SWEEP_INTERVAL_MS: "1000" }),
+    ).toThrow();
+  });
+
   it("validates required infrastructure configuration", () => {
     const env = loadApiEnv({
       DATABASE_URL: "postgresql://user:pass@localhost:5432/gss_iot_v3",
@@ -42,6 +64,8 @@ describe("loadApiEnv", () => {
     expect(env.NODE_OFFLINE_BATCH_SIZE).toBe(250);
     expect(env.NODE_OFFLINE_EVALUATOR_ENABLED).toBe(false);
     expect(env.NODE_OFFLINE_SWEEP_INTERVAL_MS).toBe(10_000);
+    expect(env.SECURITY_OFFICE_ALARM_SWEEP_ENABLED).toBe(false);
+    expect(env.SECURITY_OFFICE_ALARM_SWEEP_INTERVAL_MS).toBe(30_000);
     expect(env.SENSOR_RETENTION_DAYS).toBe(180);
     expect(env.SENSOR_RETENTION_DRY_RUN).toBe(true);
     expect(env.SENSOR_RETENTION_ENABLED).toBe(false);
