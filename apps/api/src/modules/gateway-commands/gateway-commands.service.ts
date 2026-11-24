@@ -14,7 +14,7 @@ import {
   GatewayCommandStatus,
   ProvisioningMode,
 } from "@prisma/client";
-import type { GatewayCommandType, Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 import type { AuthTokenPayload } from "../../common/auth.types";
 import { AUTH_CONTEXT } from "../../common/auth.types";
@@ -22,7 +22,16 @@ import { paginated, pageWindow } from "../../common/dto/pagination.dto";
 import { AuditLogService } from "../audit-logs/audit-log.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { GatewayCommandAdapterRegistry } from "./adapters/gateway-command-adapters";
+import type { BuiltGatewayCommand } from "./adapters/gateway-command-adapters";
 import type { ParsedGatewayResponse } from "../mqtt/mqtt-payload-parser.service";
+import {
+  decideSecurityOfficeCommand,
+  readSecurityOfficePayload,
+} from "../security-office-alarm/security-office-alarm.policy";
+import type {
+  SecurityOfficeAlarmState,
+  SecurityOfficeDecision,
+} from "../security-office-alarm/security-office-alarm.policy";
 import type {
   ListGatewayCommandsQueryDto,
   RegisterNodesCommandDto,
@@ -32,6 +41,14 @@ import type {
 } from "./dto/gateway-commands.dto";
 
 type PrismaExecutor = PrismaService | Prisma.TransactionClient;
+
+interface GatewayCommandContext {
+  areaId: string | null;
+  buildingId: string | null;
+  companyId: string;
+  id: string;
+  serialNumber: string;
+}
 
 export const gatewayCommandSelect = {
   id: true,
@@ -1165,60 +1182,107 @@ export class GatewayCommandsService {
     );
   }
 
+  /**
+   * Applies the automatically derived security-office (경비실) alarm state to one
+   * SECURITY_OFFICE_GATEWAY. Reading the last cmd 3, superseding any still-active cmd 3 and
+   * creating the replacement happen under the gateway row lock in one transaction, so
+   * concurrent area synchronizations cannot publish duplicate or out-of-order states.
+   * The caller publishes the returned command after commit.
+   */
+  async applySecurityOfficeAlarmState(
+    gatewayId: string,
+    desired: SecurityOfficeAlarmState,
+    now: Date = new Date(),
+  ): Promise<{ commandId: string | null; decision: SecurityOfficeDecision }> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockGateway(gatewayId, tx);
+      const last = await tx.gatewayCommand.findFirst({
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { payload: true, status: true, updatedAt: true },
+        where: { commandType: "WAKE_SECURITY", gatewayId },
+      });
+      const lastState = last ? readSecurityOfficePayload(last.payload) : null;
+      const decision = decideSecurityOfficeCommand(
+        desired,
+        last && lastState ? { ...lastState, status: last.status, updatedAt: last.updatedAt } : null,
+        now,
+      );
+      if (decision.kind === "none") {
+        return { commandId: null, decision };
+      }
+
+      const gateway = await this.getGatewayCommandContext(gatewayId, tx);
+      const active = await tx.gatewayCommand.findFirst({
+        select: gatewayCommandSelect,
+        where: { activeKey: "active", commandNumber: 3, gatewayId },
+      });
+      if (active) {
+        const superseded = await tx.gatewayCommand.update({
+          data: {
+            activeKey: active.id,
+            cancelledAt: now,
+            failureReason: "Superseded by a newer security-office alarm state.",
+            status: GatewayCommandStatus.CANCELLED,
+          },
+          select: gatewayCommandSelect,
+          where: { id: active.id },
+        });
+        await this.auditLog.record(
+          this.systemActor(),
+          {
+            action: "gateway-command.supersede",
+            entityId: superseded.id,
+            entityType: "GatewayCommand",
+            newValue: superseded,
+            oldValue: active,
+          },
+          tx,
+        );
+      }
+
+      const built = this.adapters.buildWakeSecurity({
+        alarmActive: decision.state.alarmActive,
+        alertLevel: decision.state.alertLevel,
+        gatewaySerial: gateway.serialNumber,
+      });
+      const command = await this.insertCommand(tx, gateway, built, undefined, {
+        requesterId: null,
+        requesterType: AuditActorType.SYSTEM,
+      });
+      await this.auditLog.record(
+        this.systemActor(),
+        {
+          action: "gateway-command.create",
+          entityId: command.id,
+          entityType: "GatewayCommand",
+          newValue: { ...command, trigger: `security-office-alarm.${decision.reason}` },
+        },
+        tx,
+      );
+      return { commandId: command.id, decision };
+    });
+  }
+
   private async createCommand(
     actor: AuthTokenPayload,
     gatewayId: string,
     expiresInSeconds: number | undefined,
     build: (
       tx: Prisma.TransactionClient,
-      gateway: {
-        areaId: string | null;
-        buildingId: string | null;
-        companyId: string;
-        id: string;
-        serialNumber: string;
-      },
-    ) => Promise<{
-      commandNumber: number;
-      commandType: GatewayCommandType;
-      payload: Record<string, unknown>;
-      topic: string;
-    }>,
+      gateway: GatewayCommandContext,
+    ) => Promise<BuiltGatewayCommand>,
   ) {
     return this.prisma.$transaction(async (tx) => {
       await this.lockGateway(gatewayId, tx);
       const gateway = await this.getGatewayCommandContext(gatewayId, tx);
       const built = await build(tx, gateway);
-      const expiresAt = new Date(
-        Date.now() + (expiresInSeconds ?? this.env.MQTT_COMMAND_EXPIRES_IN_SECONDS) * 1000,
-      );
-      const created = await tx.gatewayCommand.create({
-        data: {
-          areaId: gateway.areaId,
-          buildingId: gateway.buildingId,
-          commandNumber: built.commandNumber,
-          commandType: built.commandType,
-          correlationKey: `${gateway.serialNumber}:${built.commandNumber}`,
-          expiresAt,
-          companyId: gateway.companyId,
-          gatewayId,
-          maxAttempts: this.env.MQTT_MAX_PUBLISH_ATTEMPTS,
-          payload: built.payload as Prisma.InputJsonObject,
-          requesterId: actor.sub,
-          requesterType:
-            actor.context === AUTH_CONTEXT.gssAdmin
-              ? AuditActorType.GSS_ADMIN
-              : AuditActorType.COMPANY_USER,
-          scopeSnapshot: {
-            areaId: gateway.areaId,
-            buildingId: gateway.buildingId,
-            companyId: gateway.companyId,
-          },
-          topic: built.topic,
-        },
-        select: gatewayCommandSelect,
+      const command = await this.insertCommand(tx, gateway, built, expiresInSeconds, {
+        requesterId: actor.sub,
+        requesterType:
+          actor.context === AUTH_CONTEXT.gssAdmin
+            ? AuditActorType.GSS_ADMIN
+            : AuditActorType.COMPANY_USER,
       });
-      const command = await this.finalizeCommandPayload(created.id, built.payload, tx);
       await this.auditLog.record(
         actor,
         {
@@ -1233,7 +1297,46 @@ export class GatewayCommandsService {
     });
   }
 
-  private async getGatewayCommandContext(gatewayId: string, executor: PrismaExecutor) {
+  private async insertCommand(
+    tx: Prisma.TransactionClient,
+    gateway: GatewayCommandContext,
+    built: BuiltGatewayCommand,
+    expiresInSeconds: number | undefined,
+    requester: { requesterId: string | null; requesterType: AuditActorType },
+  ) {
+    const expiresAt = new Date(
+      Date.now() + (expiresInSeconds ?? this.env.MQTT_COMMAND_EXPIRES_IN_SECONDS) * 1000,
+    );
+    const created = await tx.gatewayCommand.create({
+      data: {
+        areaId: gateway.areaId,
+        buildingId: gateway.buildingId,
+        commandNumber: built.commandNumber,
+        commandType: built.commandType,
+        correlationKey: `${gateway.serialNumber}:${built.commandNumber}`,
+        expiresAt,
+        companyId: gateway.companyId,
+        gatewayId: gateway.id,
+        maxAttempts: this.env.MQTT_MAX_PUBLISH_ATTEMPTS,
+        payload: built.payload as Prisma.InputJsonObject,
+        requesterId: requester.requesterId,
+        requesterType: requester.requesterType,
+        scopeSnapshot: {
+          areaId: gateway.areaId,
+          buildingId: gateway.buildingId,
+          companyId: gateway.companyId,
+        },
+        topic: built.topic,
+      },
+      select: gatewayCommandSelect,
+    });
+    return this.finalizeCommandPayload(created.id, built.payload, tx);
+  }
+
+  private async getGatewayCommandContext(
+    gatewayId: string,
+    executor: PrismaExecutor,
+  ): Promise<GatewayCommandContext> {
     const gateway = await executor.gateway.findUnique({
       where: { id: gatewayId },
       select: {

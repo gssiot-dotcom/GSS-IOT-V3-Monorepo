@@ -97,6 +97,13 @@ const rawApiEnvSchema = z
     REPORT_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
     REPORT_WORKER_ENABLED: optionalBooleanStringSchema,
     REPORT_WORKER_INTERVAL_MS: z.coerce.number().int().min(1_000).default(30_000),
+    SECURITY_OFFICE_ALARM_SWEEP_ENABLED: optionalBooleanStringSchema,
+    SECURITY_OFFICE_ALARM_SWEEP_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(5_000)
+      .max(300_000)
+      .default(30_000),
     SENSOR_RETENTION_BATCH_SIZE: z.coerce.number().int().min(1).max(10_000).default(1_000),
     SENSOR_RETENTION_DAYS: z.coerce.number().int().min(1).max(3_650).default(180),
     SENSOR_RETENTION_DRY_RUN: optionalBooleanStringSchema,
@@ -231,6 +238,11 @@ export const apiEnvSchema = rawApiEnvSchema.transform((env) => ({
     env.REPORT_WORKER_ENABLED === undefined
       ? env.NODE_ENV !== "test"
       : env.REPORT_WORKER_ENABLED === "true" || env.REPORT_WORKER_ENABLED === "1",
+  SECURITY_OFFICE_ALARM_SWEEP_ENABLED:
+    env.SECURITY_OFFICE_ALARM_SWEEP_ENABLED === undefined
+      ? env.NODE_ENV !== "test"
+      : env.SECURITY_OFFICE_ALARM_SWEEP_ENABLED === "true" ||
+        env.SECURITY_OFFICE_ALARM_SWEEP_ENABLED === "1",
   SENSOR_RETENTION_DRY_RUN:
     env.SENSOR_RETENTION_DRY_RUN === undefined
       ? true

@@ -288,6 +288,22 @@
 - [ ] Complete the remaining Phase 14 legacy-data migration, performance/observability and final
       production acceptance scope.
 
+## 2026-11-24 security-office gateway alarm linkage
+
+- [x] Confirm the business rule with the product owner: Area scope, immediate site-equivalent
+      trigger, caution/warning/danger = 1/2/3, automatic clear plus local device button.
+- [x] Add the transition-only cmd 3 decision policy and gateway-locked supersede/create path with
+      `requesterType = SYSTEM` and audit evidence.
+- [x] Request a coalesced Area sync after each accepted reading and add the
+      `SECURITY_OFFICE_ALARM_SWEEP_*` reconciliation sweep with env/renderer/workflow defaults.
+- [x] Add decision unit coverage and pass lint, typecheck, workspace unit tests and build locally.
+- [ ] Pass `apps/api/test/e2e/security-office-alarm.e2e-spec.ts` and the full API E2E suite in CI.
+- [ ] Verify cmd 3 activation, escalation, clear and ACK on a real office gateway, including the
+      local button behavior.
+- [ ] Decide whether the office device reports its button press over MQTT (`OPEN_DECISION`).
+- [ ] Exclude `SECURITY_OFFICE_GATEWAY` from building alarm-level cmd 4 fan-out and node
+      provisioning selectors (separate follow-up).
+
 ## Deferred
 
 Production execution, destructive partitioning/retention, legacy migration, live cmd 4/cmd 5

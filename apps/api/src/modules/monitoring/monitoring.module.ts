@@ -4,6 +4,7 @@ import { AuthModule } from "../auth/auth.module";
 import { AlarmsModule } from "../alarms/alarms.module";
 import { MqttModule } from "../mqtt/mqtt.module";
 import { RbacModule } from "../rbac/rbac.module";
+import { SecurityOfficeAlarmModule } from "../security-office-alarm/security-office-alarm.module";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { MonitoringAdminController } from "./monitoring-admin.controller";
 import {
@@ -23,7 +24,14 @@ import { SensorReadingRetentionService } from "./sensor-reading-retention.servic
     MonitoringCompanyController,
   ],
   exports: [MonitoringService, SensorReadingRetentionService],
-  imports: [PrismaModule, AuthModule, RbacModule, MqttModule, AlarmsModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    RbacModule,
+    MqttModule,
+    AlarmsModule,
+    SecurityOfficeAlarmModule,
+  ],
   providers: [
     MonitoringGateway,
     MonitoringRealtimeService,

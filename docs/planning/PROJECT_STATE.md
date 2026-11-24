@@ -16,6 +16,11 @@ Phase 12 notifications and alarm operations UI is `PHASE_12_COMPLETE` as of 2026
 
 ## Current repository status
 
+- 2026-11-24 security-office gateway linkage: `SECURITY_OFFICE_GATEWAY` devices now mirror the
+  highest caution/warning/danger state of every eligible node in their construction site (Area)
+  through system-originated cmd 3 commands (levels 1/2/3, clear = `alarmActive=false`,
+  `alertLevel=0`). Commands are published only on activation, escalation and clear so the office
+  device button can silence locally. See DEC-2026-11-24-01. No migration or seed change.
 - 2026-07-30 bilingual product pass: Korean is the deterministic default and English is a persisted
   header selection in both portals. Typed 1,026-key catalogs, explicit locale formatters, localized
   API-code fallbacks, template-snapshot notifications, locale-snapshotted CSV/XLSX output,
@@ -125,6 +130,8 @@ Phase 12 notifications and alarm operations UI is `PHASE_12_COMPLETE` as of 2026
 
 ## Open decisions
 
+- Security-office gateway: whether the device reports its local button press over MQTT, and live
+  cmd 3 payload/ACK verification on a real office gateway.
 - Exact SMS/Telegram/email/web-push providers, credentials and SLA rules for real external delivery.
 - Production hosting and storage provider; production S3 execution and deployment acceptance are deferred to Phase 14.
 - Physical SensorReading purge job, PostgreSQL partition interval and archival implementation after the Phase 6 default 180-day retention target; deferred to Phase 14.
@@ -765,3 +772,21 @@ and report buckets. Because the buckets are versioned, normal retained versions/
 remain governed by the still-open cleanup/retention decision. The originally supplied Docker Hub
 read-only PAT could not pull the private API repository; `DOCKERHUB_READ_TOKEN` temporarily contains
 the working push-capable PAT so production can run. Replace it with a newly verified read-only PAT.
+
+## 2026-11-24 security-office gateway alarm linkage
+
+Registering a gateway as `SECURITY_OFFICE_GATEWAY` previously had no runtime effect: cmd 3 was only
+available as a manual Admin API call. The new `SecurityOfficeAlarmModule` recomputes the Area-wide
+desired state from persisted `LatestNodeState` after every accepted reading (coalesced per Area) and
+in a 30-second reconciliation sweep, then applies it per office gateway in one gateway-locked
+transaction that supersedes any still-active cmd 3. Behavior, payload mapping and limits are
+recorded in DEC-2026-11-24-01.
+
+Local verification on 2026-11-24 (Node 22.23.5 after replacing the local Node 20.12.2, whose engine
+range skipped the rolldown Windows binding): `pnpm install --frozen-lockfile`, Prisma generate,
+`pnpm lint`, `pnpm typecheck`, `pnpm test` (contracts 5, config 11, UI 14, API 82 including the new
+security-office decision suite, Web 127, deployment renderer 2), `pnpm build` (known chunk-size
+advisory only), task-file Prettier and `git diff --check` pass. The new PostgreSQL-backed
+`apps/api/test/e2e/security-office-alarm.e2e-spec.ts` was not run locally because no local
+database was started; it is delegated to the CI `api-e2e` job and must pass before this slice is
+considered verified. Live office-gateway hardware acceptance is pending.
