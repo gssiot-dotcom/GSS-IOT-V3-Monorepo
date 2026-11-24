@@ -158,3 +158,82 @@ describe("security-office alarm command decision", () => {
     ).toEqual({ kind: "send", reason: "resend", state: active(1) });
   });
 });
+
+describe("security-office alarm activation delay", () => {
+  const activationDelayMs = 20_000;
+  const since = (ageMs: number) => new Date(now.getTime() - ageMs);
+  const acknowledged = GatewayCommandStatus.ACKNOWLEDGED;
+
+  it("wakes an idle office gateway only once the site has alarmed for the whole delay", () => {
+    expect(
+      decideSecurityOfficeCommand(active(3), null, now, {
+        activationDelayMs,
+        alarmSince: since(activationDelayMs - 1),
+      }),
+    ).toEqual({ kind: "none", reason: "activation-delay", sendAt: new Date(now.getTime() + 1) });
+    expect(
+      decideSecurityOfficeCommand(active(3), null, now, {
+        activationDelayMs,
+        alarmSince: since(activationDelayMs),
+      }),
+    ).toEqual({ kind: "send", reason: "activate", state: active(3) });
+    expect(
+      decideSecurityOfficeCommand(active(1), last(clear, acknowledged), now, {
+        activationDelayMs,
+        alarmSince: since(5_000),
+      }),
+    ).toEqual({
+      kind: "none",
+      reason: "activation-delay",
+      sendAt: new Date(now.getTime() + 15_000),
+    });
+  });
+
+  it("counts the delay from now when the episode start is unknown", () => {
+    expect(decideSecurityOfficeCommand(active(2), null, now, { activationDelayMs })).toEqual({
+      kind: "none",
+      reason: "activation-delay",
+      sendAt: new Date(now.getTime() + activationDelayMs),
+    });
+  });
+
+  it("delays a new episode after an undelivered clear like any other activation", () => {
+    expect(
+      decideSecurityOfficeCommand(active(3), last(clear, GatewayCommandStatus.FAILED), now, {
+        activationDelayMs,
+        alarmSince: since(1_000),
+      }),
+    ).toEqual({
+      kind: "none",
+      reason: "activation-delay",
+      sendAt: new Date(now.getTime() + 19_000),
+    });
+  });
+
+  it("never delays escalation, clear or re-delivery of an office gateway that is already ringing", () => {
+    const timing = { activationDelayMs, alarmSince: since(0) };
+    expect(
+      decideSecurityOfficeCommand(active(3), last(active(1), acknowledged), now, timing),
+    ).toEqual({ kind: "send", reason: "escalate", state: active(3) });
+    expect(decideSecurityOfficeCommand(clear, last(active(3), acknowledged), now, timing)).toEqual({
+      kind: "send",
+      reason: "clear",
+      state: clear,
+    });
+    expect(
+      decideSecurityOfficeCommand(
+        active(3),
+        last(active(3), GatewayCommandStatus.EXPIRED, SECURITY_OFFICE_RESEND_AFTER_MS),
+        now,
+        timing,
+      ),
+    ).toEqual({ kind: "send", reason: "resend", state: active(3) });
+  });
+
+  it("does not schedule anything when the site is not alarming", () => {
+    expect(decideSecurityOfficeCommand(clear, null, now, { activationDelayMs })).toEqual({
+      kind: "none",
+      reason: "no-alarm",
+    });
+  });
+});

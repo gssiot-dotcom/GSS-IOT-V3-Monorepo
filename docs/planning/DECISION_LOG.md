@@ -1618,3 +1618,38 @@ real office gateway is pending.
 `apps/api/src/modules/gateway-commands/gateway-commands.service.ts`,
 `apps/api/src/modules/monitoring/*`, `packages/config/src/env.ts`, env examples and deployment
 renderer/workflow, unit and E2E tests, planning documents.
+
+## DEC-2026-11-25-01 — Security-office gateway wakes after a 20-second site alarm (ACCEPTED)
+
+**Context:** In the 2026-11-25 hardware test (node gateways `0020`/`0040`, office gateway `0030`,
+door node `236`) the office gateway sounded in the same second as the site gateway, as
+DEC-2026-11-24-01 specifies. The product owner asked on 2026-11-25 that every office gateway sound
+20 seconds after the node gateway by default, without per-gateway configuration, and confirmed that
+a site alarm which clears within those 20 seconds must not wake the office at all.
+
+**Decision:** This refines only the activation part of the DEC-2026-11-24-01 "Trigger: immediate"
+rule.
+
+- An idle office gateway (nothing commanded yet, or the last commanded state is clear) is woken only
+  after its Area has been alarming continuously for `SECURITY_OFFICE_ALARM_ACTIVATION_DELAY_MS`
+  (default 20 000 ms; 0 restores immediate activation; maximum 300 000). The level sent is the
+  Area's highest contributing severity at that moment.
+- If the Area becomes safe before the delay elapses, nothing is sent; the next alarm starts a new
+  full delay.
+- Escalation, clear and re-delivery for an office gateway that is already commanded active are
+  never delayed. The manual wake-security endpoint is not delayed.
+- The API instance tracks each Area's episode start in memory and schedules a re-sync when the
+  activation is due, because door nodes report only on change and no further reading may arrive.
+  The 30-second sweep remains the fallback.
+
+**Consequences:** No schema migration or seed change. The episode start is not persisted: after an
+API restart, an Area that has not woken its office gateway yet waits the full delay again from the
+first post-restart sync (worst case delay plus one sweep interval). With several API instances each
+tracks its own episode start; the earliest due instance sends and the gateway-locked decision keeps
+the others at `already-commanded`, so an office gateway is never woken before the delay. Site
+gateways are unaffected because they sound from their own firmware, not from cmd 3.
+
+**Files affected:** `apps/api/src/modules/security-office-alarm/*`,
+`apps/api/src/modules/gateway-commands/gateway-commands.service.ts`, `packages/config/src/env.ts`,
+env examples and deployment renderer/workflow/GitHub environment script, unit and E2E tests,
+planning and deployment documents.

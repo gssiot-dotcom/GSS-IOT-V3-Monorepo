@@ -6,7 +6,8 @@ import { GatewayCommandStatus, SensorReadingStatus } from "@prisma/client";
  * A SECURITY_OFFICE_GATEWAY mirrors the highest active alarm severity of every node in the
  * construction site (Area) that contains the building it is assigned to. The backend only
  * publishes cmd 3 on state transitions so a local button acknowledgement on the device is not
- * immediately overridden by the next repeated reading.
+ * immediately overridden by the next repeated reading. An idle office gateway is woken only after
+ * the site has stayed alarming for the activation delay (DEC-2026-11-25-01).
  */
 
 export type SecurityOfficeSeverity = "caution" | "warning" | "danger";
@@ -21,6 +22,17 @@ export const SECURITY_OFFICE_CLEAR_ALERT_LEVEL = 0;
 
 /** Minimum wait before an undelivered (FAILED/EXPIRED) identical state is published again. */
 export const SECURITY_OFFICE_RESEND_AFTER_MS = 60_000;
+
+export interface SecurityOfficeTiming {
+  /**
+   * How long the site must stay alarming before an idle office gateway is woken. Escalation and
+   * clear of an office gateway that is already ringing are never delayed. Defaults to 0.
+   */
+  activationDelayMs?: number;
+  /** Start of the site's current continuous alarm episode; `now` when not known. */
+  alarmSince?: Date | null;
+  resendAfterMs?: number;
+}
 
 export interface SecurityOfficeAlarmState {
   alarmActive: boolean;
@@ -39,6 +51,12 @@ export type SecurityOfficeDecision =
   | {
       kind: "none";
       reason: "already-commanded" | "de-escalation" | "no-alarm" | "resend-cooldown";
+    }
+  | {
+      kind: "none";
+      reason: "activation-delay";
+      /** When the activation becomes due if the site is still alarming. */
+      sendAt: Date;
     }
   | {
       kind: "send";
@@ -110,7 +128,30 @@ export function decideSecurityOfficeCommand(
   desired: SecurityOfficeAlarmState,
   last: LastSecurityOfficeCommand | null,
   now: Date,
-  resendAfterMs = SECURITY_OFFICE_RESEND_AFTER_MS,
+  timing: SecurityOfficeTiming = {},
+): SecurityOfficeDecision {
+  const decision = decideTransition(
+    desired,
+    last,
+    now,
+    timing.resendAfterMs ?? SECURITY_OFFICE_RESEND_AFTER_MS,
+  );
+  // Only waking an idle office gateway waits; a ringing one escalates and clears immediately.
+  const wakesIdleOffice =
+    decision.kind === "send" && decision.state.alarmActive && !last?.alarmActive;
+  if (!wakesIdleOffice) return decision;
+
+  const sendAt = new Date((timing.alarmSince ?? now).getTime() + (timing.activationDelayMs ?? 0));
+  return now.getTime() < sendAt.getTime()
+    ? { kind: "none", reason: "activation-delay", sendAt }
+    : decision;
+}
+
+function decideTransition(
+  desired: SecurityOfficeAlarmState,
+  last: LastSecurityOfficeCommand | null,
+  now: Date,
+  resendAfterMs: number,
 ): SecurityOfficeDecision {
   const target = normalize(desired);
   if (!last) {
